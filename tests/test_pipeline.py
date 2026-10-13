@@ -101,10 +101,17 @@ def test_tts_failure_in_review_returns_to_review(rig):
     assert job.state == "awaiting_review" and job.warnings
     assert any("tts_failed" in s.flags for s in store.load_segments(job.id))
 
-def test_tts_failure_in_auto_errors(rig):
+def test_tts_failure_in_auto_errors_at_tts_and_retry_recovers(rig):
     rig.tts.fail_on = "今天"
     with pytest.raises(RuntimeError, match="TTS lỗi"):
         rig.run(mode="auto")
+    job = store.load(rig.job.id)
+    assert job.steps["tts"].status == "error" and job.steps["fit"].status == "pending"
+    rig.tts.fail_on = None
+    n = len(rig.tts.calls)
+    job = rig.run(mode="auto", from_step="tts")
+    assert job.state == "done"
+    assert len(rig.tts.calls) - n == 1            # only the failed line is synthesized again
 
 def test_auto_shortens_overflow(rig):
     def hook(prompt, schema):

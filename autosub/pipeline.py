@@ -202,6 +202,11 @@ def _tts(ctx: Ctx):
     if ctx.job.mode == "auto":
         segs = _shorten_overflow(ctx, segs)
     store.save_segments(jid, segs)
+    failed = [s.id for s in segs if "tts_failed" in s.flags]
+    if failed and ctx.job.mode == "auto":
+        # fail this step (not `fit`) so "retry from this step" re-synthesizes; good lines come from the cache
+        raise RuntimeError(f"TTS lỗi ở {len(failed)} câu ({', '.join(map(str, failed[:10]))}). Chạy lại bước này "
+                           "để đọc lại các câu lỗi.")
 
 def _shorten_overflow(ctx: Ctx, segs: list[Segment]) -> list[Segment]:
     over = [s for s in segs if "overflow" in s.flags]

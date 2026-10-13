@@ -249,3 +249,5 @@ button.small { padding: 4px 10px; font-size: .85em; }
 .browser-list .entry { width: 100%; justify-content: flex-start; background: transparent; border-color: transparent; padding: 7px 10px; text-align: left; }
 .browser-list .entry:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
 .browser-list .entry.file .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.downloads { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.ok-msg { color: var(--ok); }

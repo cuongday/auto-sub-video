@@ -4,7 +4,7 @@
 
 Pipeline: `ffmpeg` tách âm thanh → **Demucs** tách giọng / nhạc nền → **ASR** (FunASR Paraformer cho tiếng Trung, faster-whisper cho tiếng Anh) → cắt câu → **LLM** (Gemini qua Vertex AI hoặc OpenAI) phân tích bối cảnh rồi dịch theo lô, giới hạn độ dài theo thời lượng → *rà soát* → **TTS** (edge-tts hoặc VieNeu-TTS) → khớp thời gian (tăng tốc tối đa ×1.35) → trộn với nhạc nền → render (che vùng + phụ đề ASS).
 
-Mọi model chạy trên CPU. Thiết kế: `docs/superpowers/specs/2026-10-13-auto-sub-design.md`.
+Mọi model chạy trên CPU.
 
 ## Yêu cầu
 

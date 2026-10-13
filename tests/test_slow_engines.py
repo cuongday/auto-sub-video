@@ -7,7 +7,6 @@ from autosub.asr import get_asr
 from autosub.separate import separate
 
 pytestmark = pytest.mark.slow
-SAMPLES = Path("/tmp/autosub-samples")
 
 def _edge(text, voice, out):
     import asyncio, edge_tts

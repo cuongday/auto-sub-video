@@ -1,7 +1,7 @@
 import time
 import pytest
 from fastapi.testclient import TestClient
-from autosub import api, jobs, pipeline
+from autosub import api, config, jobs, pipeline
 from tests.fakes import FakeASR, FakeLLM, FakeTTS, fake_separate
 from tests.fixtures import make_video
 
@@ -10,11 +10,15 @@ def engines():
                             tts=lambda n: FakeTTS())
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     q = jobs.JobQueue(engines)
     monkeypatch.setattr(api, "QUEUE", q)
+    monkeypatch.setattr(config, "HOST_ROOT", tmp_path)       # test videos are made under tmp_path
     with TestClient(api.app) as c:
         yield c
+
+def rel(p, tmp_path):
+    return str(p.relative_to(tmp_path))
 
 def wait(c, jid, states, timeout=60):
     t0 = time.time()
@@ -27,7 +31,7 @@ def wait(c, jid, states, timeout=60):
 
 def test_full_flow(client, tmp_path):
     src = make_video(tmp_path / "clip.mp4", seconds=5)
-    r = client.post("/api/jobs", json={"path": str(src)})
+    r = client.post("/api/jobs", json={"path": rel(src, tmp_path)})
     assert r.status_code == 200, r.text
     j = r.json(); jid = j["id"]
     assert j["info"]["width"] == 640 and len(j["frames"]) == 6
@@ -71,15 +75,15 @@ def test_full_flow(client, tmp_path):
 
 def test_portrait_gets_portrait_region(client, tmp_path):
     src = make_video(tmp_path / "tall.mp4", seconds=2, size=(360, 640))
-    j = client.post("/api/jobs", json={"path": str(src)}).json()
+    j = client.post("/api/jobs", json={"path": rel(src, tmp_path)}).json()
     assert (j["info"]["width"], j["info"]["height"]) == (360, 640)
     assert j["settings"]["region"]["y"] == 0.78
-    land = client.post("/api/jobs", json={"path": str(make_video(tmp_path / "w.mp4", seconds=2))}).json()
+    land = client.post("/api/jobs", json={"path": rel(make_video(tmp_path / "w.mp4", seconds=2), tmp_path)}).json()
     assert land["settings"]["region"]["y"] == 0.8
 
 def test_file_range_requests(client, tmp_path):
     src = make_video(tmp_path / "r.mp4", seconds=2)
-    jid = client.post("/api/jobs", json={"path": str(src)}).json()["id"]
+    jid = client.post("/api/jobs", json={"path": rel(src, tmp_path)}).json()["id"]
     full = client.get(f"/api/jobs/{jid}/files/source")
     assert full.status_code == 200 and full.content == src.read_bytes()
     assert full.headers["accept-ranges"] == "bytes"
@@ -100,7 +104,22 @@ def test_storage_down_returns_503(client, monkeypatch):
     assert r.status_code == 503 and "MinIO" in r.json()["detail"]
 
 def test_bad_path(client):
-    assert client.post("/api/jobs", json={"path": "/nope.mp4"}).status_code == 400
+    assert client.post("/api/jobs", json={"path": "nope.mp4"}).status_code == 400
+    assert client.post("/api/jobs", json={"path": "../../etc/passwd"}).status_code == 400
+
+def test_browse_and_video_dir_setting(client, tmp_path):
+    (tmp_path / "Phim" / "Tap1").mkdir(parents=True)
+    make_video(tmp_path / "Phim" / "a.mp4", seconds=1)
+    r = client.get("/api/browse", params={"path": "Phim"}).json()
+    assert [d["name"] for d in r["dirs"]] == ["Tap1"] and [f["path"] for f in r["files"]] == ["Phim/a.mp4"]
+    assert client.get("/api/browse", params={"path": ".."}).status_code == 400
+    assert client.get("/api/app-settings").json() == {"video_dir": "", "browse_available": True}
+    assert client.put("/api/app-settings", json={"video_dir": "Phim/Tap1"}).json()["video_dir"] == "Phim/Tap1"
+    assert client.put("/api/app-settings", json={"video_dir": "Phim/a.mp4"}).status_code == 400
+    assert client.put("/api/app-settings", json={"video_dir": "../x"}).status_code == 400
+    assert client.get("/api/app-settings").json()["video_dir"] == "Phim/Tap1"
+    jid = client.post("/api/jobs", json={"path": "Phim/a.mp4"}).json()["id"]
+    assert client.get(f"/api/jobs/{jid}").json()["name"] == "a.mp4"
 
 def test_upload(client, tmp_path):
     src = make_video(tmp_path / "up.mp4", seconds=2)

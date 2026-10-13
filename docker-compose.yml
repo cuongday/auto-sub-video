@@ -29,7 +29,8 @@ services:
       minio:
         condition: service_healthy
     ports:
-      - "${AUTOSUB_PORT:-8020}:8020"
+      # this machine only by default: the app can browse HOST_ROOT. Set AUTOSUB_BIND=0.0.0.0 to open it to the LAN
+      - "${AUTOSUB_BIND:-127.0.0.1}:${AUTOSUB_PORT:-8020}:8020"
     env_file:
       - path: .env
         required: false
@@ -45,7 +46,7 @@ services:
     volumes:
       - models:/data/models                                  # downloaded AI models (not job data)
       - ${ADC_HOST_PATH:-/dev/null}:/secrets/adc.json:ro     # gcloud ADC (only needed for Gemini)
-      - ${VIDEOS_DIR:-~/Videos}:/videos:ro                   # local videos: open them as /videos/<file>
+      - ${HOST_ROOT:-~}:/host:ro                             # host folder browsable from the web UI (read-only)
     restart: unless-stopped
 
 volumes:

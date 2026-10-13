@@ -238,3 +238,14 @@ table.segs { width: 100%; border-collapse: collapse; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
 .danger-solid:hover:not(:disabled) { background: #ff7777; border-color: #ff7777; }
+
+/* ---------- host file browser ---------- */
+.browser { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.browser-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.crumbs { font-size: .9em; overflow-wrap: anywhere; }
+.crumbs .link { font-size: inherit; }
+button.small { padding: 4px 10px; font-size: .85em; }
+.browser-list { list-style: none; margin: 0; padding: 4px; max-height: 360px; overflow: auto; }
+.browser-list .entry { width: 100%; justify-content: flex-start; background: transparent; border-color: transparent; padding: 7px 10px; text-align: left; }
+.browser-list .entry:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+.browser-list .entry.file .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

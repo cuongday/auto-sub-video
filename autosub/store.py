@@ -6,6 +6,7 @@ from .storage import get_store, read_json, write_json
 from .workdir import job_prefix
 
 PRESETS = "presets.json"
+APP_SETTINGS = "settings.json"
 
 def key(jid: str, name: str) -> str:
     return job_prefix(jid) + name
@@ -83,3 +84,11 @@ def delete_preset(name: str) -> None:
     p = load_presets(); p.pop(name, None); write_json(get_store(), PRESETS, p)
 
 __all__ = ["STEPS"]
+
+def load_app_settings() -> dict:
+    """App-wide UI settings (e.g. the default video folder), shared by every browser."""
+    return read_json(get_store(), APP_SETTINGS, default={})
+
+def save_app_settings(values: dict) -> dict:
+    cur = load_app_settings(); cur.update(values); write_json(get_store(), APP_SETTINGS, cur)
+    return cur

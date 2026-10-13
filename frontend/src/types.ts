@@ -35,3 +35,7 @@ export type JobEvent =
   | { type: "state"; job: string; state: JobState; error?: string; t: number }
   | { type: "progress"; job: string; step: string; pct: number; t: number }
   | { type: "log"; job: string; msg: string; t: number };
+export type BrowseEntry = { name: string; path: string };
+export type BrowseFile = BrowseEntry & { size: number; mtime: number };
+export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
+export type AppSettings = { video_dir: string; browse_available: boolean };

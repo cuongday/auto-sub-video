@@ -1,4 +1,4 @@
-import type { Context, Job, Options, Segment, Settings, Voice } from "./types";
+import type { AppSettings, BrowseListing, Context, Job, Options, Segment, Settings, Voice } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -44,6 +44,9 @@ export const api = {
     xhr.onerror = () => reject(new ApiError(0, "Lỗi mạng khi tải lên"));
     xhr.open("POST", "/api/jobs"); xhr.send(fd);
   }),
+  browse: (path: string) => j<BrowseListing>(fetch(`/api/browse?path=${encodeURIComponent(path)}`)),
+  appSettings: () => j<AppSettings>(fetch("/api/app-settings")),
+  saveAppSettings: (s: { video_dir: string }) => j<AppSettings>(put("/api/app-settings", s)),
   remove: (id: string) => j(fetch(`/api/jobs/${id}`, { method: "DELETE" })),
   saveSettings: (id: string, s: Settings) => j<Job>(put(`/api/jobs/${id}/settings`, s)),
   uploadRef: (id: string, file: File) => {

@@ -11,7 +11,7 @@ Mọi model chạy trên CPU.
 App chỉ chạy qua Docker Compose, gồm 2 service: `auto-sub` (app) và `minio` (kho lưu trữ toàn bộ dữ liệu).
 
 ```bash
-cp .env.example .env        # điền MINIO_ROOT_PASSWORD, GOOGLE_CLOUD_PROJECT + ADC_HOST_PATH (hoặc OPENAI_API_KEY), VIDEOS_DIR
+cp .env.example .env        # điền MINIO_ROOT_PASSWORD, GOOGLE_CLOUD_PROJECT + ADC_HOST_PATH (hoặc OPENAI_API_KEY)
 docker compose up -d --build   # hoặc: make up
 # -> http://localhost:8020      (trang quản trị MinIO: http://127.0.0.1:9201)
 ```
@@ -19,7 +19,8 @@ docker compose up -d --build   # hoặc: make up
 - Image đầy đủ (Demucs, FunASR, faster-whisper, VieNeu, torch CPU) nặng khoảng 3 GB, build lần đầu mất 10–15 phút. Bản nhẹ chỉ có edge-tts + Gemini/OpenAI: đổi `FULL: "1"` thành `"0"` trong `docker-compose.yml`.
 - **Dữ liệu:** mọi thứ của job (video gốc, âm thanh tách, phụ đề, giọng đọc, thành phẩm) và cache TTS nằm trong bucket MinIO `autosub` (volume `minio-data`). Container app chỉ có thư mục tạm `/work` cho ffmpeg/model đọc ghi, tự xoá khi khởi động lại và giới hạn bằng `AUTOSUB_WORK_MAX_GB`.
 - **Model AI** tải ở lần dùng đầu (~2–5 GB), lưu trong volume `models`.
-- **Video trên máy:** `VIDEOS_DIR` (mặc định `~/Videos`) được gắn chỉ đọc vào `/videos`; nhập `/videos/<tên file>` ở ô "dùng file có sẵn". Video luôn được copy vào MinIO khi tạo job, nên xoá file gốc sau đó không ảnh hưởng.
+- **Video trên máy:** thư mục `HOST_ROOT` (mặc định thư mục home) được gắn **chỉ đọc** vào app. Ở màn "Video mới" có hộp duyệt để chọn video trong đó (ẩn thư mục bắt đầu bằng dấu chấm, không ra ngoài `HOST_ROOT`), và nút "Đặt làm thư mục mặc định" để lần sau mở thẳng thư mục đó. Video được copy vào MinIO khi tạo job, nên xoá file gốc sau đó không ảnh hưởng.
+- **Truy cập:** mặc định app chỉ mở cho máy này (`127.0.0.1:8020`), vì nó duyệt được file trong `HOST_ROOT`. Muốn máy khác trong mạng LAN dùng thì đặt `AUTOSUB_BIND=0.0.0.0` (họ cũng sẽ duyệt được `HOST_ROOT`; nên đặt `HOST_ROOT` hẹp lại, ví dụ `~/Videos`).
 - **Gemini:** file ADC tại `ADC_HOST_PATH` được gắn chỉ đọc. Chạy `gcloud auth application-default login` trên máy trước.
 - Container chạy với UID/GID 1000; khác thì đặt `UID`/`GID` trong `.env`.
 
@@ -38,7 +39,8 @@ Lệnh hay dùng: `make logs`, `make down` (giữ dữ liệu), `docker compose 
 | `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` | |
 | `OPENAI_API_KEY` | — | bắt buộc khi dùng OpenAI |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | |
-| `VIDEOS_DIR` | `~/Videos` | thư mục video trên máy |
+| `HOST_ROOT` | thư mục home | thư mục máy được duyệt chọn video trên web (chỉ đọc) |
+| `AUTOSUB_BIND` | `127.0.0.1` | `0.0.0.0` để mở cho mạng LAN |
 | `VIENEU_MODE` | `v3turbo` | |
 | `AUTOSUB_VOICE_WORKERS` | `4` | số bản VieNeu đọc song song (~1,5 GB RAM mỗi bản) |
 | `AUTOSUB_FFMPEG_PRESET` | `veryfast` | preset x264 |
@@ -48,7 +50,7 @@ Lệnh hay dùng: `make logs`, `make down` (giữ dữ liệu), `docker compose 
 
 ## Sử dụng
 
-1. **Video mới**: kéo thả file, hoặc nhập đường dẫn `/videos/<tên file>` (file trong `VIDEOS_DIR`, không phải upload qua trình duyệt). Video được copy vào MinIO.
+1. **Video mới**: kéo thả / bấm chọn file để tải lên, hoặc chọn video có sẵn trên máy trong hộp duyệt thư mục (không phải tải lên). Video được copy vào MinIO.
 2. **Thiết lập**: kéo khung trên ảnh để chọn vùng phụ đề cũ; đổi khung hình bằng thumbnail; chọn kiểu che (làm mờ / mờ + nền tối / dải màu), cỡ chữ, màu. "Render thử 5 giây" cho ra đúng kết quả ffmpeg. Chọn ngôn ngữ, model ASR, LLM, ghi chú cho người dịch, engine/giọng TTS (VieNeu có thể nhân bản giọng từ file mẫu 3–8 giây). Lưu thành preset để dùng lại.
 3. **Bắt đầu** chạy đến bước dịch rồi dừng ở **Rà soát**; **Chạy thẳng** làm một mạch đến video (câu đọc không kịp sẽ được LLM tự rút gọn).
 4. **Rà soát**: sửa bối cảnh dịch (xưng hô, thuật ngữ) rồi dịch lại; sửa từng câu, thời gian; nghe thử, dịch lại, gộp, tách, xoá câu. Thanh màu dưới mỗi câu: xanh = đọc vừa, vàng = cần tăng tốc, đỏ = quá ×1.35. Video bên cạnh hiển thị vùng che và phụ đề hiện tại. Phím tắt: `Space`, `Ctrl+↑/↓`, `Ctrl+Enter`.
@@ -59,7 +61,7 @@ Mỗi bước được cache theo đầu vào: đổi vùng che chỉ render l�
 ### Dòng lệnh
 
 ```bash
-docker compose exec auto-sub autosub run /videos/clip.mp4 --lang zh --tts edge
+docker compose exec auto-sub autosub run /host/Videos/clip.mp4 --lang zh --tts edge
 ```
 
 ## Phát triển

@@ -19,6 +19,8 @@ MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "autosub")
 MINIO_SECURE = os.environ.get("MINIO_SECURE", "0") == "1"
 WORK_DIR = Path(os.environ.get("AUTOSUB_WORK_DIR", "/work")).resolve()
+# host folder mounted read-only (HOST_ROOT in compose); videos are picked inside it from the web UI
+HOST_ROOT = Path(os.environ.get("AUTOSUB_HOST_ROOT", "/host"))
 WORK_MAX_BYTES = int(float(os.environ.get("AUTOSUB_WORK_MAX_GB", "20")) * (1 << 30))
 FONTS_DIR = ROOT / "fonts"
 FRONTEND_DIST = ROOT / "frontend" / "dist"

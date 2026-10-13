@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { Job } from "../types";
+import FileBrowser from "../components/FileBrowser";
+import type { AppSettings, BrowseFile, Job } from "../types";
 
 export default function NewJob({ onCreated }: { onCreated: (j: Job) => void }) {
-  const [path, setPath] = useState("");
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [over, setOver] = useState(false);
@@ -16,9 +17,10 @@ export default function NewJob({ onCreated }: { onCreated: (j: Job) => void }) {
     try { onCreated(await api.upload(f, (p) => setBusy(p < 1 ? `Đang tải lên ${Math.round(p * 100)}%` : "Đang đọc video…"))); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   };
-  const fromPath = async () => {
-    setErr(""); setBusy("Đang đọc video…");
-    try { onCreated(await api.createFromPath(path.trim())); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
+  useEffect(() => { api.appSettings().then(setSettings).catch((e) => setErr(e.message)); }, []);
+  const fromHost = async (f: BrowseFile) => {
+    setErr(""); setBusy(`Đang chép ${f.name} vào kho lưu trữ…`);
+    try { onCreated(await api.createFromPath(f.path)); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   };
   return (
     <section className="card new-job">
@@ -33,11 +35,13 @@ export default function NewJob({ onCreated }: { onCreated: (j: Job) => void }) {
         <strong>{busy || "Kéo thả video vào đây"}</strong>
         <span className="muted">{busy ? "" : "hoặc bấm để chọn file · video tiếng Trung hoặc tiếng Anh"}</span>
       </div>
-      <div className="or"><span>hoặc dùng file trong thư mục video đã gắn vào app (VIDEOS_DIR → /videos)</span></div>
-      <form className="row" onSubmit={(e) => { e.preventDefault(); if (path.trim()) fromPath(); }}>
-        <input className="grow" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/videos/phim.mp4" aria-label="Đường dẫn video" />
-        <button className="primary" disabled={!path.trim() || !!busy}>Mở</button>
-      </form>
+      {settings?.browse_available && (
+        <>
+          <div className="or"><span>hoặc chọn video có sẵn trên máy (không phải tải lên)</span></div>
+          <FileBrowser start={settings.video_dir} busy={!!busy} onPick={fromHost}
+            onSetDefault={async (dir) => { setSettings(await api.saveAppSettings({ video_dir: dir })); }} />
+        </>
+      )}
       {err && <p className="error" role="alert">{err}</p>}
     </section>
   );

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import checks, config, jobs, media, pipeline, render, store, translate, workdir
+from . import browse, checks, config, jobs, media, pipeline, render, store, translate, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .timing import slots
@@ -128,7 +128,7 @@ def tts_voices(engine: Literal["edge", "vieneu"]):
 # ------------------------------------------------------------------ jobs
 
 class PathIn(BaseModel):
-    path: str
+    path: str                 # relative to the mounted host folder (from the file browser)
 
 def _init_job(job: Job, local_video: Path) -> Job:
     """Probe the video, store it as jobs/<id>/<source> and grab the setup frames."""
@@ -167,12 +167,11 @@ async def create_job(request: Request):
                 f.write(chunk)
     else:
         body = PathIn.model_validate(await request.json())
-        p = Path(body.path).expanduser()
-        if not p.is_file():
-            raise HTTPException(400, f"Không tìm thấy file: {p}")
-        if p.suffix.lower() not in VIDEO_EXT:
-            raise HTTPException(400, "Định dạng video không hỗ trợ")
-        job = store.create(p.name, "source" + p.suffix.lower())
+        try:
+            p = browse.video_file(body.path)
+        except browse.BrowseError as e:
+            raise HTTPException(400, str(e))
+        job = store.create(Path(body.path).name, "source" + p.suffix.lower())
         dest = p
     job = await asyncio.to_thread(_init_job, job, dest)
     return _view(job)
@@ -408,6 +407,40 @@ def get_file(jid: str, name: str, request: Request, download: bool = False):
         return Response(b"", media_type=ctype, headers=headers)
     headers["Content-Length"] = str(size)
     return StreamingResponse(st.open_range(k, 0, None), media_type=ctype, headers=headers)
+
+# ------------------------------------------------------------------ host folder browser
+
+@app.get("/api/browse")
+def browse_dir(path: str = ""):
+    try:
+        return browse.list_dir(path)
+    except browse.BrowseError as e:
+        raise HTTPException(400, str(e))
+
+class AppSettingsIn(BaseModel):
+    video_dir: str = ""
+
+@app.get("/api/app-settings")
+def get_app_settings():
+    s = store.load_app_settings()
+    video_dir = s.get("video_dir", "")
+    try:
+        if video_dir:
+            browse.resolve(video_dir)
+    except browse.BrowseError:
+        video_dir = ""                     # folder gone or mount changed: fall back to the root
+    return {"video_dir": video_dir, "browse_available": browse.available()}
+
+@app.put("/api/app-settings")
+def put_app_settings(body: AppSettingsIn):
+    try:
+        d = browse.resolve(body.video_dir)
+    except browse.BrowseError as e:
+        raise HTTPException(400, str(e))
+    if not d.is_dir():
+        raise HTTPException(400, "Không phải thư mục")
+    store.save_app_settings({"video_dir": browse.rel_of(d)})
+    return get_app_settings()
 
 # ------------------------------------------------------------------ presets
 

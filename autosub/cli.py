@@ -1,4 +1,4 @@
-"""Command line (inside the container): autosub run /videos/clip.mp4 --lang zh --out /videos/clip.vi.mp4"""
+"""Command line (inside the container): autosub run /host/Videos/clip.mp4 --lang zh --out /tmp/clip.vi.mp4"""
 import argparse
 import shutil
 import sys

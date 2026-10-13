@@ -11,6 +11,11 @@ load_dotenv(ROOT / ".env", override=False)
 ADC_PATH = os.environ.get("ADC_HOST_PATH")
 if ADC_PATH and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ADC_PATH
+_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+if _creds and (not Path(_creds).is_file() or Path(_creds).stat().st_size == 0):
+    # compose mounts an empty placeholder when no ADC file is configured (OpenAI-only setups)
+    os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS")
+    ADC_PATH = None
 
 # All job data lives in MinIO; WORK_DIR is only a local scratch cache that processing tools read/write.
 MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "")

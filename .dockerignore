@@ -12,3 +12,5 @@ docs
 frontend/node_modules
 frontend/dist
 tests
+videos
+docker

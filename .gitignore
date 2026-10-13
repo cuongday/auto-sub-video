@@ -25,3 +25,7 @@ docs/
 .DS_Store
 .idea/
 .vscode/
+
+# local videos dropped into the default HOST_ROOT
+videos/*
+!videos/README.txt

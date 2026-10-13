@@ -45,8 +45,8 @@ services:
       - /tmp
     volumes:
       - models:/data/models                                  # downloaded AI models (not job data)
-      - ${ADC_HOST_PATH:-/dev/null}:/secrets/adc.json:ro     # gcloud ADC (only needed for Gemini)
-      - ${HOST_ROOT:-~}:/host:ro                             # host folder browsable from the web UI (read-only)
+      - ${ADC_HOST_PATH:-./docker/no-adc.json}:/secrets/adc.json:ro   # gcloud ADC (only for Gemini); empty placeholder otherwise
+      - ${HOST_ROOT:-./videos}:/host:ro                      # folder browsable from the web UI (read-only)
     restart: unless-stopped
 
 volumes:

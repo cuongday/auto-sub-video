@@ -8,7 +8,9 @@ dependencies = [
   "python-dotenv>=1.0", "minio>=7.2",
 ]
 [project.optional-dependencies]
-full = ["demucs>=4.0", "funasr>=1.1", "modelscope", "faster-whisper>=1.0", "vieneu"]
+# onnxruntime>=1.24 rejects VieNeu's external weights stored in the Hugging Face blob cache
+# ("External data path escapes model directory"); 1.23.x is the last release that loads them
+full = ["demucs>=4.0", "funasr>=1.1", "modelscope", "faster-whisper>=1.0", "vieneu", "onnxruntime>=1.20,<1.24"]
 dev = ["pytest>=8", "httpx>=0.27"]
 [project.scripts]
 autosub = "autosub.cli:main"

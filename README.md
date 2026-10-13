@@ -19,12 +19,30 @@ docker compose up -d --build   # hoặc: make up
 - Image đầy đủ (Demucs, FunASR, faster-whisper, VieNeu, torch CPU) nặng khoảng 3 GB, build lần đầu mất 10–15 phút. Bản nhẹ chỉ có edge-tts + Gemini/OpenAI: đổi `FULL: "1"` thành `"0"` trong `docker-compose.yml`.
 - **Dữ liệu:** mọi thứ của job (video gốc, âm thanh tách, phụ đề, giọng đọc, thành phẩm) và cache TTS nằm trong bucket MinIO `autosub` (volume `minio-data`). Container app chỉ có thư mục tạm `/work` cho ffmpeg/model đọc ghi, tự xoá khi khởi động lại và giới hạn bằng `AUTOSUB_WORK_MAX_GB`.
 - **Model AI** tải ở lần dùng đầu (~2–5 GB), lưu trong volume `models`.
-- **Video trên máy:** thư mục `HOST_ROOT` (mặc định thư mục home) được gắn **chỉ đọc** vào app. Ở màn "Video mới" có hộp duyệt để chọn video trong đó (ẩn thư mục bắt đầu bằng dấu chấm, không ra ngoài `HOST_ROOT`), và nút "Đặt làm thư mục mặc định" để lần sau mở thẳng thư mục đó. Video được copy vào MinIO khi tạo job, nên xoá file gốc sau đó không ảnh hưởng.
-- **Truy cập:** mặc định app chỉ mở cho máy này (`127.0.0.1:8020`), vì nó duyệt được file trong `HOST_ROOT`. Muốn máy khác trong mạng LAN dùng thì đặt `AUTOSUB_BIND=0.0.0.0` (họ cũng sẽ duyệt được `HOST_ROOT`; nên đặt `HOST_ROOT` hẹp lại, ví dụ `~/Videos`).
+- **Video trên máy:** thư mục `HOST_ROOT` được gắn **chỉ đọc** vào app; mặc định là thư mục `videos/` trong project (bỏ video vào đó là thấy). Ở màn "Video mới" có hộp duyệt để chọn video trong đó (ẩn thư mục bắt đầu bằng dấu chấm, không ra ngoài `HOST_ROOT`), và nút "Đặt làm thư mục mặc định". Video được copy vào MinIO khi tạo job, nên xoá file gốc sau đó không ảnh hưởng.
+- **Truy cập:** mặc định app chỉ mở cho máy này (`127.0.0.1:8020`), vì nó duyệt được file trong `HOST_ROOT`. Muốn máy khác trong mạng LAN dùng thì đặt `AUTOSUB_BIND=0.0.0.0` (họ cũng duyệt được `HOST_ROOT`).
 - **Gemini:** file ADC tại `ADC_HOST_PATH` được gắn chỉ đọc. Chạy `gcloud auth application-default login` trên máy trước.
 - Container chạy với UID/GID 1000; khác thì đặt `UID`/`GID` trong `.env`.
 
 Lệnh hay dùng: `make logs`, `make down` (giữ dữ liệu), `docker compose down -v` (xoá cả dữ liệu MinIO và model).
+
+### Windows / macOS
+
+Chạy được với **Docker Desktop** (Windows dùng nền WSL2), lệnh giống hệt: `docker compose up -d --build`. Chỉ khác đường dẫn trong `.env` — dùng dấu `/`, Docker Desktop tự chuyển:
+
+```dotenv
+# Windows
+HOST_ROOT=C:/Users/<tên>/Videos
+ADC_HOST_PATH=C:/Users/<tên>/AppData/Roaming/gcloud/application_default_credentials.json
+# macOS
+HOST_ROOT=/Users/<tên>/Movies
+ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
+```
+
+- Không dùng Gemini (chỉ OpenAI) thì để trống `ADC_HOST_PATH`.
+- `make` không có sẵn trên Windows: dùng thẳng các lệnh `docker compose ...` tương ứng.
+- Repo ép kết thúc dòng LF (`.gitattributes`) nên clone trên Windows vẫn build đúng.
+- `UID`/`GID` chỉ có ý nghĩa trên Linux; Windows/macOS để mặc định.
 
 ### Cấu hình `.env`
 
@@ -35,11 +53,11 @@ Lệnh hay dùng: `make logs`, `make down` (giữ dữ liệu), `docker compose 
 | `MINIO_CONSOLE_PORT` | `9201` | trang quản trị MinIO, chỉ mở trên máy này |
 | `GOOGLE_CLOUD_PROJECT` | — | bắt buộc khi dùng Gemini |
 | `GOOGLE_LOCATION` | `global` | vùng gọi Vertex AI |
-| `ADC_HOST_PATH` | — | file ADC trên máy |
+| `ADC_HOST_PATH` | (trống) | file ADC trên máy; trống nếu chỉ dùng OpenAI |
 | `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` | |
 | `OPENAI_API_KEY` | — | bắt buộc khi dùng OpenAI |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | |
-| `HOST_ROOT` | thư mục home | thư mục máy được duyệt chọn video trên web (chỉ đọc) |
+| `HOST_ROOT` | `./videos` | thư mục máy được duyệt chọn video trên web (chỉ đọc) |
 | `AUTOSUB_BIND` | `127.0.0.1` | `0.0.0.0` để mở cho mạng LAN |
 | `VIENEU_MODE` | `v3turbo` | |
 | `AUTOSUB_VOICE_WORKERS` | `4` | số bản VieNeu đọc song song (~1,5 GB RAM mỗi bản) |

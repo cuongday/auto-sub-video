@@ -69,6 +69,14 @@ def test_full_flow(client, tmp_path):
     assert client.delete(f"/api/jobs/{jid}").status_code == 200
     assert client.get(f"/api/jobs/{jid}").status_code == 404
 
+def test_portrait_gets_portrait_region(client, tmp_path):
+    src = make_video(tmp_path / "tall.mp4", seconds=2, size=(360, 640))
+    j = client.post("/api/jobs", json={"path": str(src)}).json()
+    assert (j["info"]["width"], j["info"]["height"]) == (360, 640)
+    assert j["settings"]["region"]["y"] == 0.78
+    land = client.post("/api/jobs", json={"path": str(make_video(tmp_path / "w.mp4", seconds=2))}).json()
+    assert land["settings"]["region"]["y"] == 0.8
+
 def test_bad_path(client):
     assert client.post("/api/jobs", json={"path": "/nope.mp4"}).status_code == 400
 

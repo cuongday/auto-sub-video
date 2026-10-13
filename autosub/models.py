@@ -17,6 +17,12 @@ class Region(BaseModel):
             raise ValueError("Vùng che vượt ra ngoài khung hình")
         return self
 
+def default_region(width: int, height: int) -> "Region":
+    """Bottom band; on portrait videos (Douyin/TikTok) subtitles sit higher, above the app UI."""
+    if height > width:
+        return Region(x=0.04, y=0.78, w=0.92, h=0.10)
+    return Region()
+
 class SubStyle(BaseModel):
     font_size: int | None = None          # None -> auto from region height
     color: str = "#FFFFFF"

@@ -1,15 +1,16 @@
 import type { CSSProperties } from "react";
-import type { Cover, Region, SubStyle } from "../types";
+import { ASS_TO_CSS, autoFontSize } from "../geometry";
+import type { Cover, Region, SubStyle, VideoInfo } from "../types";
 
 /** CSS approximation of the final render: covered region + subtitle text centered inside it.
- *  `frameH` is the rendered height in CSS px of a frame whose real height is `videoH`. */
-export default function SubOverlay({ region, cover, coverColor, style, text, frameH, videoH }: {
-  region: Region; cover: Cover; coverColor: string; style: SubStyle; text: string; frameH: number; videoH: number;
+ *  `frameH` is the rendered height in CSS px of the video frame. */
+export default function SubOverlay({ region, cover, coverColor, style, text, frameH, info }: {
+  region: Region; cover: Cover; coverColor: string; style: SubStyle; text: string; frameH: number; info: VideoInfo;
 }) {
-  const scale = videoH ? frameH / videoH : 1;
-  const hPx = region.h * videoH;
-  const fs = (style.font_size ?? Math.max(14, Math.round(hPx / 2.6))) * scale;
-  const outline = (style.outline ?? Math.max(1.5, fs / scale / 18)) * scale;
+  const scale = info.height ? frameH / info.height : 1;
+  const assSize = style.font_size ?? autoFontSize(region, info);
+  const fs = assSize * scale * ASS_TO_CSS;
+  const outline = (style.outline ?? Math.max(1.5, assSize / 18)) * scale;
   const box: CSSProperties = {
     left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.w * 100}%`, height: `${region.h * 100}%`,
   };

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
 from . import checks, config, jobs, media, pipeline, render, store, translate
-from .models import STEPS, Job, JobSettings, Segment, TranslationContext
+from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .timing import slots
 
 QUEUE = jobs.JobQueue()
@@ -97,6 +97,7 @@ class PathIn(BaseModel):
 def _init_job(job: Job) -> Job:
     try:
         job.info = media.probe(job.source)
+        job.settings.region = default_region(job.info.width, job.info.height)
         media.grab_frames(job.source, store.job_dir(job.id) / "frames", job.info.duration)
     except Exception as e:  # noqa: BLE001
         store.delete(job.id)

@@ -8,6 +8,13 @@ def test_region_px_even_and_clamped():
 
 def test_auto_font():
     assert auto_font_size(152) == 58 and auto_font_size(10) == 14
+    assert auto_font_size(152, 1728) == 58                 # wide landscape region: height decides
+    assert auto_font_size(268, 972) == 74                  # narrow portrait region: width decides
+
+def test_portrait_ass_font_limited_by_width():
+    ass = build_ass([Segment(id=1, start=0, end=1, source="a", vi="x")], 1080, 1920,
+                    Region(x=0.05, y=0.8, w=0.9, h=0.14), SubStyle())
+    assert "Be Vietnam Pro SemiBold,74," in ass and "{\\pos(540,1670)}" in ass
 
 def test_ass_color():
     assert ass_color("#FF8000") == "&H000080FF"

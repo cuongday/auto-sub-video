@@ -13,9 +13,15 @@ def region_px(region: Region, W: int, H: int) -> tuple[int, int, int, int]:
     h = max(16, min(_even(region.h * H), (H - y) // 2 * 2))
     return x, y, w, h
 
-def auto_font_size(h_px: int) -> int:
-    """Two lines of text fit the region height."""
-    return max(14, round(h_px / 2.6))
+CHARS_PER_LINE = 24       # Vietnamese subtitle line that should fit the region width
+
+def auto_font_size(h_px: int, w_px: int | None = None) -> int:
+    """Two lines fit the region height and ~CHARS_PER_LINE characters fit its width
+    (the width limit matters for narrow regions, e.g. portrait videos)."""
+    fs = h_px / 2.6
+    if w_px:
+        fs = min(fs, w_px / (CHARS_PER_LINE * 0.55))
+    return max(14, round(fs))
 
 def ass_color(hex_rgb: str, alpha: int = 0) -> str:
     h = hex_rgb.lstrip("#")
@@ -36,7 +42,7 @@ def _escape(text: str) -> str:
 
 def build_ass(segs: list[Segment], W: int, H: int, region: Region, style: SubStyle) -> str:
     x, y, w, h = region_px(region, W, H)
-    fs = style.font_size or auto_font_size(h)
+    fs = style.font_size or auto_font_size(h, w)
     outline = style.outline if style.outline is not None else max(1.5, round(fs / 18, 1))
     shadow = 1 if fs < 40 else 2
     cx, cy = x + w // 2, y + h // 2

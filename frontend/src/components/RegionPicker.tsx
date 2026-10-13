@@ -6,8 +6,8 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const MIN = 0.02;
 
 /** Drag on the image to draw the region; drag inside to move; drag a corner to resize. */
-export default function RegionPicker({ src, region, onChange, children }: {
-  src: string; region: Region; onChange: (r: Region) => void; children?: ReactNode;
+export default function RegionPicker({ src, aspect, region, onChange, children }: {
+  src: string; aspect: number; region: Region; onChange: (r: Region) => void; children?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -42,7 +42,8 @@ export default function RegionPicker({ src, region, onChange, children }: {
   };
   const up = () => { drag.current = null; };
   return (
-    <div className="picker" ref={box} onPointerDown={down("new")} onPointerMove={move} onPointerUp={up}>
+    <div className="picker" ref={box} style={{ aspectRatio: String(aspect) }}
+      onPointerDown={down("new")} onPointerMove={move} onPointerUp={up}>
       <img src={src} alt="Khung hình video" draggable={false} />
       {children}
       <div className="picker-box" onPointerDown={down("move")}

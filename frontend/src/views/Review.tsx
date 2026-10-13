@@ -116,7 +116,7 @@ export default function Review({ job, onRender }: { job: Job; onRender: () => Pr
       <ContextEditor jobId={job.id} busy={busy === "tr-all"} onRetranslate={() => retranslate()} />
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}
       {job.error && <p className="warn">{job.error}</p>}
-      <div className="review-grid">
+      <div className={`review-grid ${info.height > info.width ? "portrait" : ""}`}>
         <div className="card table-card">
           <div className="table-head">
             <strong>{segs.length} câu</strong>
@@ -165,11 +165,12 @@ export default function Review({ job, onRender }: { job: Job; onRender: () => Pr
           </div>
         </div>
         <div className="card player-card">
-          <div className="player">
-            <video ref={video} src={api.file(job.id, "source")} controls onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} />
+          <div className="player" style={{ width: `min(100%, calc(var(--player-h) * ${info.width / info.height}))` }}>
+            <video ref={video} src={api.file(job.id, "source")} controls onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+              style={{ aspectRatio: `${info.width} / ${info.height}` }} />
             <div className="overlay-layer" style={{ height: frameH }}>
               <SubOverlay region={job.settings.region} cover={job.settings.cover} coverColor={job.settings.cover_color}
-                style={job.settings.style} text={activeSeg?.vi ?? ""} frameH={frameH} videoH={info.height} />
+                style={job.settings.style} text={activeSeg?.vi ?? ""} frameH={frameH} info={info} />
             </div>
           </div>
           <p className="muted small">Space: phát/dừng · Ctrl+↑/↓: câu trước/sau · Ctrl+Enter: nghe thử</p>

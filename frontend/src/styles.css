@@ -112,8 +112,18 @@ label.inline input[type="number"] { width: 120px; }
 .or { text-align: center; color: var(--muted); font-size: .85em; margin: 18px 0 10px; }
 
 /* ---------- region picker ---------- */
-.picker { position: relative; user-select: none; touch-action: none; cursor: crosshair; border-radius: 8px; overflow: hidden; background: #000; line-height: 0; }
-.picker img { width: 100%; display: block; }
+/* the frame keeps the video's own aspect ratio; --stage-h caps its height (portrait videos) */
+.setup { --stage-h: calc(100vh - 240px); --preview-h: var(--stage-h); }
+.setup.portrait { --preview-h: 55vh; }
+.stage { display: flex; flex-direction: column; gap: 12px; }
+.stage-frame { margin: 0 auto; }
+.setup.portrait .stage { flex-direction: row; align-items: flex-start; }
+.setup.portrait .stage-frame { flex: 0 0 auto; margin: 0; }
+.setup.portrait .stage-side { flex: 1; min-width: 0; }
+.setup.portrait .thumbs { grid-template-columns: repeat(6, minmax(0, 72px)); }
+.setup.portrait video.preview { margin-left: 0; }
+.picker { position: relative; user-select: none; touch-action: none; cursor: crosshair; border-radius: 8px; overflow: hidden; background: #000; line-height: 0; width: 100%; }
+.picker img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .picker-box { position: absolute; border: 2px solid var(--amber); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35); cursor: move; z-index: 3; }
 .handle { position: absolute; width: 12px; height: 12px; background: var(--amber); border-radius: 2px; }
 .handle.nw { left: -7px; top: -7px; cursor: nwse-resize; } .handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
@@ -121,15 +131,15 @@ label.inline input[type="number"] { width: 120px; }
 .sub-overlay { position: absolute; display: flex; align-items: center; justify-content: center; text-align: center;
   pointer-events: none; z-index: 2; line-height: 1.25; padding: 0 1%; }
 .sub-overlay span { font-family: "Be Vietnam Pro", sans-serif; font-weight: 600; }
-.thumbs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 10px 0 14px; }
+.thumbs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 0 0 14px; }
 .thumbs button { padding: 0; border: 2px solid transparent; border-radius: 6px; overflow: hidden; line-height: 0; background: #000; }
 .thumbs button.on { border-color: var(--amber); }
-.thumbs img { width: 100%; }
+.thumbs img { width: 100%; height: 100%; object-fit: cover; }
 .cover-controls { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; background: transparent; }
 .seg button.on { background: var(--amber); color: var(--amber-ink); font-weight: 600; }
-video.preview, video.result { width: 100%; border-radius: 8px; background: #000; margin-top: 12px; max-height: 70vh; }
+video.preview, video.result { display: block; border-radius: 8px; background: #000; margin: 12px auto 0; }
 
 /* ---------- options ---------- */
 .opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
@@ -184,15 +194,23 @@ table.segs { width: 100%; border-collapse: collapse; }
 .len i { display: block; height: 100%; }
 .len.ok i { background: var(--ok); } .len.warn i { background: var(--warn); } .len.bad i { background: var(--bad); }
 .flag { display: block; font-size: .78em; color: var(--amber); margin-top: 3px; }
-.player-card { position: sticky; top: 16px; }
-.player { position: relative; line-height: 0; }
-.player video { width: 100%; border-radius: 8px; background: #000; }
+.player-card { position: sticky; top: 16px; --player-h: calc(100vh - 150px); }
+.player { position: relative; line-height: 0; margin: 0 auto; }
+.player video { width: 100%; display: block; border-radius: 8px; background: #000; }
+.review-grid.portrait { grid-template-columns: minmax(0, 1fr) auto; }
+.review-grid.portrait .player-card { max-width: calc((100vh - 150px) * 9 / 16 + 40px); }
 .overlay-layer { position: absolute; left: 0; top: 0; right: 0; pointer-events: none; }
 
 @media (max-width: 1100px) {
   .opts { grid-template-columns: 1fr 1fr; }
-  .review-grid { grid-template-columns: 1fr; }
-  .player-card { position: static; order: -1; }
+  .review-grid, .review-grid.portrait { grid-template-columns: 1fr; }
+  .player-card { position: static; order: -1; --player-h: 60vh; }
+  .review-grid.portrait .player-card { max-width: none; }
+}
+@media (max-width: 900px) {
+  .setup.portrait .stage { flex-direction: column; }
+  .setup.portrait .stage-frame { margin: 0 auto; }
+  .setup { --stage-h: 70vh; }
 }
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }

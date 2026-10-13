@@ -13,7 +13,10 @@ export default function Result({ job, onEdit, onSetup }: { job: Job; onEdit: () 
         </div>
       </header>
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}
-      <video className="result" src={api.file(job.id, "output.mp4", bust)} controls />
+      {job.info && (
+        <video className="result" src={api.file(job.id, "output.mp4", bust)} controls
+          style={{ aspectRatio: `${job.info.width} / ${job.info.height}`, width: `min(100%, calc(70vh * ${job.info.width / job.info.height}))` }} />
+      )}
       <div className="downloads">
         <a className="primary btn" href={api.download(job.id, "output.mp4")}>Tải video (.mp4)</a>
         <a className="ghost btn" href={api.download(job.id, "subs.srt")}>Phụ đề .srt</a>

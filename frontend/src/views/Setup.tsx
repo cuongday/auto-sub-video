@@ -4,6 +4,7 @@ import CoverControls from "../components/CoverControls";
 import OptionsForm from "../components/OptionsForm";
 import RegionPicker from "../components/RegionPicker";
 import SubOverlay from "../components/SubOverlay";
+import { autoFontSize, isPortrait } from "../geometry";
 import { fmtDur } from "../labels";
 import type { Job, Options, Settings } from "../types";
 
@@ -44,10 +45,11 @@ export default function Setup({ job, options, onJob, onRun }: {
   };
   const info = job.info!;
   const t = (info.duration * (frame + 0.5)) / Math.max(1, job.frames.length);
-  const autoFont = Math.max(14, Math.round((s.region.h * info.height) / 2.6));
+  const autoFont = autoFontSize(s.region, info);
+  const portrait = isPortrait(info);
 
   return (
-    <div className="setup">
+    <div className={`setup ${portrait ? "portrait" : "landscape"}`}>
       <section className="card">
         <header className="card-head">
           <div>
@@ -56,27 +58,36 @@ export default function Setup({ job, options, onJob, onRun }: {
           </div>
           <span className="meta">{info.width}×{info.height} · {fmtDur(info.duration)}{info.has_audio ? "" : " · không có tiếng"}</span>
         </header>
-        <div ref={imgWrap}>
-          <RegionPicker src={api.file(job.id, `frames/${job.frames[frame]}`)} region={s.region} onChange={(region) => set({ region })}>
-            <SubOverlay region={s.region} cover={s.cover} coverColor={s.cover_color} style={s.style} text={SAMPLE}
-              frameH={frameH} videoH={info.height} />
-          </RegionPicker>
+        <div className="stage">
+          <div className="stage-frame" ref={imgWrap} style={{ width: `min(100%, calc(var(--stage-h) * ${info.width / info.height}))` }}>
+            <RegionPicker src={api.file(job.id, `frames/${job.frames[frame]}`)} aspect={info.width / info.height}
+              region={s.region} onChange={(region) => set({ region })}>
+              <SubOverlay region={s.region} cover={s.cover} coverColor={s.cover_color} style={s.style} text={SAMPLE}
+                frameH={frameH} info={info} />
+            </RegionPicker>
+          </div>
+          <div className="stage-side">
+            <div className="thumbs">
+              {job.frames.map((f, i) => (
+                <button key={f} className={i === frame ? "on" : ""} onClick={() => setFrame(i)} aria-label={`Khung hình ${i + 1}`}
+                  style={{ aspectRatio: `${info.width} / ${info.height}` }}>
+                  <img src={api.file(job.id, `frames/${f}`)} alt="" />
+                </button>
+              ))}
+            </div>
+            <CoverControls s={s} set={set} autoFont={autoFont} />
+            <div className="row">
+              <button className="ghost" disabled={!!busy} onClick={() => act("preview", async () => {
+                await flush(); await api.previewRender(job.id, Math.max(0, t - 2.5)); setPreviewV(Date.now());
+              })}>{busy === "preview" ? "Đang render thử…" : "Render thử 5 giây"}</button>
+              <span className="muted small">Kết quả ffmpeg thật tại khung hình đang chọn.</span>
+            </div>
+            {previewV > 0 && (
+              <video className="preview" src={api.file(job.id, "preview.mp4", previewV)} controls autoPlay muted
+                style={{ aspectRatio: `${info.width} / ${info.height}`, width: `min(100%, calc(var(--preview-h) * ${info.width / info.height}))` }} />
+            )}
+          </div>
         </div>
-        <div className="thumbs">
-          {job.frames.map((f, i) => (
-            <button key={f} className={i === frame ? "on" : ""} onClick={() => setFrame(i)} aria-label={`Khung hình ${i + 1}`}>
-              <img src={api.file(job.id, `frames/${f}`)} alt="" />
-            </button>
-          ))}
-        </div>
-        <CoverControls s={s} set={set} autoFont={autoFont} />
-        <div className="row">
-          <button className="ghost" disabled={!!busy} onClick={() => act("preview", async () => {
-            await flush(); await api.previewRender(job.id, Math.max(0, t - 2.5)); setPreviewV(Date.now());
-          })}>{busy === "preview" ? "Đang render thử…" : "Render thử 5 giây"}</button>
-          <span className="muted small">Xem thử chính xác kết quả ffmpeg tại khung hình đang chọn.</span>
-        </div>
-        {previewV > 0 && <video className="preview" src={api.file(job.id, "preview.mp4", previewV)} controls autoPlay muted />}
       </section>
 
       <section className="card">

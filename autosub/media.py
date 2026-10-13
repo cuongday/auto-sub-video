@@ -79,3 +79,8 @@ def atempo(in_wav, out_wav: Path, factor: float) -> Path:
     chain.append(f"atempo={f:.5f}")
     proc.run_ffmpeg(["-i", str(in_wav), "-filter:a", ",".join(chain), "-c:a", "pcm_s16le", str(t)])
     return _finish(t, out_wav)
+
+def probe_audio_duration(path) -> float:
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                       capture_output=True, text=True)
+    return float(r.stdout.strip() or 0)

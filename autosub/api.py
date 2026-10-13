@@ -46,7 +46,19 @@ def _view(job: Job) -> dict:
     d["frames"] = sorted(p.name for p in (store.job_dir(job.id) / "frames").glob("f*.jpg"))
     d["files"] = {n: (store.job_dir(job.id) / n).exists()
                   for n in ("output.mp4", "subs.srt", "subs.ass", "voice.wav", "preview.mp4")}
+    d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job)
     return d
+
+def _stale_from(job: Job) -> str | None:
+    """First step whose inputs changed since it last ran (None: everything is up to date)."""
+    ctx = pipeline.Ctx(job=job, dir=store.job_dir(job.id), engines=pipeline.Engines())
+    for step in STEPS:
+        try:
+            if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step)):
+                return step
+        except Exception:  # noqa: BLE001
+            return step
+    return None
 
 # ------------------------------------------------------------------ meta
 
@@ -291,7 +303,7 @@ async def preview_render(jid: str, body: PreviewIn):
         raise HTTPException(500, str(e))
     return {"ok": True}
 
-_FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|ref\.wav)$")
+_FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|ref\.wav|log\.txt)$")
 
 @app.get("/api/jobs/{jid}/files/{name:path}")
 def get_file(jid: str, name: str, download: bool = False):

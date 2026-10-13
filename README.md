@@ -38,9 +38,28 @@ Model tự tải ở lần dùng đầu: Demucs và faster-whisper từ Hugging 
 | `AUTOSUB_FFMPEG_PRESET` | `veryfast` | preset x264 |
 | `AUTOSUB_FFMPEG_CRF` | `20` | nhỏ hơn = nét hơn |
 | `AUTOSUB_PROJECTS_DIR` | `projects/` | |
+| `AUTOSUB_CACHE_DIR` | `.cache/` | cache TTS dùng chung |
 | `AUTOSUB_PORT` | `8020` | |
 
 Xác thực Gemini: `gcloud auth application-default login`, và bật Vertex AI API cho project.
+
+## Chạy bằng Docker
+
+Không cần cài Python/Node/ffmpeg trên máy, chỉ cần Docker (có Compose v2).
+
+```bash
+cp .env.example .env        # điền GOOGLE_CLOUD_PROJECT, ADC_HOST_PATH (hoặc OPENAI_API_KEY), VIDEOS_DIR
+docker compose up -d --build
+# -> http://localhost:8020
+```
+
+- Image đầy đủ (Demucs, FunASR, faster-whisper, VieNeu, torch CPU) nặng vài GB, build lần đầu mất khoảng 10–15 phút. Bản nhẹ chỉ có edge-tts + Gemini/OpenAI: đổi `FULL: "1"` thành `"0"` trong `docker-compose.yml`.
+- Dữ liệu (job, cache TTS, model tải về) nằm trong volume `autosub-data`, giữ nguyên khi build lại image. Model tải ở lần chạy đầu (~5 GB).
+- `VIDEOS_DIR` (mặc định `~/Videos`) được gắn vào container ở `/videos`: trong ô "dùng file có sẵn trên máy" nhập `/videos/<tên file>`. Kéo thả upload vẫn dùng bình thường.
+- Gemini: file ADC tại `ADC_HOST_PATH` được gắn chỉ đọc vào container. Chạy `gcloud auth application-default login` trên máy trước.
+- Container chạy với UID/GID 1000; nếu user của bạn khác thì đặt `UID`/`GID` trong `.env`.
+
+Lệnh hay dùng: `docker compose logs -f`, `docker compose down` (giữ dữ liệu), `docker compose down -v` (xoá cả dữ liệu và model).
 
 ## Sử dụng
 

@@ -25,6 +25,8 @@ def build_filter(box, cover: str, color: str, ass_name: str = "subs.ass", fonts_
 def _link_fonts(work_dir: Path) -> None:
     # ffmpeg runs inside the job dir so filter paths stay relative (no filtergraph escaping)
     link = work_dir / "fonts"
+    if link.is_symlink() and not link.exists():
+        link.unlink()                    # dangling: job dir moved to another machine/container
     if not link.exists():
         try:
             link.symlink_to(config.FONTS_DIR, target_is_directory=True)

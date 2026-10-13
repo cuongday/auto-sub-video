@@ -1,0 +1,27 @@
+services:
+  auto-sub:
+    build:
+      context: .
+      args:
+        FULL: "1"            # 0 = lightweight image (edge-tts + Gemini/OpenAI only, no Demucs/ASR/VieNeu)
+    image: auto-sub:latest
+    container_name: auto-sub
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${AUTOSUB_PORT:-8020}:8020"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # the ADC file is mounted below; inside the container both point at the mounted copy
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
+      ADC_HOST_PATH: /secrets/adc.json
+      AUTOSUB_PORT: "8020"
+    volumes:
+      - autosub-data:/data                                   # jobs, TTS cache, downloaded models
+      - ${ADC_HOST_PATH:-/dev/null}:/secrets/adc.json:ro     # gcloud ADC (only needed for Gemini)
+      - ${VIDEOS_DIR:-~/Videos}:/videos                      # local videos: open them as /videos/<file>
+    restart: unless-stopped
+
+volumes:
+  autosub-data:

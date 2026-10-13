@@ -13,7 +13,7 @@ if ADC_PATH and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ADC_PATH
 
 PROJECTS_DIR = Path(os.environ.get("AUTOSUB_PROJECTS_DIR", ROOT / "projects")).resolve()
-CACHE_DIR = ROOT / ".cache"
+CACHE_DIR = Path(os.environ.get("AUTOSUB_CACHE_DIR", ROOT / ".cache")).resolve()
 FONTS_DIR = ROOT / "fonts"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 PORT = int(os.environ.get("AUTOSUB_PORT", "8020"))

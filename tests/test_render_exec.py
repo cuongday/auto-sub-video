@@ -32,3 +32,9 @@ def test_preview(tmp_path):
     work = tmp_path / "job"; work.mkdir()
     out = render.preview(src, work / "preview.mp4", info, JobSettings(cover="solid"), t=10, seconds=2)
     assert abs(media.probe(out).duration - 2) < 0.15
+
+def test_dangling_fonts_link_is_replaced(tmp_path):
+    work = tmp_path / "job"; work.mkdir()
+    (work / "fonts").symlink_to(tmp_path / "gone", target_is_directory=True)
+    render._link_fonts(work)
+    assert (work / "fonts" / "BeVietnamPro-SemiBold.ttf").exists()

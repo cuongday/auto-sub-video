@@ -172,6 +172,13 @@ def _fit_all(ctx: Ctx, segs: list[Segment], only: set[int] | None = None) -> lis
     with ThreadPoolExecutor(max_workers=workers) as ex:
         results = list(ex.map(one, todo))
     ctx.check()
+    # second chance, one at a time, for lines that failed under parallel load
+    failed = {sid for sid, _, err in results if err}
+    if failed:
+        ctx.log(f"Đọc lại {len(failed)} câu bị lỗi")
+        retry = {sid: one(item) for item in todo if (sid := item[0].id) in failed}
+        results = [retry.get(sid, (sid, r, err)) for sid, r, err in results]
+    ctx.check()
     by_id = {s.id: s for s in segs}
     for sid, r, err in results:
         s = by_id[sid]

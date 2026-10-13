@@ -39,3 +39,27 @@ def test_missing_credentials(monkeypatch):
         get_llm("gemini").generate_json("hi", {"type": "object", "properties": {}})
     with pytest.raises(LLMError):
         get_llm("claude")
+
+def test_gemini_disables_thinking_and_falls_back(monkeypatch):
+    from google.genai import errors
+    from autosub import config
+    from autosub.llm.gemini import GeminiLLM, MIN_THINKING
+    monkeypatch.setattr(config, "GCP_PROJECT", "p")
+    budgets = []
+
+    class Resp:
+        text = '{"ok": true}'
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            budgets.append(config.thinking_config.thinking_budget)
+            if config.thinking_config.thinking_budget == 0 and model.endswith("pro"):
+                raise errors.ClientError(400, {"error": {"code": 400, "message": "does not support setting thinking_budget to 0",
+                                                         "status": "INVALID_ARGUMENT"}})
+            return Resp()
+
+    for model in ("gemini-2.5-flash", "gemini-2.5-pro"):
+        llm = GeminiLLM(model)
+        llm._client = type("C", (), {"models": Models()})()
+        assert llm.generate_json("x", {"type": "object", "properties": {}}) == {"ok": True}
+    assert budgets == [0, 0, MIN_THINKING]

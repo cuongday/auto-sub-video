@@ -1,8 +1,11 @@
 import asyncio
+import random
 import time
 from pathlib import Path
 from .. import config
 from .base import TTSError
+
+ATTEMPTS = 5
 
 class EdgeTTS:
     name = "edge"
@@ -14,7 +17,8 @@ class EdgeTTS:
         pct = round((rate - 1.0) * 100)
         mp3 = Path(out).with_suffix(".mp3")
         last: Exception | None = None
-        for attempt in range(3):
+        # the service intermittently answers NoAudioReceived under parallel load: back off and retry
+        for attempt in range(ATTEMPTS):
             try:
                 asyncio.run(edge_tts.Communicate(text, voice, rate=f"{pct:+d}%").save(str(mp3)))
                 if mp3.exists() and mp3.stat().st_size > 0:
@@ -22,7 +26,8 @@ class EdgeTTS:
                 last = TTSError("edge-tts không trả về âm thanh")
             except Exception as e:  # noqa: BLE001  (network errors, NoAudioReceived...)
                 last = e
-            time.sleep(1.5 * (attempt + 1))
+            if attempt < ATTEMPTS - 1:
+                time.sleep(2 ** attempt + random.uniform(0, 1))
         raise TTSError(f"edge-tts lỗi: {last}")
 
     def voices(self) -> list[dict]:

@@ -84,11 +84,16 @@ docker compose exec auto-sub autosub run /host/Videos/clip.mp4 --lang zh --tts e
 
 ## Phát triển
 
+Môi trường Python quản lý bằng [uv](https://docs.astral.sh/uv/) (`pyproject.toml` + `uv.lock` khoá đúng phiên bản; torch lấy bản CPU). Docker image cũng cài từ cùng `uv.lock`.
+
 ```bash
-make setup        # .venv + npm, chỉ để chạy test và build giao diện
+make setup        # uv sync (.venv nhẹ) + npm — đủ để chạy test và build giao diện
+make setup-full   # uv sync --extra full: thêm torch CPU, Demucs, FunASR, faster-whisper, VieNeu
 make test         # test nhanh: không mạng, không model, kho lưu trữ giả lập trong bộ nhớ
 make test-minio   # test lớp lưu trữ với MinIO thật (tự bật container tạm, cần Docker)
-make test-slow    # Demucs, FunASR, faster-whisper thật
+make test-slow    # Demucs, FunASR, faster-whisper thật (cần setup-full)
 ```
+
+Thêm / nâng thư viện: `uv add <gói>` (hoặc `uv add --optional full <gói>`), rồi commit cả `pyproject.toml` và `uv.lock`.
 
 Cấu trúc: `autosub/` (lõi: `pipeline.py` điều phối các bước; `storage.py` + `store.py` đọc ghi MinIO; `workdir.py` thư mục tạm; `asr/`, `llm/`, `tts/` là engine cắm được; `api.py` FastAPI), `frontend/` (React + Vite), `fonts/` (Be Vietnam Pro, giấy phép OFL).

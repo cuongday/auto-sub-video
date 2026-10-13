@@ -1,4 +1,4 @@
-.PHONY: setup up down logs build test test-slow test-minio
+.PHONY: setup setup-full up down logs build test test-slow test-minio
 # The app runs only through docker compose (it needs the MinIO service).
 up:
 	docker compose up -d --build
@@ -9,12 +9,15 @@ logs:
 build:
 	cd frontend && npm run build
 # local env for development and tests only
+# needs uv: https://docs.astral.sh/uv/getting-started/installation/
 setup:
-	python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+	uv sync
 	cd frontend && npm install
+setup-full:
+	uv sync --extra full
 test:
-	.venv/bin/pytest -q
+	uv run pytest -q
 test-slow:
-	.venv/bin/pytest -q -m slow
+	uv run pytest -q -m slow
 test-minio:
-	.venv/bin/pytest -q -m minio
+	uv run pytest -q -m minio

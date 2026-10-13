@@ -14,3 +14,4 @@ frontend/dist
 tests
 videos
 docker
+.venv.pip-backup

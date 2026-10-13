@@ -12,8 +12,14 @@ ADC_PATH = os.environ.get("ADC_HOST_PATH")
 if ADC_PATH and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ADC_PATH
 
-PROJECTS_DIR = Path(os.environ.get("AUTOSUB_PROJECTS_DIR", ROOT / "projects")).resolve()
-CACHE_DIR = Path(os.environ.get("AUTOSUB_CACHE_DIR", ROOT / ".cache")).resolve()
+# All job data lives in MinIO; WORK_DIR is only a local scratch cache that processing tools read/write.
+MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "")
+MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "")
+MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "")
+MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "autosub")
+MINIO_SECURE = os.environ.get("MINIO_SECURE", "0") == "1"
+WORK_DIR = Path(os.environ.get("AUTOSUB_WORK_DIR", "/work")).resolve()
+WORK_MAX_BYTES = int(float(os.environ.get("AUTOSUB_WORK_MAX_GB", "20")) * (1 << 30))
 FONTS_DIR = ROOT / "fonts"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 PORT = int(os.environ.get("AUTOSUB_PORT", "8020"))

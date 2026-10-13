@@ -1,4 +1,22 @@
 services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: auto-sub-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env (8+ chars)}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9201}:9001"      # web console, this machine only
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
   auto-sub:
     build:
       context: .
@@ -7,21 +25,29 @@ services:
     image: auto-sub:latest
     container_name: auto-sub
     user: "${UID:-1000}:${GID:-1000}"
+    depends_on:
+      minio:
+        condition: service_healthy
     ports:
       - "${AUTOSUB_PORT:-8020}:8020"
     env_file:
       - path: .env
         required: false
     environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET:-autosub}
       # the ADC file is mounted below; inside the container both point at the mounted copy
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
       ADC_HOST_PATH: /secrets/adc.json
       AUTOSUB_PORT: "8020"
+    tmpfs:
+      - /tmp
     volumes:
-      - autosub-data:/data                                   # jobs, TTS cache, downloaded models
+      - models:/data/models                                  # downloaded AI models (not job data)
       - ${ADC_HOST_PATH:-/dev/null}:/secrets/adc.json:ro     # gcloud ADC (only needed for Gemini)
-      - ${VIDEOS_DIR:-~/Videos}:/videos                      # local videos: open them as /videos/<file>
+      - ${VIDEOS_DIR:-~/Videos}:/videos:ro                   # local videos: open them as /videos/<file>
     restart: unless-stopped
 
 volumes:
-  autosub-data:
+  minio-data:
+  models:

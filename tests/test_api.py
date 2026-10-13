@@ -77,6 +77,28 @@ def test_portrait_gets_portrait_region(client, tmp_path):
     land = client.post("/api/jobs", json={"path": str(make_video(tmp_path / "w.mp4", seconds=2))}).json()
     assert land["settings"]["region"]["y"] == 0.8
 
+def test_file_range_requests(client, tmp_path):
+    src = make_video(tmp_path / "r.mp4", seconds=2)
+    jid = client.post("/api/jobs", json={"path": str(src)}).json()["id"]
+    full = client.get(f"/api/jobs/{jid}/files/source")
+    assert full.status_code == 200 and full.content == src.read_bytes()
+    assert full.headers["accept-ranges"] == "bytes"
+    part = client.get(f"/api/jobs/{jid}/files/source", headers={"Range": "bytes=100-199"})
+    assert part.status_code == 206 and part.content == src.read_bytes()[100:200]
+    assert part.headers["content-range"] == f"bytes 100-199/{src.stat().st_size}"
+    tail = client.get(f"/api/jobs/{jid}/files/source", headers={"Range": "bytes=-50"})
+    assert tail.status_code == 206 and tail.content == src.read_bytes()[-50:]
+    assert client.get(f"/api/jobs/{jid}/files/source", headers={"Range": "bytes=999999999-"}).status_code == 416
+
+def test_storage_down_returns_503(client, monkeypatch):
+    from autosub import storage
+    class Down(storage.MemoryStore):
+        def list(self, prefix):
+            raise storage.StorageError("connection refused")
+    storage.set_store(Down())
+    r = client.get("/api/jobs")
+    assert r.status_code == 503 and "MinIO" in r.json()["detail"]
+
 def test_bad_path(client):
     assert client.post("/api/jobs", json={"path": "/nope.mp4"}).status_code == 400
 

@@ -1,8 +1,8 @@
-"""Command line: autosub run VIDEO --lang zh --region 0.05,0.8,0.9,0.14 --out out.mp4"""
+"""Command line (inside the container): autosub run /videos/clip.mp4 --lang zh --out /videos/clip.vi.mp4"""
 import argparse
 import shutil
 import sys
-from . import pipeline, store
+from . import media, pipeline, store, workdir
 from .models import JobSettings, Region
 
 def main(argv=None):
@@ -26,12 +26,16 @@ def main(argv=None):
     from pathlib import Path
     src = Path(a.video).expanduser().resolve()
     x, y, w, h = (float(v) for v in a.region.split(","))
-    job = store.create(src.name, str(src))
+    job = store.create(src.name, "source" + src.suffix.lower())
+    w = workdir.WorkDir(job.id)
+    shutil.copyfile(src, w.local(job.source))
+    w.push(job.source)
+    job.info = media.probe(src)
     job.settings = JobSettings(lang=a.lang, asr_model=a.asr_model, region=Region(x=x, y=y, w=w, h=h), cover=a.cover,
                                llm_provider=a.llm, llm_model=a.llm_model, translator_notes=a.notes,
                                tts_engine=a.tts, tts_voice=a.voice, bg_volume_db=a.bg_db)
     store.save(job)
-    print(f"Job {job.id} -> {store.job_dir(job.id)}")
+    print(f"Job {job.id} -> MinIO {workdir.job_prefix(job.id)}")
     last = {"step": None}
 
     def progress(step, pct):
@@ -44,10 +48,11 @@ def main(argv=None):
     except Exception as e:  # noqa: BLE001
         print(f"\nLỗi: {e}", file=sys.stderr)
         return 1
-    out = store.job_dir(job.id) / "output.mp4"
+    print(f"\nXong: {workdir.job_prefix(job.id)}output.mp4")
     if a.out:
-        shutil.copyfile(out, a.out); out = Path(a.out)
-    print(f"\nXong: {out}")
+        w.fetch("output.mp4")
+        shutil.copyfile(w.local("output.mp4"), a.out)
+        print(f"Đã lưu: {a.out}")
     return 0
 
 if __name__ == "__main__":

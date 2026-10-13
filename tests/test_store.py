@@ -11,12 +11,12 @@ def test_list_newest_first():
     a = store.create("a", "/a"); time.sleep(0.01); b = store.create("b", "/b")
     assert [j.id for j in store.list_jobs()] == [b.id, a.id]
 
-def test_write_json_atomic(tmp_path):
-    p = tmp_path / "x.json"
-    store.write_json(p, {"a": 1})
-    assert store.read_json(p) == {"a": 1}
-    assert not list(tmp_path.glob("*.tmp"))
-    assert store.read_json(tmp_path / "missing.json", default=[]) == []
+def test_json_documents():
+    j = store.create("a")
+    store.save_json(j.id, "x.json", {"a": 1})
+    assert store.load_json(j.id, "x.json") == {"a": 1}
+    assert store.load_json(j.id, "missing.json", default=[]) == []
+    assert "x.json" in store.names(j.id)
 
 def test_segments_context_roundtrip():
     j = store.create("a", "/a")
@@ -34,7 +34,12 @@ def test_presets():
     store.delete_preset("phim")
     assert store.load_presets() == {}
 
-def test_delete():
+def test_delete(_memory_store):
     j = store.create("a", "/a")
+    store.save_json(j.id, "x.json", 1)
     store.delete(j.id)
-    assert not store.job_dir(j.id).exists()
+    assert _memory_store.list(f"jobs/{j.id}/") == []
+    try:
+        store.load(j.id); raise AssertionError("still there")
+    except KeyError:
+        pass

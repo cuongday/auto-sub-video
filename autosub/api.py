@@ -2,15 +2,17 @@ import asyncio
 import json
 import queue
 import re
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import checks, config, jobs, media, pipeline, render, store, translate
+from . import checks, config, jobs, media, pipeline, render, store, translate, workdir
+from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .timing import slots
 
@@ -18,7 +20,12 @@ QUEUE = jobs.JobQueue()
 
 @asynccontextmanager
 async def lifespan(_app):
-    jobs.reset_interrupted()
+    workdir.clear_all()
+    try:
+        await asyncio.to_thread(get_store().ensure_bucket)  # type: ignore[attr-defined]
+        jobs.reset_interrupted()
+    except (StorageError, AttributeError) as e:
+        print(f"[auto-sub] storage not ready at startup: {e}", flush=True)
     QUEUE.start()
     yield
 
@@ -42,23 +49,31 @@ def _idle(job: Job) -> None:
         raise HTTPException(409, "Job đang chạy hoặc đang chờ trong hàng đợi")
 
 def _view(job: Job) -> dict:
+    present = store.names(job.id)
     d = job.model_dump(mode="json")
-    d["frames"] = sorted(p.name for p in (store.job_dir(job.id) / "frames").glob("f*.jpg"))
-    d["files"] = {n: (store.job_dir(job.id) / n).exists()
-                  for n in ("output.mp4", "subs.srt", "subs.ass", "voice.wav", "preview.mp4")}
-    d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job)
+    d["frames"] = sorted(n.split("/", 1)[1] for n in present if n.startswith("frames/f") and n.endswith(".jpg"))
+    d["files"] = {n: n in present for n in ("output.mp4", "subs.srt", "subs.ass", "voice.wav", "preview.mp4")}
+    d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job, present)
     return d
 
-def _stale_from(job: Job) -> str | None:
+def _stale_from(job: Job, present: set[str]) -> str | None:
     """First step whose inputs changed since it last ran (None: everything is up to date)."""
-    ctx = pipeline.Ctx(job=job, dir=store.job_dir(job.id), engines=pipeline.Engines())
+    ctx = pipeline.Ctx(job=job, work=_LazyWork(job.id), engines=pipeline.Engines())
     for step in STEPS:
         try:
-            if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step)):
+            if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step), present):
                 return step
         except Exception:  # noqa: BLE001
             return step
     return None
+
+class _LazyWork:
+    """Enough of WorkDir for step hashes (they only stat objects) without creating a scratch dir."""
+    def __init__(self, jid: str):
+        self.jid, self.store = jid, get_store()
+
+    def key(self, name: str) -> str:
+        return workdir.job_prefix(self.jid) + name
 
 # ------------------------------------------------------------------ meta
 
@@ -97,8 +112,7 @@ async def voice_sample(body: VoiceSampleIn):
     engine = _engines().tts(body.engine)
     text = (body.text or VOICE_SAMPLE).strip()[:300]
     try:
-        path = await asyncio.to_thread(cached_synthesize, engine, text, body.voice, round(body.rate, 3), None,
-                                       config.CACHE_DIR / "tts")
+        path = await asyncio.to_thread(cached_synthesize, engine, text, body.voice, round(body.rate, 3), None)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"TTS lỗi: {e}")
     media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
@@ -116,14 +130,21 @@ def tts_voices(engine: Literal["edge", "vieneu"]):
 class PathIn(BaseModel):
     path: str
 
-def _init_job(job: Job) -> Job:
+def _init_job(job: Job, local_video: Path) -> Job:
+    """Probe the video, store it as jobs/<id>/<source> and grab the setup frames."""
+    w = workdir.WorkDir(job.id)
     try:
-        job.info = media.probe(job.source)
+        job.info = media.probe(local_video)
         job.settings.region = default_region(job.info.width, job.info.height)
-        media.grab_frames(job.source, store.job_dir(job.id) / "frames", job.info.duration)
+        dest = w.local(job.source)
+        if local_video.resolve() != dest.resolve():
+            shutil.copyfile(local_video, dest)
+        w.push(job.source)
+        media.grab_frames(dest, w.local("frames"), job.info.duration)
+        w.push("frames")
     except Exception as e:  # noqa: BLE001
         store.delete(job.id)
-        raise HTTPException(400, str(e))
+        raise HTTPException(503 if isinstance(e, StorageError) else 400, str(e))
     job.steps["probe"].status = "done"
     store.save(job)
     return job
@@ -139,19 +160,21 @@ async def create_job(request: Request):
         name = Path(up.filename or "video.mp4").name
         if Path(name).suffix.lower() not in VIDEO_EXT:
             raise HTTPException(400, "Định dạng video không hỗ trợ")
-        job = store.create(name, "", uploaded=True)
-        dest = store.job_dir(job.id) / ("source" + Path(name).suffix.lower())
+        job = store.create(name, "source" + Path(name).suffix.lower(), uploaded=True)
+        dest = workdir.WorkDir(job.id).local(job.source)
         with dest.open("wb") as f:
             while chunk := await up.read(8 << 20):
                 f.write(chunk)
-        job.source = str(dest)
     else:
         body = PathIn.model_validate(await request.json())
         p = Path(body.path).expanduser()
         if not p.is_file():
             raise HTTPException(400, f"Không tìm thấy file: {p}")
-        job = store.create(p.name, str(p.resolve()))
-    job = await asyncio.to_thread(_init_job, job)
+        if p.suffix.lower() not in VIDEO_EXT:
+            raise HTTPException(400, "Định dạng video không hỗ trợ")
+        job = store.create(p.name, "source" + p.suffix.lower())
+        dest = p
+    job = await asyncio.to_thread(_init_job, job, dest)
     return _view(job)
 
 @app.get("/api/jobs")
@@ -185,11 +208,15 @@ async def upload_ref(jid: str, request: Request):
     up = form.get("file")
     if up is None:
         raise HTTPException(400, "Thiếu file")
-    raw = store.job_dir(jid) / ("ref_upload" + Path(up.filename or "a.wav").suffix.lower())
+    w = workdir.WorkDir(jid)
+    raw = w.local("ref_upload" + Path(up.filename or "a.wav").suffix.lower())
     raw.write_bytes(await up.read())
-    out = store.job_dir(jid) / "ref.wav"
+    out = w.local("ref.wav")
     try:
         await asyncio.to_thread(media.to_16k_mono, raw, out)
+        await asyncio.to_thread(w.push, "ref.wav")
+    except StorageError as e:
+        raise HTTPException(503, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"File giọng mẫu không hợp lệ: {e}")
     finally:
@@ -219,9 +246,10 @@ def run_job(jid: str, body: RunIn):
 def _would_rerun_text(job: Job, from_step: str | None) -> bool:
     if from_step and STEPS.index(from_step) <= STEPS.index("translate"):
         return True
-    ctx = pipeline.Ctx(job=job, dir=store.job_dir(job.id), engines=_engines())
+    ctx = pipeline.Ctx(job=job, work=_LazyWork(job.id), engines=_engines())
+    present = store.names(job.id)
     for step in STEPS[:STEPS.index("translate") + 1]:
-        if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step)):
+        if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step), present):
             return True
     return False
 
@@ -318,30 +346,68 @@ class PreviewIn(BaseModel):
 @app.post("/api/jobs/{jid}/preview-render")
 async def preview_render(jid: str, body: PreviewIn):
     job = _get(jid)
-    out = store.job_dir(jid) / "preview.mp4"
+
+    def run():
+        with workdir.pinned(jid):
+            w = workdir.WorkDir(jid)
+            src = w.fetch(job.source)
+            if src is None:
+                raise RuntimeError("Không tìm thấy video gốc trong kho lưu trữ")
+            render.preview(src, w.local("preview.mp4"), job.info, job.settings, body.t, store.load_segments(jid))
+            w.push("preview.mp4")
+
     try:
-        await asyncio.to_thread(render.preview, job.source, out, job.info, job.settings, body.t,
-                                store.load_segments(jid))
+        await asyncio.to_thread(run)
+    except StorageError as e:
+        raise HTTPException(503, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, str(e))
     return {"ok": True}
 
 _FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|ref\.wav|log\.txt)$")
 
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
+
 @app.get("/api/jobs/{jid}/files/{name:path}")
-def get_file(jid: str, name: str, download: bool = False):
+def get_file(jid: str, name: str, request: Request, download: bool = False):
+    """Stream an object from storage; supports Range so the browser can seek in videos."""
     job = _get(jid)
     if not _FILES.match(name):
         raise HTTPException(404, "Không có file")
-    path = Path(job.source) if name == "source" else store.job_dir(jid) / name
-    if not path.is_file():
+    obj = job.source if name == "source" else name
+    st = get_store()
+    k = workdir.job_prefix(jid) + obj
+    try:
+        info = st.stat(k)
+    except StorageError as e:
+        raise HTTPException(503, str(e))
+    if info is None:
         raise HTTPException(404, "Không có file")
-    headers = {"Cache-Control": "no-cache"}
+    size = info.size
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-cache", "ETag": f'"{info.etag}"'}
     if download:
         stem = Path(job.name).stem
-        return FileResponse(path, filename=f"{stem}.vi{path.suffix}" if name != "voice.wav" else f"{stem}.voice.wav",
-                            headers=headers)
-    return FileResponse(path, headers=headers)
+        fname = f"{stem}.voice.wav" if name == "voice.wav" else f"{stem}.vi{Path(obj).suffix}"
+        from urllib.parse import quote
+        headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(fname)}"
+    ctype = content_type(obj)
+    rng = request.headers.get("range")
+    m = _RANGE.match(rng.strip()) if rng else None
+    if m and (m.group(1) or m.group(2)):
+        if m.group(1):
+            start = int(m.group(1))
+            end = min(int(m.group(2)) if m.group(2) else size - 1, size - 1)
+        else:                                  # suffix range: last N bytes
+            start, end = max(0, size - int(m.group(2))), size - 1
+        if start >= size or start > end:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+        headers.update({"Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(end - start + 1)})
+        return StreamingResponse(st.open_range(k, start, end - start + 1), status_code=206, media_type=ctype,
+                                 headers=headers)
+    if size == 0:
+        return Response(b"", media_type=ctype, headers=headers)
+    headers["Content-Length"] = str(size)
+    return StreamingResponse(st.open_range(k, 0, None), media_type=ctype, headers=headers)
 
 # ------------------------------------------------------------------ presets
 
@@ -388,6 +454,10 @@ async def events():
 @app.exception_handler(pipeline.NeedsConfirm)
 async def _needs_confirm(_req, exc):
     return JSONResponse({"detail": f"NEEDS_CONFIRM: {exc}"}, status_code=409)
+
+@app.exception_handler(StorageError)
+async def _storage_down(_req, exc):
+    return JSONResponse({"detail": f"Không kết nối được kho lưu trữ MinIO: {exc}"}, status_code=503)
 
 # ------------------------------------------------------------------ frontend
 

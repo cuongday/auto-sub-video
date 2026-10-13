@@ -22,6 +22,13 @@ def engines() -> dict:
 def run_checks() -> list[dict]:
     out = []
     def add(name, ok, hint): out.append({"name": name, "ok": bool(ok), "hint": "" if ok else hint})
+    try:
+        from .storage import get_store
+        get_store().ping()
+        storage_ok, storage_hint = True, ""
+    except Exception as e:  # noqa: BLE001
+        storage_ok, storage_hint = False, f"Không kết nối được MinIO ({e}). Kiểm tra service minio trong docker compose"
+    add("MinIO", storage_ok, storage_hint)
     add("ffmpeg", shutil.which("ffmpeg") and shutil.which("ffprobe"), "Cài ffmpeg (có ffprobe)")
     add("font Be Vietnam Pro", (config.FONTS_DIR / "BeVietnamPro-SemiBold.ttf").exists(), "Thiếu fonts/BeVietnamPro-SemiBold.ttf")
     add("demucs", _has("demucs"), "Chạy: make setup-full")

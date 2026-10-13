@@ -23,19 +23,33 @@ def cache_key(engine: str, voice: str, rate: float, ref_sha: str, text: str) -> 
     raw = "\x1f".join([engine, voice, f"{rate:.3f}", ref_sha, text])
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
+TTS_CACHE_PREFIX = "tts-cache/"
+EXTS = (".mp3", ".wav")
+
+def cache_dir() -> Path:
+    from .. import config
+    return config.WORK_DIR / "_tts-cache"
+
 def cached_synthesize(engine: TTSEngine, text: str, voice: str, rate: float, ref_audio: Path | None,
-                      cache_dir: Path) -> Path:
-    """Synthesize into a shared cache (reused across jobs and re-renders)."""
+                      local_dir: Path | None = None) -> Path:
+    """Synthesize through a cache shared by all jobs: object storage tts-cache/<key>.<ext> is the source
+    of truth, `local_dir` (default: scratch area) keeps a local copy for the processing tools."""
+    from ..storage import get_store
+    st = get_store()
     key = cache_key(engine.name, voice, rate, file_sha(ref_audio), text)
-    cache_dir = Path(cache_dir); cache_dir.mkdir(parents=True, exist_ok=True)
+    local_dir = Path(local_dir or cache_dir()); local_dir.mkdir(parents=True, exist_ok=True)
     with _key_lock(key):            # identical lines synthesized in parallel are produced once
-        hit = next(iter(cache_dir.glob(key + ".*")), None)
-        if hit is not None:
+        hit = next(iter(local_dir.glob(key + ".*")), None)
+        if hit is not None and hit.suffix in EXTS:
             return hit
-        tmp_dir = Path(tempfile.mkdtemp(dir=cache_dir, prefix=".tmp-"))
+        for ext in EXTS:
+            if st.get_file(TTS_CACHE_PREFIX + key + ext, local_dir / (key + ext)):
+                return local_dir / (key + ext)
+        tmp_dir = Path(tempfile.mkdtemp(dir=local_dir, prefix=".tmp-"))
         try:
             produced = engine.synthesize(text, tmp_dir / "out.wav", voice=voice, rate=rate, ref_audio=ref_audio)
-            final = cache_dir / (key + Path(produced).suffix)
+            final = local_dir / (key + Path(produced).suffix)
+            st.put_file(TTS_CACHE_PREFIX + final.name, Path(produced))
             Path(produced).replace(final)
             return final
         finally:

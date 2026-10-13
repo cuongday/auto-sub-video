@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 import soundfile as sf
 from . import asr as asr_mod, config, media, mix as mix_mod, render, separate as separate_mod, store, translate
+from .workdir import WorkDir, pinned
 from .fit import fit_segment
 from .llm import get_llm
 from .models import STEPS, Job, Segment, TranslationContext, Word
@@ -18,7 +19,6 @@ from .segmenter import build_segments
 from .subtitles import build_ass, build_srt
 from .timing import max_chars, slots
 from .tts import get_tts
-from .tts.base import file_sha
 
 class NeedsConfirm(Exception):
     """Re-running this step would overwrite subtitles the user edited."""
@@ -33,15 +33,29 @@ class Engines:
 @dataclass
 class Ctx:
     job: Job
-    dir: Path
+    work: WorkDir
     engines: Engines
     progress: Callable[[str, float], None] = lambda step, pct: None
     log: Callable[[str], None] = lambda msg: None
     cancel: threading.Event = field(default_factory=threading.Event)
 
+    @property
+    def dir(self) -> Path:
+        return self.work.path
+
     def check(self):
         if self.cancel.is_set():
             raise Cancelled()
+
+    def source(self) -> Path:
+        p = self.work.fetch(self.job.source)
+        if p is None:
+            raise RuntimeError("Không tìm thấy video gốc trong kho lưu trữ")
+        return p
+
+    def ref_audio(self) -> Path | None:
+        st = self.job.settings
+        return self.work.fetch(st.ref_audio) if st.ref_audio else None
 
 def _h(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -54,9 +68,8 @@ def step_hash(ctx: Ctx, step: str) -> str:
     j, st = ctx.job, ctx.job.settings
     prev = j.steps[STEPS[STEPS.index(step) - 1]].hash if step != "probe" else None
     if step == "probe":
-        p = Path(j.source)
-        stat = p.stat() if p.exists() else None
-        return _h(str(p), stat.st_size if stat else 0, stat.st_mtime if stat else 0)
+        info = ctx.work.store.stat(ctx.work.key(j.source))
+        return _h(j.source, info.etag if info else "")
     if step in ("extract", "separate"):
         return _h(prev, step)
     if step == "asr":
@@ -66,9 +79,9 @@ def step_hash(ctx: Ctx, step: str) -> str:
     if step == "translate":
         return _h(prev, st.llm_provider, st.llm_model, st.translator_notes)
     if step == "tts":
-        ref = ctx.dir / st.ref_audio if st.ref_audio else None
+        ref = ctx.work.store.stat(ctx.work.key(st.ref_audio)) if st.ref_audio else None
         return _h(prev, _segments_key(store.load_segments(j.id)), st.tts_engine, st.tts_voice, st.tts_rate,
-                  file_sha(ref) if ref and ref.exists() else "")
+                  ref.etag if ref else "")
     if step == "fit":
         return _h(prev)
     if step == "mix":
@@ -81,18 +94,16 @@ def step_hash(ctx: Ctx, step: str) -> str:
 # ---------------------------------------------------------------- steps
 
 def _probe(ctx: Ctx):
-    src = Path(ctx.job.source)
-    if not src.exists():
-        raise RuntimeError(f"Không tìm thấy video: {src}")
+    src = ctx.source()
     ctx.job.info = media.probe(src)
-    frames = ctx.dir / "frames"
-    if not (frames / "f0.jpg").exists():
-        media.grab_frames(src, frames, ctx.job.info.duration)
+    if not store.exists(ctx.job.id, "frames/f0.jpg"):
+        media.grab_frames(src, ctx.dir / "frames", ctx.job.info.duration)
+        ctx.work.push("frames")
 
 def _extract(ctx: Ctx):
     info = ctx.job.info
     if info.has_audio:
-        media.extract_audio(ctx.job.source, ctx.dir / "audio.wav", duration=info.duration,
+        media.extract_audio(ctx.source(), ctx.dir / "audio.wav", duration=info.duration,
                             progress=lambda p: ctx.progress("extract", p), cancel=ctx.cancel)
     else:
         media.silent_audio(ctx.dir / "audio.wav", info.duration, cancel=ctx.cancel)
@@ -107,14 +118,14 @@ def _asr(ctx: Ctx):
     words = ctx.engines.asr(st.lang, st.asr_model).transcribe(ctx.dir / "vocals16k.wav",
                                                                progress=lambda p: ctx.progress("asr", p))
     ctx.check()
-    store.write_json(ctx.dir / "words.json", [w.model_dump() for w in words])
+    store.save_json(ctx.job.id, "words.json", [w.model_dump() for w in words])
     ctx.log(f"ASR: {len(words)} từ")
 
 def _segment(ctx: Ctx):
-    words = [Word.model_validate(w) for w in store.read_json(ctx.dir / "words.json", default=[])]
+    words = [Word.model_validate(w) for w in store.load_json(ctx.job.id, "words.json", default=[])]
     segs = build_segments(words, ctx.job.settings.lang)
     store.save_segments(ctx.job.id, segs)
-    (ctx.dir / "context.json").unlink(missing_ok=True)      # new transcript -> context is analyzed again
+    store.delete_context(ctx.job.id)      # new transcript -> context is analyzed again
     ctx.job.segments_edited = False
     ctx.log(f"Cắt được {len(segs)} câu")
 
@@ -147,7 +158,7 @@ def _fit_all(ctx: Ctx, segs: list[Segment], only: set[int] | None = None) -> lis
     """Synthesize + fit every line with text; returns segments with speed/flags updated."""
     st = ctx.job.settings
     engine = ctx.engines.tts(st.tts_engine)
-    ref = ctx.dir / st.ref_audio if st.ref_audio else None
+    ref = ctx.ref_audio()
     sl = slots(segs, ctx.job.info.duration)
     todo = [(s, slot) for s, slot in zip(segs, sl) if s.vi.strip() and (only is None or s.id in only)]
     workers = config.EDGE_WORKERS if st.tts_engine == "edge" else max(1, config.VOICE_WORKERS)
@@ -159,8 +170,7 @@ def _fit_all(ctx: Ctx, segs: list[Segment], only: set[int] | None = None) -> lis
         if ctx.cancel.is_set():
             return s.id, None, "cancelled"
         try:
-            r = fit_segment(engine, s, slot, st.tts_voice, st.tts_rate, ref, _tts_dir(ctx) / f"seg_{s.id:04d}.wav",
-                            config.CACHE_DIR / "tts")
+            r = fit_segment(engine, s, slot, st.tts_voice, st.tts_rate, ref, _tts_dir(ctx) / f"seg_{s.id:04d}.wav")
             res = (s.id, r, None)
         except Exception as e:  # noqa: BLE001
             res = (s.id, None, str(e))
@@ -202,6 +212,7 @@ def _tts(ctx: Ctx):
     if ctx.job.mode == "auto":
         segs = _shorten_overflow(ctx, segs)
     store.save_segments(jid, segs)
+    ctx.work.push("tts")
     failed = [s.id for s in segs if "tts_failed" in s.flags]
     if failed and ctx.job.mode == "auto":
         # fail this step (not `fit`) so "retry from this step" re-synthesizes; good lines come from the cache
@@ -227,8 +238,9 @@ def _fit(ctx: Ctx):
     failed = [s.id for s in segs if "tts_failed" in s.flags]
     if failed:
         raise RuntimeError(f"TTS lỗi ở {len(failed)} câu ({', '.join(map(str, failed[:10]))}). Sửa câu hoặc chạy lại.")
-    items = [(s.start, _tts_dir(ctx) / f"seg_{s.id:04d}.wav") for s in segs
-             if s.vi.strip() and (_tts_dir(ctx) / f"seg_{s.id:04d}.wav").exists()]
+    tts_dir = ctx.work.fetch_dir("tts")
+    items = [(s.start, tts_dir / f"seg_{s.id:04d}.wav") for s in segs
+             if s.vi.strip() and (tts_dir / f"seg_{s.id:04d}.wav").exists()]
     track = mix_mod.build_voice_track(items, ctx.job.info.duration)
     sf.write(ctx.dir / "voice_raw.wav", track, mix_mod.SR, subtype="PCM_16")
     over = sum("overflow" in s.flags for s in segs)
@@ -244,22 +256,43 @@ def _render(ctx: Ctx):
     (ctx.dir / "subs.ass").write_text(build_ass(segs, info.width, info.height, j.settings.region, j.settings.style),
                                       encoding="utf-8")
     (ctx.dir / "subs.srt").write_text(build_srt(segs), encoding="utf-8")
-    render.render_video(j.source, ctx.dir / "mix.m4a", ctx.dir / "subs.ass", ctx.dir / "output.mp4", info, j.settings,
+    render.render_video(ctx.source(), ctx.dir / "mix.m4a", ctx.dir / "subs.ass", ctx.dir / "output.mp4", info, j.settings,
                         progress=lambda p: ctx.progress("render", p), cancel=ctx.cancel)
 
 RUNNERS = {"probe": _probe, "extract": _extract, "separate": _separate, "asr": _asr, "segment": _segment,
            "translate": _translate, "tts": _tts, "fit": _fit, "mix": _mix, "render": _render}
+# files a step reads from earlier steps (fetched into the scratch dir first) and the files it produces
+# (pushed to storage before the step counts as done; JSON documents are written to storage directly)
+INPUTS = {"separate": ["audio.wav"], "asr": ["vocals16k.wav"], "fit": [], "mix": ["voice_raw.wav", "no_vocals.wav"],
+          "render": ["mix.m4a"]}
+PUSH = {"extract": ["audio.wav"], "separate": ["vocals.wav", "no_vocals.wav", "vocals16k.wav"],
+        "fit": ["voice_raw.wav"], "mix": ["voice.wav", "mix.m4a"], "render": ["subs.ass", "subs.srt", "output.mp4"]}
 OUTPUTS = {"probe": ["frames/f0.jpg"], "extract": ["audio.wav"], "separate": ["vocals16k.wav", "no_vocals.wav"],
-           "asr": ["words.json"], "segment": ["segments.json"], "translate": ["segments.json"], "tts": ["tts"],
+           "asr": ["words.json"], "segment": ["segments.json"], "translate": ["segments.json"], "tts": ["tts/"],
            "fit": ["voice_raw.wav"], "mix": ["mix.m4a"], "render": ["output.mp4"]}
 REVIEW_STOP = "translate"
 OVERWRITES_SEGMENTS = {"segment", "translate"}
 
 # ---------------------------------------------------------------- driver
 
-def _fresh(ctx: Ctx, step: str, h: str) -> bool:
+def _fresh(ctx: Ctx, step: str, h: str, present: set[str] | None = None) -> bool:
     s = ctx.job.steps[step]
-    return s.status == "done" and s.hash == h and all((ctx.dir / o).exists() for o in OUTPUTS[step])
+    if not (s.status == "done" and s.hash == h):
+        return False
+    present = store.names(ctx.job.id) if present is None else present
+    return all(any(n.startswith(o) for n in present) if o.endswith("/") else o in present for o in OUTPUTS[step])
+
+def _run_step(ctx: Ctx, step: str) -> None:
+    for name in INPUTS.get(step, []):
+        if ctx.work.fetch(name) is None:
+            raise RuntimeError(f"Thiếu file {name} của bước trước, hãy chạy lại từ đầu")
+    RUNNERS[step](ctx)
+    ctx.check()
+    for name in PUSH.get(step, []):
+        ctx.work.push(name)
+
+def make_ctx(job: Job, engines: Engines | None = None) -> Ctx:
+    return Ctx(job=job, work=WorkDir(job.id), engines=engines or Engines())
 
 def invalidate_from(job: Job, step: str) -> None:
     for s in STEPS[STEPS.index(step):]:
@@ -269,15 +302,28 @@ def run(jid: str, mode: str = "review", from_step: str | None = None, confirm: b
         engines: Engines | None = None, progress=None, log=None, cancel: threading.Event | None = None) -> Job:
     """Run the job's steps in order, skipping fresh ones. mode=review stops after translation
     (unless the job is already past review: from_step at or after tts)."""
+    with pinned(jid):
+        return _run(jid, mode, from_step, confirm, engines, progress, log, cancel)
+
+def _run(jid, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
     job = store.load(jid)
-    ctx = Ctx(job=job, dir=store.job_dir(jid), engines=engines or Engines(), cancel=cancel or threading.Event())
+    ctx = make_ctx(job, engines)
+    ctx.cancel = cancel or threading.Event()
     logf = ctx.dir / "log.txt"
+    if not logf.exists():
+        ctx.work.fetch("log.txt")
 
     def _log(msg: str):
         with logf.open("a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
         if log:
             log(msg)
+
+    def _flush_log():
+        try:
+            ctx.work.push("log.txt")
+        except Exception:  # noqa: BLE001  (never hide the real error behind a log upload failure)
+            pass
 
     ctx.log = _log
     ctx.progress = lambda step, pct: progress and progress(step, pct)
@@ -288,14 +334,16 @@ def run(jid: str, mode: str = "review", from_step: str | None = None, confirm: b
     start_idx = STEPS.index(from_step) if from_step else 0
     stop_at_review = mode == "review" and start_idx <= STEPS.index(REVIEW_STOP)
 
+    present = store.names(jid)
     for step in STEPS:
         if ctx.cancel.is_set():
             job.state, job.current_step = "cancelled", None
-            store.save(job); _log("Đã huỷ")
+            store.save(job); _log("Đã huỷ"); _flush_log()
             raise Cancelled()
         h = step_hash(ctx, step)
-        if _fresh(ctx, step, h):
+        if _fresh(ctx, step, h, present):
             continue
+        present = set()                    # from here on everything reruns; no need to list again
         if step in OVERWRITES_SEGMENTS and job.segments_edited and not confirm:
             raise NeedsConfirm(f"Chạy lại bước {step} sẽ ghi đè phụ đề đã sửa")
         if step in OVERWRITES_SEGMENTS:
@@ -308,23 +356,22 @@ def run(jid: str, mode: str = "review", from_step: str | None = None, confirm: b
         ctx.progress(step, 0.0)
         t0 = time.time()
         try:
-            RUNNERS[step](ctx)
-            ctx.check()
+            _run_step(ctx, step)
         except Cancelled:
             st.status = "pending"; job.state = "cancelled"; job.current_step = None
-            store.save(job); _log("Đã huỷ")
+            store.save(job); _log("Đã huỷ"); _flush_log()
             raise
         except Exception as e:
             st.status, st.error = "error", str(e)
             job.state, job.error, job.current_step = "error", f"Bước {step}: {e}", None
-            store.save(job); _log(f"Lỗi bước {step}: {e}")
+            store.save(job); _log(f"Lỗi bước {step}: {e}"); _flush_log()
             raise
         st.status, st.seconds = "done", round(time.time() - t0, 1)
         st.hash = step_hash(ctx, step)
         # later steps' inputs may have changed (e.g. tts rewrites segments): recompute lazily via their hashes
         ctx.progress(step, 1.0)
         store.save(job)
-        _log(f"Xong bước {step} ({st.seconds}s)")
+        _log(f"Xong bước {step} ({st.seconds}s)"); _flush_log()
         if step == REVIEW_STOP and stop_at_review:
             job.state, job.current_step = "awaiting_review", None
             store.save(job)
@@ -336,18 +383,17 @@ def run(jid: str, mode: str = "review", from_step: str | None = None, confirm: b
             return job
     job.state, job.current_step = "done", None
     store.save(job)
+    _flush_log()
     return job
 
 def preview_tts(jid: str, sid: int, engines: Engines | None = None) -> Path:
     """Fitted voice for one line (uses the shared TTS cache)."""
     job = store.load(jid)
-    ctx = Ctx(job=job, dir=store.job_dir(jid), engines=engines or Engines())
+    ctx = make_ctx(job, engines)
     segs = store.load_segments(jid)
     idx = next(i for i, s in enumerate(segs) if s.id == sid)
     slot = slots(segs, job.info.duration)[idx]
     st = job.settings
     out = ctx.dir / "preview" / f"seg_{sid}.wav"
-    ref = ctx.dir / st.ref_audio if st.ref_audio else None
-    r = fit_segment(ctx.engines.tts(st.tts_engine), segs[idx], slot, st.tts_voice, st.tts_rate, ref, out,
-                    config.CACHE_DIR / "tts")
+    r = fit_segment(ctx.engines.tts(st.tts_engine), segs[idx], slot, st.tts_voice, st.tts_rate, ctx.ref_audio(), out)
     return r.path

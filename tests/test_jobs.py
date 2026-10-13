@@ -2,6 +2,7 @@ import time
 from autosub import jobs, pipeline, store
 from tests.fakes import FakeASR, FakeLLM, FakeTTS, fake_separate
 from tests.fixtures import make_video
+from tests.helpers import new_job
 
 def engines():
     return pipeline.Engines(separate=fake_separate(), asr=lambda l, m: FakeASR(), llm=lambda p, m: FakeLLM(),
@@ -18,8 +19,8 @@ def wait(jid, states, timeout=60):
 def test_queue_runs_jobs_in_order(tmp_path):
     q = jobs.JobQueue(engines)
     sub = q.subscribe()
-    a = store.create("a", str(make_video(tmp_path / "a.mp4", 3)))
-    b = store.create("b", str(make_video(tmp_path / "b.mp4", 3)))
+    a = new_job(make_video(tmp_path / "a.mp4", 3))
+    b = new_job(make_video(tmp_path / "b.mp4", 3))
     assert q.submit(a.id, "auto") and q.submit(b.id, "review")
     assert not q.submit(a.id, "auto")
     assert wait(a.id, {"done"}).state == "done"
@@ -33,8 +34,8 @@ def test_queue_runs_jobs_in_order(tmp_path):
 
 def test_cancel_queued(tmp_path):
     q = jobs.JobQueue(engines)
-    a = store.create("a", str(make_video(tmp_path / "a.mp4", 3)))
-    b = store.create("b", str(make_video(tmp_path / "b.mp4", 3)))
+    a = new_job(make_video(tmp_path / "a.mp4", 3))
+    b = new_job(make_video(tmp_path / "b.mp4", 3))
     q.submit(a.id, "auto"); q.submit(b.id, "auto")
     assert q.cancel(b.id)
     wait(a.id, {"done"})

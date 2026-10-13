@@ -33,9 +33,9 @@ export default function NewJob({ onCreated }: { onCreated: (j: Job) => void }) {
         <strong>{busy || "Kéo thả video vào đây"}</strong>
         <span className="muted">{busy ? "" : "hoặc bấm để chọn file · video tiếng Trung hoặc tiếng Anh"}</span>
       </div>
-      <div className="or"><span>hoặc dùng file có sẵn trên máy (không phải copy)</span></div>
+      <div className="or"><span>hoặc dùng file trong thư mục video đã gắn vào app (VIDEOS_DIR → /videos)</span></div>
       <form className="row" onSubmit={(e) => { e.preventDefault(); if (path.trim()) fromPath(); }}>
-        <input className="grow" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/home/ban/Videos/phim.mp4" aria-label="Đường dẫn video" />
+        <input className="grow" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/videos/phim.mp4" aria-label="Đường dẫn video" />
         <button className="primary" disabled={!path.trim() || !!busy}>Mở</button>
       </form>
       {err && <p className="error" role="alert">{err}</p>}

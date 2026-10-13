@@ -11,13 +11,21 @@ def seg(text): return Segment(id=1, start=0, end=1, source="x", vi=text)
 
 def dur(p): return sf.info(p).duration
 
-def test_cache_hit(tmp_path):
+def test_cache_hit(tmp_path, _memory_store):
     tts = FakeTTS()
-    a = cached_synthesize(tts, "xin chào", "v", 1.0, None, tmp_path)
-    b = cached_synthesize(tts, "xin chào", "v", 1.0, None, tmp_path)
-    c = cached_synthesize(tts, "xin chào", "v", 1.2, None, tmp_path)
+    a = cached_synthesize(tts, "xin chào", "v", 1.0, None, tmp_path / "l1")
+    b = cached_synthesize(tts, "xin chào", "v", 1.0, None, tmp_path / "l1")
+    c = cached_synthesize(tts, "xin chào", "v", 1.2, None, tmp_path / "l1")
     assert a == b != c and len(tts.calls) == 2
-    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".tmp")]
+    assert not [p for p in (tmp_path / "l1").iterdir() if p.name.startswith(".tmp")]
+    assert len(_memory_store.list("tts-cache/")) == 2
+
+def test_cache_shared_through_store(tmp_path):
+    """A fresh scratch dir (other container / after restart) reuses the stored cache."""
+    tts = FakeTTS()
+    cached_synthesize(tts, "xin chào", "v", 1.0, None, tmp_path / "first")
+    p = cached_synthesize(tts, "xin chào", "v", 1.0, None, tmp_path / "second")
+    assert len(tts.calls) == 1 and p.parent == tmp_path / "second" and p.exists()
 
 def test_fit_fits_without_speedup(tmp_path):
     r = fit_segment(FakeTTS(), seg("a" * 10), 2.0, "v", 1.0, None, tmp_path / "s.wav", tmp_path / "c")   # 0.8 s

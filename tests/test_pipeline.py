@@ -1,10 +1,12 @@
 import threading
 import pytest
-from autosub import pipeline, store, media
+from autosub import pipeline, store, media, workdir
+from autosub.storage import get_store
 from autosub.models import Region
 from autosub.proc import Cancelled
 from tests.fakes import FakeASR, FakeLLM, FakeTTS, fake_separate, ids_in
 from tests.fixtures import make_video
+from tests.helpers import new_job
 
 class Rig:
     def __init__(self, tmp_path, seconds=6):
@@ -15,7 +17,7 @@ class Rig:
         self.tts = FakeTTS()
         self.engines = pipeline.Engines(separate=fake_separate(self.sep_calls), asr=lambda lang, model: self.asr,
                                         llm=lambda p, m: self.llm, tts=lambda name: self.tts)
-        self.job = store.create("src.mp4", str(self.src))
+        self.job = new_job(self.src)
 
     def run(self, **kw):
         return pipeline.run(self.job.id, engines=self.engines, **kw)
@@ -31,18 +33,19 @@ def test_review_stops_after_translate(rig):
     segs = store.load_segments(job.id)
     assert len(segs) == 3 and segs[0].vi.startswith("VI ")
     assert store.load_context(job.id).summary
-    assert (store.job_dir(job.id) / "frames" / "f5.jpg").exists()
+    assert "frames/f5.jpg" in store.names(job.id)
 
-def test_render_after_review_skips_cached_steps(rig):
+def test_render_after_review_skips_cached_steps(rig, tmp_path):
     rig.run(mode="review")
     llm_calls = len(rig.llm.prompts)
     job = rig.run(mode="review", from_step="tts")
     assert job.state == "done"
     assert len(rig.sep_calls) == 1 and rig.asr.calls == 1 and len(rig.llm.prompts) == llm_calls
-    d = store.job_dir(job.id)
-    out = media.probe(d / "output.mp4")
+    out_mp4 = tmp_path / "out.mp4"
+    assert get_store().get_file(f"jobs/{job.id}/output.mp4", out_mp4)
+    out = media.probe(out_mp4)
     assert abs(out.duration - 6) < 0.2 and out.has_audio
-    assert "VI " in (d / "subs.srt").read_text()
+    assert "VI " in get_store().get_bytes(f"jobs/{job.id}/subs.srt").decode()
     assert all(s.speed is not None for s in store.load_segments(job.id))
 
 def test_auto_runs_to_end(rig):
@@ -129,3 +132,26 @@ def test_no_speech(rig):
     rig.asr.text = ""
     job = rig.run(mode="review")
     assert job.state == "awaiting_review" and store.load_segments(job.id) == []
+
+
+def test_everything_lives_in_storage_and_scratch_is_disposable(rig):
+    """Wiping the scratch dir (container restart) must not lose any work."""
+    rig.run(mode="review")
+    workdir.clear_all()
+    job = rig.run(mode="review", from_step="tts")
+    assert job.state == "done" and len(rig.sep_calls) == 1 and rig.asr.calls == 1
+    names = store.names(job.id)
+    for n in ("job.json", "segments.json", "context.json", "words.json", "log.txt", "source.mp4", "audio.wav",
+              "vocals.wav", "no_vocals.wav", "vocals16k.wav", "voice_raw.wav", "voice.wav", "mix.m4a",
+              "subs.ass", "subs.srt", "output.mp4", "frames/f0.jpg"):
+        assert n in names, n
+    assert any(n.startswith("tts/seg_") for n in names)
+    assert get_store().list("tts-cache/")
+
+def test_missing_stored_output_reruns_step(rig):
+    rig.run(mode="auto")
+    get_store().delete(f"jobs/{rig.job.id}/mix.m4a")
+    n = len(rig.tts.calls)
+    job = rig.run(mode="auto")
+    assert job.state == "done" and len(rig.tts.calls) == n
+    assert "mix.m4a" in store.names(job.id)

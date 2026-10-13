@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "./api";
+import { useDialog } from "./components/Dialog";
 import { STATE_LABEL, STEP_LABEL } from "./labels";
 import type { Job, JobEvent, Options } from "./types";
 import { useEvents } from "./useEvents";
@@ -27,6 +28,7 @@ export default function App() {
   const [logs, setLogs] = useState<Record<string, string[]>>({});
   const [fatal, setFatal] = useState("");
   const [checks, setChecks] = useState<{ name: string; ok: boolean; hint: string }[]>([]);
+  const dialog = useDialog();
 
   const refresh = useCallback(() => api.jobs().then(setJobs).catch((e) => setFatal(e.message)), []);
   useEffect(() => {
@@ -63,12 +65,33 @@ export default function App() {
       replace(await go(false));
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.message.startsWith("NEEDS_CONFIRM")) {
-        if (!confirm("Chạy lại sẽ nhận dạng/dịch lại và GHI ĐÈ phụ đề bạn đã sửa. Tiếp tục?")) return;
+        const ok = await dialog.confirm({
+          title: "Ghi đè phụ đề đã sửa?",
+          message: "Chạy lại sẽ nhận dạng và dịch lại từ đầu, các câu bạn đã sửa tay sẽ bị thay thế.",
+          confirmLabel: "Chạy lại", danger: true,
+        });
+        if (!ok) return;
         replace(await go(true));
       } else throw e;
     }
     setLogs((l) => ({ ...l, [job.id]: [] })); setPct((p) => ({ ...p, [job.id]: {} }));
     setView("progress");
+  };
+
+  const removeJob = async (j: Job) => {
+    const ok = await dialog.confirm({
+      title: "Xoá video đã xử lý?",
+      message: (
+        <>
+          <p><strong>{j.name}</strong></p>
+          <p className="muted">Xoá toàn bộ dữ liệu đã xử lý của job này: âm thanh tách, phụ đề, giọng thuyết minh và video thành phẩm.
+            {j.uploaded ? " File video đã tải lên cũng bị xoá." : " File video gốc trên máy của bạn được giữ nguyên."}</p>
+        </>
+      ),
+      confirmLabel: "Xoá", danger: true,
+    });
+    if (!ok) return;
+    try { await api.remove(j.id); select(null); refresh(); } catch (e) { setFatal((e as Error).message); }
   };
 
   if (fatal) return <div className="app"><p className="error">{fatal}</p></div>;
@@ -113,7 +136,7 @@ export default function App() {
                 <button className={view === "result" ? "on" : ""} disabled={!job.files["output.mp4"]} onClick={() => setView("result")}>Kết quả</button>
               </nav>
               <button className="icon danger" title="Xoá job" aria-label="Xoá job" disabled={job.state === "running" || job.state === "queued"}
-                onClick={async () => { if (confirm(`Xoá "${job.name}" và toàn bộ dữ liệu đã xử lý?`)) { await api.remove(job.id); select(null); refresh(); } }}>🗑</button>
+                onClick={() => removeJob(job)}>🗑</button>
             </header>
             {view === "setup" && <Setup job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
             {view === "progress" && (

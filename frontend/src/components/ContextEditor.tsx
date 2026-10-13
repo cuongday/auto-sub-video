@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useDialog } from "./Dialog";
 import type { Context } from "../types";
 
 /** Translation context (summary, characters/addressing, glossary). Saving + "dịch lại" re-translates everything. */
@@ -9,6 +10,7 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
   const [ctx, setCtx] = useState<Context | null>(null);
   const [open, setOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const dialog = useDialog();
   useEffect(() => { api.context(jobId).then(setCtx).catch(() => setCtx(null)); }, [jobId]);
   if (!ctx) return null;
   const upd = (p: Partial<Context>) => { setCtx({ ...ctx, ...p }); setDirty(true); };
@@ -50,7 +52,12 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
       <div className="row">
         <button className="ghost" disabled={!dirty} onClick={save}>Lưu bối cảnh</button>
         <button className="primary" disabled={busy} onClick={async () => {
-          if (!confirm("Dịch lại toàn bộ theo bối cảnh mới? Các câu đã sửa tay sẽ bị thay.")) return;
+          const ok = await dialog.confirm({
+            title: "Dịch lại toàn bộ?",
+            message: "Dịch lại mọi câu theo bối cảnh mới. Các câu bạn đã sửa tay sẽ bị thay thế.",
+            confirmLabel: "Dịch lại", danger: true,
+          });
+          if (!ok) return;
           await save(); await onRetranslate();
         }}>{busy ? "Đang dịch lại…" : "Dịch lại theo bối cảnh mới"}</button>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../api";
 import type { Job } from "../types";
 
@@ -7,6 +7,9 @@ export default function NewJob({ onCreated }: { onCreated: (j: Job) => void }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [over, setOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // open the picker explicitly: label-wrapped hidden inputs are flaky in some browsers/portals
+  const pick = () => { if (!busy) fileInput.current?.click(); };
 
   const upload = async (f: File) => {
     setErr(""); setBusy("Đang tải lên 0%");
@@ -20,14 +23,16 @@ export default function NewJob({ onCreated }: { onCreated: (j: Job) => void }) {
   return (
     <section className="card new-job">
       <h2>Video mới</h2>
-      <label className={`drop ${over ? "over" : ""}`}
+      <div className={`drop ${over ? "over" : ""} ${busy ? "busy" : ""}`} role="button" tabIndex={0}
+        aria-label="Chọn video để tải lên" aria-disabled={!!busy} onClick={pick}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } }}
         onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) upload(f); }}>
-        <input type="file" accept="video/*,.mkv,.flv,.ts" hidden disabled={!!busy}
-          onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+        onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f && !busy) upload(f); }}>
+        <input ref={fileInput} type="file" accept="video/*,.mkv,.flv,.ts" hidden
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) upload(f); }} />
         <strong>{busy || "Kéo thả video vào đây"}</strong>
         <span className="muted">{busy ? "" : "hoặc bấm để chọn file · video tiếng Trung hoặc tiếng Anh"}</span>
-      </label>
+      </div>
       <div className="or"><span>hoặc dùng file có sẵn trên máy (không phải copy)</span></div>
       <form className="row" onSubmit={(e) => { e.preventDefault(); if (path.trim()) fromPath(); }}>
         <input className="grow" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/home/ban/Videos/phim.mp4" aria-label="Đường dẫn video" />

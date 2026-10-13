@@ -109,6 +109,8 @@ label.inline input[type="number"] { width: 120px; }
   align-items: center; gap: 6px; color: var(--ink); transition: border-color .15s, background .15s; }
 .drop:hover, .drop.over { border-color: var(--amber); background: rgba(245, 184, 61, .05); }
 .drop strong { font-size: 1.05rem; }
+.drop { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.drop.busy { cursor: progress; }
 .or { text-align: center; color: var(--muted); font-size: .85em; margin: 18px 0 10px; }
 
 /* ---------- region picker ---------- */
@@ -222,3 +224,17 @@ table.segs { width: 100%; border-collapse: collapse; }
   .step { grid-template-columns: 14px 1fr 64px; } .step .bar { grid-column: 2 / 4; }
   .thumbs { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ---------- modal ---------- */
+.modal { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); padding: 0;
+  width: min(440px, calc(100vw - 32px)); box-shadow: 0 24px 60px -12px rgba(0, 0, 0, .6); }
+.modal::backdrop { background: rgba(5, 6, 9, .62); backdrop-filter: blur(2px); }
+.modal[open] { animation: modal-in .14s ease-out; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
+.modal form { padding: 20px 22px 18px; display: flex; flex-direction: column; gap: 12px; }
+.modal h3 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.modal-body p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+.danger-solid:hover:not(:disabled) { background: #ff7777; border-color: #ff7777; }

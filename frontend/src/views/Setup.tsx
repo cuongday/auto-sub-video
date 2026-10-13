@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { useDialog } from "../components/Dialog";
 import CoverControls from "../components/CoverControls";
 import OptionsForm from "../components/OptionsForm";
 import RegionPicker from "../components/RegionPicker";
@@ -23,6 +24,7 @@ export default function Setup({ job, options, onJob, onRun }: {
   const [previewV, setPreviewV] = useState(0);
   const imgWrap = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<number>();
+  const dialog = useDialog();
 
   useEffect(() => { setS(job.settings); }, [job.id]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.presets().then(setPresets).catch(() => {}); }, []);
@@ -98,8 +100,10 @@ export default function Setup({ job, options, onJob, onRun }: {
               <option value="">Áp dụng preset…</option>
               {Object.keys(presets).map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
-            <button className="ghost" onClick={() => {
-              const name = prompt("Tên preset:"); if (name) api.savePreset(name, s).then(setPresets);
+            <button className="ghost" onClick={async () => {
+              const name = await dialog.prompt({ title: "Lưu preset", message: "Lưu bộ tuỳ chọn hiện tại để dùng lại cho video khác.",
+                placeholder: "Ví dụ: Phim Trung — VieNeu", confirmLabel: "Lưu" });
+              if (name) api.savePreset(name, s).then(setPresets).catch((e) => setErr(e.message));
             }}>Lưu preset</button>
           </div>
         </header>

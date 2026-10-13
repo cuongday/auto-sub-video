@@ -82,6 +82,28 @@ def options():
         "defaults": JobSettings().model_dump(mode="json"),
     }
 
+VOICE_SAMPLE = "Xin chào các bạn, hôm nay mình sẽ giới thiệu một chiếc điện thoại gập rất thú vị."
+
+class VoiceSampleIn(BaseModel):
+    engine: Literal["edge", "vieneu"]
+    voice: str = ""
+    rate: float = 1.0
+    text: str | None = None
+
+@app.post("/api/tts/sample")
+async def voice_sample(body: VoiceSampleIn):
+    """Speak a sample sentence with the given voice/rate (cached), to compare voices before running."""
+    from .tts import cached_synthesize
+    engine = _engines().tts(body.engine)
+    text = (body.text or VOICE_SAMPLE).strip()[:300]
+    try:
+        path = await asyncio.to_thread(cached_synthesize, engine, text, body.voice, round(body.rate, 3), None,
+                                       config.CACHE_DIR / "tts")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"TTS lỗi: {e}")
+    media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store"})
+
 @app.get("/api/tts/{engine}/voices")
 def tts_voices(engine: Literal["edge", "vieneu"]):
     try:

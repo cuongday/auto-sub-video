@@ -78,8 +78,14 @@ class VieneuTTS:
         return Path(out)
 
     def voices(self) -> list[dict]:
+        """Preset voices: [{id, label, gender, featured, default}], editors' picks first."""
         if not VieneuTTS._voices:
             with _Borrow() as tts:
-                VieneuTTS._voices = [{"id": vid, "label": label.lstrip("⭐ ").strip()}
-                                     for label, vid in tts.list_preset_voices()]
+                presets = tts._preset_voices
+                default = tts._default_voice
+                for label, vid in tts.list_preset_voices():
+                    meta = presets.get(vid, {})
+                    VieneuTTS._voices.append({
+                        "id": vid, "label": label.lstrip("⭐ ").strip(), "gender": meta.get("gender", ""),
+                        "featured": meta.get("featured") is not None, "default": vid == default})
         return VieneuTTS._voices

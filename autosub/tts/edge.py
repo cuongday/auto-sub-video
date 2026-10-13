@@ -31,4 +31,5 @@ class EdgeTTS:
         raise TTSError(f"edge-tts lỗi: {last}")
 
     def voices(self) -> list[dict]:
-        return [{"id": v, "label": label} for v, label in config.EDGE_VOICES]
+        return [{"id": v, "label": label, "gender": "female" if "HoaiMy" in v else "male", "featured": True,
+                 "default": i == 0} for i, (v, label) in enumerate(config.EDGE_VOICES)]

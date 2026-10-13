@@ -1,4 +1,4 @@
-import type { Context, Job, Options, Segment, Settings } from "./types";
+import type { Context, Job, Options, Segment, Settings, Voice } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -24,7 +24,12 @@ export const api = {
   health: (llm?: string, model?: string) =>
     j<{ checks: { name: string; ok: boolean; hint: string }[]; llm_test?: { ok: boolean; error: string | null } }>(
       fetch(`/api/health${llm ? `?llm=${llm}&model=${encodeURIComponent(model ?? "")}` : ""}`)),
-  voices: (engine: string) => j<{ id: string; label: string }[]>(fetch(`/api/tts/${engine}/voices`)),
+  voices: (engine: string) => j<Voice[]>(fetch(`/api/tts/${engine}/voices`)),
+  voiceSample: async (engine: string, voice: string, rate: number) => {
+    const res = await post("/api/tts/sample", { engine, voice, rate });
+    if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).detail || res.statusText);
+    return URL.createObjectURL(await res.blob());
+  },
   jobs: () => j<Job[]>(fetch("/api/jobs")),
   job: (id: string) => j<Job>(fetch(`/api/jobs/${id}`)),
   createFromPath: (path: string) => j<Job>(post("/api/jobs", { path })),

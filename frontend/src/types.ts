@@ -21,11 +21,12 @@ export type Segment = { id: number; start: number; end: number; source: string; 
 export type Character = { name: string; vi_name: string; addressing: string };
 export type Context = { summary: string; genre_tone: string; characters: Character[]; glossary: { source: string; vi: string }[] };
 export type Option = { id: string; label: string };
+export type Voice = Option & { gender?: string; featured?: boolean; default?: boolean };
 export type EngineOk = { ok: boolean; hint: string };
 export type Options = {
   asr: Record<Lang, Option[]>;
   llm: Record<"gemini" | "openai", { default: string; models: Option[] }>;
-  tts: { edge: Option[] };
+  tts: { edge: Voice[] };
   engines: { separate: EngineOk; asr: Record<Lang, EngineOk>; llm: Record<string, EngineOk>; tts: Record<string, EngineOk> };
   steps: string[];
   defaults: Settings;

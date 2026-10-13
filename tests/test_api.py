@@ -91,6 +91,11 @@ def test_options_and_health(client):
     h = client.get("/api/health").json()
     assert any(c["name"] == "ffmpeg" and c["ok"] for c in h["checks"])
 
+def test_voice_sample_and_voices(client):
+    r = client.post("/api/tts/sample", json={"engine": "edge", "voice": "v", "rate": 1.2})
+    assert r.status_code == 200 and len(r.content) > 1000
+    assert client.get("/api/tts/edge/voices").json()[0]["id"] == "v"
+
 def test_presets(client):
     from autosub.models import JobSettings
     s = JobSettings(lang="en").model_dump(mode="json")

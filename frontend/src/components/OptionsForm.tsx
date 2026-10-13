@@ -1,19 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { Job, Options, Settings } from "../types";
+import type { Job, Options, Settings, Voice } from "../types";
+
+const GENDER: Record<string, string> = { female: "Giọng nữ", male: "Giọng nam" };
 
 export default function OptionsForm({ job, options, s, set, onRefUpload }: {
   job: Job; options: Options; s: Settings; set: (patch: Partial<Settings>) => void; onRefUpload: (f: File) => void;
 }) {
-  const [voices, setVoices] = useState<{ id: string; label: string }[]>([]);
+  const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceErr, setVoiceErr] = useState("");
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [sampling, setSampling] = useState(false);
+  const audio = useRef<HTMLAudioElement>(null);
   const eng = options.engines;
   useEffect(() => {
-    setVoiceErr("");
-    if (s.tts_engine === "edge") { setVoices(options.tts.edge); return; }
-    setVoices([]);
-    api.voices("vieneu").then(setVoices).catch((e) => setVoiceErr(e.message));
-  }, [s.tts_engine, options]);
+    setVoiceErr(""); setVoices([]); setLoadingVoices(true);
+    api.voices(s.tts_engine).then(setVoices).catch((e) => setVoiceErr(e.message)).finally(() => setLoadingVoices(false));
+  }, [s.tts_engine]);
+  const defaultVoice = voices.find((v) => v.default);
+  const groups = Object.entries(voices.reduce<Record<string, Voice[]>>((acc, v) => {
+    (acc[v.gender || "other"] ??= []).push(v); return acc;
+  }, {}));
+  const sample = async () => {
+    setSampling(true); setVoiceErr("");
+    try {
+      const url = await api.voiceSample(s.tts_engine, s.tts_voice || defaultVoice?.id || "", s.tts_rate);
+      if (audio.current) { audio.current.src = url; await audio.current.play(); }
+    } catch (e) { setVoiceErr((e as Error).message); } finally { setSampling(false); }
+  };
 
   const llm = options.llm[s.llm_provider];
   return (
@@ -61,12 +75,24 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
             <option value="vieneu" disabled={!eng.tts.vieneu.ok}>VieNeu-TTS (chạy máy){eng.tts.vieneu.ok ? "" : " — chưa cài"}</option>
           </select>
         </label>
-        <label>Giọng
-          <select value={s.tts_voice} onChange={(e) => set({ tts_voice: e.target.value })} disabled={s.tts_engine === "vieneu" && !!s.ref_audio}>
-            <option value="">Mặc định</option>
-            {voices.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
-          </select>
+        <label>Giọng{s.ref_audio && s.tts_engine === "vieneu" ? " (đang dùng giọng mẫu)" : ""}
+          <span className="voice-row">
+            <select value={s.tts_voice} onChange={(e) => set({ tts_voice: e.target.value })}
+              disabled={loadingVoices || (s.tts_engine === "vieneu" && !!s.ref_audio)}>
+              <option value="">{loadingVoices ? "Đang tải danh sách giọng…" : `Mặc định${defaultVoice ? ` — ${defaultVoice.label}` : ""}`}</option>
+              {groups.map(([g, list]) => (
+                <optgroup key={g} label={GENDER[g] ?? "Khác"}>
+                  {list.map((v) => <option key={v.id} value={v.id}>{v.featured ? "★ " : ""}{v.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <button type="button" className="ghost" title="Nghe thử giọng ở tốc độ đang chọn" aria-label="Nghe thử giọng"
+              disabled={sampling || loadingVoices || (s.tts_engine === "vieneu" && !!s.ref_audio)} onClick={sample}>
+              {sampling ? "…" : "🔊"}
+            </button>
+          </span>
         </label>
+        <audio ref={audio} hidden />
         {voiceErr && <p className="warn">{voiceErr}</p>}
         <label>Tốc độ đọc <output>{s.tts_rate.toFixed(2)}×</output>
           <input type="range" min={0.8} max={1.3} step={0.05} value={s.tts_rate} onChange={(e) => set({ tts_rate: +e.target.value })} />

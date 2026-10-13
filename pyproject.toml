@@ -1,0 +1,20 @@
+[project]
+name = "auto-sub"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6", "python-multipart>=0.0.9",
+  "google-genai>=1.0", "openai>=1.40", "edge-tts>=7.0", "numpy>=1.26", "soundfile>=0.12",
+  "python-dotenv>=1.0",
+]
+[project.optional-dependencies]
+full = ["demucs>=4.0", "funasr>=1.1", "modelscope", "faster-whisper>=1.0", "vieneu"]
+dev = ["pytest>=8", "httpx>=0.27"]
+[project.scripts]
+autosub = "autosub.cli:main"
+[tool.setuptools]
+packages = ["autosub", "autosub.asr", "autosub.llm", "autosub.tts"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: runs real models / network (make test-slow)"]
+addopts = "-m 'not slow'"

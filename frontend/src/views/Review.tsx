@@ -3,7 +3,7 @@ import { api } from "../api";
 import ContextEditor from "../components/ContextEditor";
 import SubOverlay from "../components/SubOverlay";
 import { FLAG_LABEL, fmtTime, parseTime } from "../labels";
-import type { Job, Segment } from "../types";
+import type { FontOption, Job, Segment } from "../types";
 
 const CPS = 15, MAX_SPEED = 1.35, GAP = 0.05;
 
@@ -12,7 +12,7 @@ function computeSlots(segs: Segment[], duration: number): number[] {
   return segs.map((s, i) => Math.max(0.3, i + 1 < segs.length ? segs[i + 1].start - s.start - GAP : Math.min(s.end + 1, duration) - s.start));
 }
 
-export default function Review({ job, onRender }: { job: Job; onRender: () => Promise<void> }) {
+export default function Review({ job, fonts, onRender }: { job: Job; fonts: FontOption[]; onRender: () => Promise<void> }) {
   const [segs, setSegs] = useState<Segment[]>([]);
   const [measured, setMeasured] = useState<Record<number, { text: string; dur: number }>>({});
   const [cur, setCur] = useState<number | null>(null);
@@ -170,7 +170,7 @@ export default function Review({ job, onRender }: { job: Job; onRender: () => Pr
               style={{ aspectRatio: `${info.width} / ${info.height}` }} />
             <div className="overlay-layer" style={{ height: frameH }}>
               <SubOverlay region={job.settings.region} cover={job.settings.cover} coverColor={job.settings.cover_color}
-                style={job.settings.style} text={activeSeg?.vi ?? ""} frameH={frameH} info={info} />
+                style={job.settings.style} text={activeSeg?.vi ?? ""} frameH={frameH} info={info} fonts={fonts} />
             </div>
           </div>
           <p className="muted small">Space: phát/dừng · Ctrl+↑/↓: câu trước/sau · Ctrl+Enter: nghe thử</p>

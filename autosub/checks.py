@@ -30,7 +30,9 @@ def run_checks() -> list[dict]:
         storage_ok, storage_hint = False, f"Không kết nối được MinIO ({e}). Kiểm tra service minio trong docker compose"
     add("MinIO", storage_ok, storage_hint)
     add("ffmpeg", shutil.which("ffmpeg") and shutil.which("ffprobe"), "Cài ffmpeg (có ffprobe)")
-    add("font Be Vietnam Pro", (config.FONTS_DIR / "BeVietnamPro-SemiBold.ttf").exists(), "Thiếu fonts/BeVietnamPro-SemiBold.ttf")
+    from .fonts import FONTS
+    missing = [f.file for f in FONTS if not (config.FONTS_DIR / f.file).exists()]
+    add("font phụ đề", not missing, f"Thiếu trong fonts/: {', '.join(missing)}")
     add("demucs", _has("demucs"), "Chạy: make setup-full")
     add("funasr (tiếng Trung)", _has("funasr"), "Chạy: make setup-full")
     add("faster-whisper (tiếng Anh)", _has("faster_whisper"), "Chạy: make setup-full")

@@ -23,10 +23,13 @@ def default_region(width: int, height: int) -> "Region":
         return Region(x=0.04, y=0.78, w=0.92, h=0.10)
     return Region()
 
+HEX_COLOR = r"^#[0-9A-Fa-f]{6}$"
+
 class SubStyle(BaseModel):
+    font: str = "bevietnam"               # id from autosub/fonts.py
     font_size: int | None = None          # None -> auto from region height
-    color: str = "#FFFFFF"
-    outline_color: str = "#000000"
+    color: str = Field("#FFFFFF", pattern=HEX_COLOR)
+    outline_color: str = Field("#000000", pattern=HEX_COLOR)
     outline: float | None = None          # None -> auto from font size
 
 class JobSettings(BaseModel):

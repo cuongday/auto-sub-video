@@ -1,7 +1,7 @@
 """ASS/SRT generation; the new subtitle is laid out inside the covered region."""
+from .fonts import get_font
 from .models import Region, Segment, SubStyle
 
-FONT_NAME = "Be Vietnam Pro SemiBold"
 
 def _even(v: float) -> int:
     return int(2 * round(v / 2))
@@ -46,6 +46,7 @@ def build_ass(segs: list[Segment], W: int, H: int, region: Region, style: SubSty
     outline = style.outline if style.outline is not None else max(1.5, round(fs / 18, 1))
     shadow = 1 if fs < 40 else 2
     cx, cy = x + w // 2, y + h // 2
+    font = get_font(style.font)
     head = (
         "[Script Info]\nScriptType: v4.00+\n"
         f"PlayResX: {W}\nPlayResY: {H}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n"
@@ -53,8 +54,8 @@ def build_ass(segs: list[Segment], W: int, H: int, region: Region, style: SubSty
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,{FONT_NAME},{fs},{ass_color(style.color)},{ass_color(style.color)},"
-        f"{ass_color(style.outline_color)},{ass_color('#000000', 0x80)},0,0,0,0,100,100,0,0,1,"
+        f"Style: Default,{font.family},{fs},{ass_color(style.color)},{ass_color(style.color)},"
+        f"{ass_color(style.outline_color)},{ass_color('#000000', 0x80)},{-1 if font.bold else 0},0,0,0,100,100,0,0,1,"
         f"{outline:g},{shadow},5,{x},{W - (x + w)},0,1\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )

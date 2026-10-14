@@ -65,7 +65,7 @@ export default function Setup({ job, options, onJob, onRun }: {
             <RegionPicker src={api.file(job.id, `frames/${job.frames[frame]}`)} aspect={info.width / info.height}
               region={s.region} onChange={(region) => set({ region })}>
               <SubOverlay region={s.region} cover={s.cover} coverColor={s.cover_color} style={s.style} text={SAMPLE}
-                frameH={frameH} info={info} />
+                frameH={frameH} info={info} fonts={options.fonts} />
             </RegionPicker>
           </div>
           <div className="stage-side">
@@ -77,7 +77,7 @@ export default function Setup({ job, options, onJob, onRun }: {
                 </button>
               ))}
             </div>
-            <CoverControls s={s} set={set} autoFont={autoFont} />
+            <CoverControls s={s} set={set} autoFont={autoFont} fonts={options.fonts} />
             <div className="row">
               <button className="ghost" disabled={!!busy} onClick={() => act("preview", async () => {
                 await flush(); await api.previewRender(job.id, Math.max(0, t - 2.5)); setPreviewV(Date.now());

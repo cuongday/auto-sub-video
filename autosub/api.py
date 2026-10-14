@@ -14,6 +14,7 @@ import soundfile as sf
 from . import browse, checks, config, jobs, media, pipeline, render, store, translate, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
+from .fonts import FONTS
 from .timing import slots
 
 QUEUE = jobs.JobQueue()
@@ -94,6 +95,8 @@ def options():
         "tts": {"edge": pack(config.EDGE_VOICES)},
         "engines": checks.engines(),
         "steps": STEPS,
+        "fonts": [{"id": f.id, "label": f.label, "family": f.family, "weight": f.css_weight, "file": f.file}
+                  for f in FONTS],
         "defaults": JobSettings().model_dump(mode="json"),
     }
 
@@ -443,6 +446,15 @@ def put_app_settings(body: AppSettingsIn):
     return get_app_settings()
 
 # ------------------------------------------------------------------ presets
+
+@app.get("/api/fonts/{name}")
+def font_file(name: str):
+    """Bundled subtitle fonts, so the browser preview uses the same typeface as the render."""
+    f = next((f for f in FONTS if f.file == name), None)
+    if f is None:
+        raise HTTPException(404, "Không có font")
+    return FileResponse(config.FONTS_DIR / f.file, media_type="font/ttf",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 @app.get("/api/presets")
 def get_presets():

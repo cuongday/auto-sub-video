@@ -1,7 +1,8 @@
 export type Lang = "zh" | "en";
 export type Cover = "blur" | "blur_dim" | "solid";
 export type Region = { x: number; y: number; w: number; h: number };
-export type SubStyle = { font_size: number | null; color: string; outline_color: string; outline: number | null };
+export type SubStyle = { font: string; font_size: number | null; color: string; outline_color: string; outline: number | null };
+export type FontOption = { id: string; label: string; family: string; weight: number; file: string };
 export type Settings = {
   lang: Lang; asr_model: string; llm_provider: "gemini" | "openai"; llm_model: string; translator_notes: string;
   tts_engine: "edge" | "vieneu"; tts_voice: string; tts_rate: number; ref_audio: string | null;
@@ -29,6 +30,7 @@ export type Options = {
   tts: { edge: Voice[] };
   engines: { separate: EngineOk; asr: Record<Lang, EngineOk>; llm: Record<string, EngineOk>; tts: Record<string, EngineOk> };
   steps: string[];
+  fonts: FontOption[];
   defaults: Settings;
 };
 export type JobEvent =

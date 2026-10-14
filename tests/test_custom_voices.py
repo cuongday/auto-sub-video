@@ -10,13 +10,13 @@ def wav(path, seconds=3.0, sr=24000):
     return path
 
 def test_create_list_get_delete(tmp_path):
-    v = voices.create("NgocHuyen-Vbee", wav(tmp_path / "r.wav", 9), gender="female", note="Vbee")
-    assert v.id == "custom:NgocHuyen-Vbee" and v.duration == pytest.approx(9, abs=0.05)
-    assert get_store().stat("voices/NgocHuyen-Vbee/ref.wav") is not None
-    assert [x.name for x in voices.list_voices()] == ["NgocHuyen-Vbee"]
-    p = voices.ref_path("custom:NgocHuyen-Vbee", tmp_path / "cache")
+    v = voices.create("Giong-Thu", wav(tmp_path / "r.wav", 9), gender="female", note="test")
+    assert v.id == "custom:Giong-Thu" and v.duration == pytest.approx(9, abs=0.05)
+    assert get_store().stat("voices/Giong-Thu/ref.wav") is not None
+    assert [x.name for x in voices.list_voices()] == ["Giong-Thu"]
+    p = voices.ref_path("custom:Giong-Thu", tmp_path / "cache")
     assert p.exists() and sf.info(p).samplerate == 24000
-    voices.delete("NgocHuyen-Vbee")
+    voices.delete("Giong-Thu")
     assert voices.list_voices() == [] and get_store().list("voices/") == []
 
 def test_trims_long_reference_and_rejects_bad_input(tmp_path):

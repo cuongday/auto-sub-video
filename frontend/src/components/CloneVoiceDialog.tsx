@@ -27,7 +27,7 @@ export default function CloneVoiceDialog({ onClose, onCreated }: { onClose: () =
       <form method="dialog" onSubmit={(e) => { e.preventDefault(); submit(); }}>
         <h3 id="clone-title">Tạo giọng nhân bản</h3>
         <p className="muted small">Một đoạn 5–15 giây chỉ có giọng người nói, rõ, không nhạc nền. File dài hơn sẽ được cắt 15 giây kể từ “bắt đầu”.</p>
-        <label>Tên giọng<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ví dụ: NgocHuyen-Vbee" autoFocus /></label>
+        <label>Tên giọng<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ví dụ: MinhAnh-Review" autoFocus /></label>
         <label>Giới tính
           <select value={gender} onChange={(e) => setGender(e.target.value)}>
             <option value="female">Nữ</option><option value="male">Nam</option>

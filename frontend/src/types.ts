@@ -22,7 +22,7 @@ export type Segment = { id: number; start: number; end: number; source: string; 
 export type Character = { name: string; vi_name: string; addressing: string };
 export type Context = { summary: string; genre_tone: string; characters: Character[]; glossary: { source: string; vi: string }[] };
 export type Option = { id: string; label: string };
-export type Voice = Option & { gender?: string; featured?: boolean; default?: boolean };
+export type Voice = Option & { gender?: string; featured?: boolean; default?: boolean; custom?: boolean };
 export type EngineOk = { ok: boolean; hint: string };
 export type Options = {
   asr: Record<Lang, Option[]>;

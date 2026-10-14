@@ -137,6 +137,21 @@ def test_voice_sample_and_voices(client):
     assert r.status_code == 200 and len(r.content) > 1000
     assert client.get("/api/tts/edge/voices").json()[0]["id"] == "v"
 
+def test_custom_voice_api(client, tmp_path):
+    import numpy as np, soundfile as sf
+    t = np.arange(24000 * 6) / 24000
+    sf.write(tmp_path / "ref.wav", (0.3 * np.sin(2 * np.pi * 200 * t)).astype(np.float32), 24000)
+    r = client.post("/api/voices/custom", data={"name": "Thu", "path": "ref.wav", "gender": "female"})
+    assert r.status_code == 200 and r.json()["id"] == "custom:Thu"
+    up = client.post("/api/voices/custom", data={"name": "Up"}, files={"file": ("a.wav", (tmp_path / "ref.wav").read_bytes())})
+    assert up.status_code == 200
+    assert client.post("/api/voices/custom", data={"name": "Thu", "path": "ref.wav"}).status_code == 400
+    assert client.post("/api/voices/custom", data={"name": "X", "path": "../etc/passwd"}).status_code == 400
+    assert [v["name"] for v in client.get("/api/voices/custom").json()] == ["Thu", "Up"]
+    assert client.get("/api/voices/custom/Thu/ref.wav").status_code == 200
+    assert client.delete("/api/voices/custom/Thu").status_code == 200
+    assert [v["name"] for v in client.get("/api/voices/custom").json()] == ["Up"]
+
 def test_presets(client):
     from autosub.models import JobSettings
     s = JobSettings(lang="en").model_dump(mode="json")

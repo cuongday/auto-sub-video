@@ -47,6 +47,8 @@ export const api = {
   browse: (path: string) => j<BrowseListing>(fetch(`/api/browse?path=${encodeURIComponent(path)}`)),
   appSettings: () => j<AppSettings>(fetch("/api/app-settings")),
   saveAppSettings: (s: { video_dir: string }) => j<AppSettings>(put("/api/app-settings", s)),
+  createVoice: (fd: FormData) => j<{ id: string; name: string; duration: number }>(fetch("/api/voices/custom", { method: "POST", body: fd })),
+  deleteVoice: (name: string) => j(fetch(`/api/voices/custom/${encodeURIComponent(name)}`, { method: "DELETE" })),
   remove: (id: string) => j(fetch(`/api/jobs/${id}`, { method: "DELETE" })),
   saveSettings: (id: string, s: Settings) => j<Job>(put(`/api/jobs/${id}/settings`, s)),
   uploadRef: (id: string, file: File) => {

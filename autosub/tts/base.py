@@ -36,7 +36,7 @@ def cached_synthesize(engine: TTSEngine, text: str, voice: str, rate: float, ref
     of truth, `local_dir` (default: scratch area) keeps a local copy for the processing tools."""
     from ..storage import get_store
     st = get_store()
-    key = cache_key(engine.name, voice, rate, file_sha(ref_audio), text)
+    key = cache_key(engine.name, voice, rate, file_sha(ref_audio) or _custom_sha(voice), text)
     local_dir = Path(local_dir or cache_dir()); local_dir.mkdir(parents=True, exist_ok=True)
     with _key_lock(key):            # identical lines synthesized in parallel are produced once
         hit = next(iter(local_dir.glob(key + ".*")), None)
@@ -54,6 +54,15 @@ def cached_synthesize(engine: TTSEngine, text: str, voice: str, rate: float, ref
             return final
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+def _custom_sha(voice: str) -> str:
+    """Content tag of a named cloned voice, so re-recording it does not reuse old cached lines."""
+    from ..voices import PREFIX
+    if not voice.startswith(PREFIX):
+        return ""
+    from ..storage import get_store
+    info = get_store().stat(f"voices/{voice[len(PREFIX):]}/ref.wav")
+    return info.etag if info else ""
 
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import browse, checks, config, jobs, media, pipeline, render, store, translate, workdir
+from . import browse, checks, config, jobs, media, pipeline, render, store, translate, voices, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .fonts import FONTS
@@ -120,6 +120,62 @@ async def voice_sample(body: VoiceSampleIn):
         raise HTTPException(502, f"TTS lỗi: {e}")
     media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
     return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store"})
+
+# ------------------------------------------------------------------ cloned voices (VieNeu)
+
+@app.get("/api/voices/custom")
+def list_custom_voices():
+    return [dict(v.__dict__, id=v.id) for v in voices.list_voices()]
+
+@app.post("/api/voices/custom")
+async def create_custom_voice(request: Request):
+    """multipart: name, file (audio/video upload) | path (host file), gender, note, start, length, overwrite."""
+    form = await request.form()
+    name = str(form.get("name") or "").strip()
+    up, host_path = form.get("file"), str(form.get("path") or "").strip()
+    tmp_dir = config.WORK_DIR / "_voices"; tmp_dir.mkdir(parents=True, exist_ok=True)
+    src = None
+    try:
+        if hasattr(up, "filename") and up is not None:
+            src = tmp_dir / f"upload-{abs(hash(name))}{Path(up.filename or 'a.wav').suffix.lower()}"
+            src.write_bytes(await up.read())
+        elif host_path:
+            try:
+                src = browse.resolve(host_path)
+            except browse.BrowseError as e:
+                raise HTTPException(400, str(e))
+        else:
+            raise HTTPException(400, "Thiếu file giọng mẫu")
+        try:
+            v = await asyncio.to_thread(
+                voices.create, name, src, gender=str(form.get("gender") or ""), note=str(form.get("note") or ""),
+                start=float(form.get("start") or 0), length=float(form["length"]) if form.get("length") else None,
+                overwrite=str(form.get("overwrite") or "") in ("1", "true"))
+        except voices.VoiceError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(400, f"Không đọc được file âm thanh: {e}")
+    finally:
+        if src is not None and src.parent == tmp_dir:
+            src.unlink(missing_ok=True)
+    return dict(v.__dict__, id=v.id)
+
+@app.delete("/api/voices/custom/{name}")
+def delete_custom_voice(name: str):
+    if voices.get(name) is None:
+        raise HTTPException(404, "Không có giọng này")
+    voices.delete(name)
+    return {"ok": True}
+
+@app.get("/api/voices/custom/{name}/ref.wav")
+def custom_voice_ref(name: str):
+    st = get_store()
+    k = f"voices/{name}/ref.wav"
+    info = st.stat(k)
+    if info is None:
+        raise HTTPException(404, "Không có giọng này")
+    return StreamingResponse(st.open_range(k, 0, None), media_type="audio/wav",
+                             headers={"Content-Length": str(info.size), "Cache-Control": "no-cache"})
 
 @app.get("/api/tts/{engine}/voices")
 def tts_voices(engine: Literal["edge", "vieneu"]):

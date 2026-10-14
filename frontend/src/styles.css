@@ -264,3 +264,5 @@ button.small { padding: 4px 10px; font-size: .85em; }
 .browser-list .entry.file .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .downloads { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .ok-msg { color: var(--ok); }
+.voice-manage { gap: 14px; margin-top: -4px; }
+.link.danger { color: var(--bad); }

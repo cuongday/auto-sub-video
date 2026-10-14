@@ -62,6 +62,9 @@ class VieneuTTS:
         return None
 
     def synthesize(self, text: str, out: Path, voice: str = "", rate: float = 1.0, ref_audio=None) -> Path:
+        from .. import voices as custom
+        if custom.is_custom(voice) and not ref_audio:      # named cloned voice stored in MinIO
+            ref_audio, voice = custom.ref_path(voice, Path(out).parent), ""
         with _Borrow() as tts:
             v = self._voice_for(tts, voice, ref_audio)
             pcm = np.asarray(tts.infer(text, voice=v) if v is not None else tts.infer(text), dtype=np.float32).reshape(-1)
@@ -78,7 +81,14 @@ class VieneuTTS:
         return Path(out)
 
     def voices(self) -> list[dict]:
-        """Preset voices: [{id, label, gender, featured, default}], editors' picks first."""
+        """Cloned voices first, then presets: [{id, label, gender, featured, default, custom}]."""
+        from .. import voices as custom
+        mine = [{"id": v.id, "label": f"{v.name} — giọng nhân bản" + (f" · {v.note}" if v.note else ""),
+                 "gender": v.gender, "featured": False, "default": False, "custom": True}
+                for v in custom.list_voices()]
+        return mine + self._presets()
+
+    def _presets(self) -> list[dict]:
         if not VieneuTTS._voices:
             with _Borrow() as tts:
                 presets = tts._preset_voices

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import CloneVoiceDialog from "./CloneVoiceDialog";
+import { useDialog } from "./Dialog";
 import type { Job, Options, Settings, Voice } from "../types";
 
-const GENDER: Record<string, string> = { female: "Giọng nữ", male: "Giọng nam" };
+const GENDER: Record<string, string> = { custom: "Giọng nhân bản", female: "Giọng nữ", male: "Giọng nam" };
 
 export default function OptionsForm({ job, options, s, set, onRefUpload }: {
   job: Job; options: Options; s: Settings; set: (patch: Partial<Settings>) => void; onRefUpload: (f: File) => void;
@@ -12,6 +14,8 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [sampling, setSampling] = useState(false);
   const audio = useRef<HTMLAudioElement>(null);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const dialog = useDialog();
   const eng = options.engines;
   useEffect(() => {
     setVoiceErr(""); setVoices([]); setLoadingVoices(true);
@@ -19,8 +23,12 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
   }, [s.tts_engine]);
   const defaultVoice = voices.find((v) => v.default);
   const groups = Object.entries(voices.reduce<Record<string, Voice[]>>((acc, v) => {
-    (acc[v.gender || "other"] ??= []).push(v); return acc;
+    (acc[v.custom ? "custom" : v.gender || "other"] ??= []).push(v); return acc;
   }, {}));
+  const reloadVoices = (select?: string) => api.voices(s.tts_engine).then((v) => {
+    setVoices(v); if (select !== undefined) set({ tts_voice: select });
+  });
+  const current = voices.find((v) => v.id === s.tts_voice);
   const sample = async () => {
     setSampling(true); setVoiceErr("");
     try {
@@ -94,6 +102,21 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
         </label>
         <audio ref={audio} hidden />
         {voiceErr && <p className="warn">{voiceErr}</p>}
+        {s.tts_engine === "vieneu" && (
+          <div className="row voice-manage">
+            <button type="button" className="link" onClick={() => setCloneOpen(true)}>+ Tạo giọng nhân bản</button>
+            {current?.custom && (
+              <button type="button" className="link danger" onClick={async () => {
+                const name = current.id.slice("custom:".length);
+                if (!(await dialog.confirm({ title: `Xoá giọng "${name}"?`, message: "Các job đang dùng giọng này sẽ phải chọn giọng khác.",
+                  confirmLabel: "Xoá", danger: true }))) return;
+                await api.deleteVoice(name); reloadVoices("");
+              }}>Xoá giọng này</button>
+            )}
+          </div>
+        )}
+        {cloneOpen && <CloneVoiceDialog onClose={() => setCloneOpen(false)}
+          onCreated={(id) => { setCloneOpen(false); reloadVoices(id); }} />}
         <label>Tốc độ đọc <output>{s.tts_rate.toFixed(2)}×</output>
           <input type="range" min={0.8} max={1.3} step={0.05} value={s.tts_rate} onChange={(e) => set({ tts_rate: +e.target.value })} />
         </label>

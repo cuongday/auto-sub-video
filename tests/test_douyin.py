@@ -3,7 +3,7 @@ from autosub import douyin
 
 def test_parse_url():
     assert douyin.parse_url("https://www.douyin.com/video/7695737946679314786?x=1") == ("video", "7695737946679314786")
-    assert douyin.parse_url("https://www.douyin.com/user/MS4wLjABAAAAbVICJsWY6yp15i5IhqNCVdAX34M?from=x")[0] == "user"
+    assert douyin.parse_url("https://www.douyin.com/user/MS4wLjABAAAAexampleSecUid0123456789?from=x")[0] == "user"
     assert douyin.parse_url("https://www.douyin.com/user/self?modal_id=7692515734157939811") == ("video", "7692515734157939811")
     shared = "7.94 复制打开抖音，看看【土豆的作品】日常 https://v.douyin.com/iAbC123x/ s@a.bc 02/19"
     assert douyin.parse_url(shared) == ("short", "https://v.douyin.com/iAbC123x/")

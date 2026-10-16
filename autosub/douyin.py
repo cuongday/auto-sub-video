@@ -218,9 +218,8 @@ class Login:
                 browser = await p.chromium.launch(headless=True)
                 ctx = await browser.new_context(locale="zh-CN", user_agent=UA, viewport={"width": 1366, "height": 860})
                 page = await ctx.new_page()
-                # a channel page opens the login dialog by itself, with the QR as a data: image
-                await page.goto("https://www.douyin.com/user/MS4wLjABAAAAbVICJsWY6yp15i5IhqNCVdAX34M_k_ULylkIaOL-KV4",
-                                wait_until="domcontentloaded", timeout=45000)
+                # the "my profile" page asks a logged-out visitor to log in, with the QR as a data: image
+                await page.goto("https://www.douyin.com/user/self", wait_until="domcontentloaded", timeout=45000)
                 t0 = time.time()
                 while time.time() - t0 < self.TIMEOUT and not self._stop.is_set():
                     qr = await page.evaluate("""() => {

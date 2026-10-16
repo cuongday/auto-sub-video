@@ -87,7 +87,8 @@ def step_hash(ctx: Ctx, step: str) -> str:
     if step == "mix":
         return _h(prev, st.bg_volume_db)
     if step == "render":
-        return _h(prev, st.region.model_dump(), st.cover, st.cover_color, st.style.model_dump(),
+        return _h(prev, st.region.model_dump(), [r.model_dump() for r in st.extra_regions], st.cover, st.cover_color,
+                  st.style.model_dump(),
                   _segments_key(store.load_segments(j.id)))
     raise KeyError(step)
 

@@ -38,3 +38,18 @@ def test_dangling_fonts_link_is_replaced(tmp_path):
     (work / "fonts").symlink_to(tmp_path / "gone", target_is_directory=True)
     render._link_fonts(work)
     assert (work / "fonts" / "BeVietnamPro-SemiBold.ttf").exists()
+
+def test_render_covers_extra_region(tmp_path):
+    src = make_video(tmp_path / "src.mp4", seconds=2)
+    info = media.probe(src)
+    work = tmp_path / "job"; work.mkdir()
+    audio = media.silent_audio(work / "mix.wav", info.duration)
+    st = JobSettings(region=Region(x=0.0, y=0.8, w=1.0, h=0.18), extra_regions=[Region(x=0.0, y=0.0, w=0.4, h=0.2)],
+                     cover="blur")
+    ass = work / "subs.ass"
+    ass.write_text(build_ass([], 640, 360, st.region, st.style))
+    out = render.render_video(src, audio, ass, work / "output.mp4", info, st)
+    a, b = frame(src, 1.0), frame(out, 1.0)
+    top_left = np.abs(a[:72, :256] - b[:72, :256]).mean()
+    middle = np.abs(a[120:250, 300:600] - b[120:250, 300:600]).mean()
+    assert top_left > 5 and middle < 3, (top_left, middle)

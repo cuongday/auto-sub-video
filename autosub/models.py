@@ -43,6 +43,7 @@ class JobSettings(BaseModel):
     tts_rate: float = Field(1.0, ge=0.5, le=2.0)
     ref_audio: str | None = None          # VieNeu clone reference (file name inside job dir)
     region: Region = Field(default_factory=Region)
+    extra_regions: list[Region] = Field(default_factory=list, max_length=5)  # covered only, no subtitle
     cover: Literal["blur", "blur_dim", "solid"] = "blur_dim"
     cover_color: str = "#000000"
     style: SubStyle = Field(default_factory=SubStyle)

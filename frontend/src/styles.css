@@ -126,7 +126,15 @@ label.inline input[type="number"] { width: 120px; }
 .setup.portrait video.preview { margin-left: 0; }
 .picker { position: relative; user-select: none; touch-action: none; cursor: crosshair; border-radius: 8px; overflow: hidden; background: #000; line-height: 0; width: 100%; }
 .picker img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.picker-box { position: absolute; border: 2px solid var(--amber); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35); cursor: move; z-index: 3; }
+.picker-box { position: absolute; border: 2px solid var(--amber); cursor: move; z-index: 3; }
+.picker-box.extra { border-color: var(--blue); border-style: dashed; }
+.picker-box.active { z-index: 4; box-shadow: 0 0 0 2px rgba(0, 0, 0, .5); }
+.picker-box .tag { position: absolute; left: -2px; top: -20px; font-size: 11px; line-height: 18px; padding: 0 6px;
+  border-radius: 4px 4px 0 0; background: var(--amber); color: var(--amber-ink); font-weight: 600; white-space: nowrap; }
+.picker-box.extra .tag { background: var(--blue); color: #06142b; }
+.picker-box .remove { position: absolute; right: -11px; top: -11px; width: 22px; height: 22px; min-width: 0; padding: 0;
+  border-radius: 50%; background: var(--bad); border: none; color: #fff; font-size: 14px; line-height: 1; justify-content: center; }
+.region-actions { margin-top: 8px; }
 .handle { position: absolute; width: 12px; height: 12px; background: var(--amber); border-radius: 2px; }
 .handle.nw { left: -7px; top: -7px; cursor: nwse-resize; } .handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
 .handle.ne { right: -7px; top: -7px; cursor: nesw-resize; } .handle.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }

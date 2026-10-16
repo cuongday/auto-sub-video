@@ -5,19 +5,38 @@ from . import config, proc
 from .models import JobSettings, Segment, VideoInfo
 from .subtitles import build_ass, region_px
 
-def cover_filter(box: tuple[int, int, int, int], cover: str, color: str) -> str:
-    x, y, w, h = box
-    rect = f"x={x}:y={y}:w={w}:h={h}"
+def cover_filter(boxes, cover: str, color: str) -> str:
+    """Cover one box or a list of boxes, from [0:v] to [cv]."""
+    if boxes and isinstance(boxes[0], int):
+        boxes = [boxes]
+    rects = [f"x={x}:y={y}:w={w}:h={h}" for x, y, w, h in boxes]
     if cover == "solid":
-        return f"[0:v]drawbox={rect}:color=0x{color.lstrip('#')}@1:t=fill[cv]"
-    r = max(2, min(20, min(w, h) // 4))
-    rc = max(1, r // 2)
-    f = (f"[0:v]split=2[base][tmp];[tmp]crop={w}:{h}:{x}:{y},"
-         f"boxblur=luma_radius={r}:luma_power=3:chroma_radius={rc}:chroma_power=3[bl];"
-         f"[base][bl]overlay={x}:{y}")
-    if cover == "blur_dim":
-        f += f",drawbox={rect}:color=black@0.45:t=fill"
-    return f + "[cv]"
+        return "[0:v]" + ",".join(f"drawbox={r}:color=0x{color.lstrip('#')}@1:t=fill" for r in rects) + "[cv]"
+    if len(boxes) == 1:
+        x, y, w, h = boxes[0]
+        r = max(2, min(20, min(w, h) // 4)); rc = max(1, r // 2)
+        f = (f"[0:v]split=2[base][tmp];[tmp]crop={w}:{h}:{x}:{y},"
+             f"boxblur=luma_radius={r}:luma_power=3:chroma_radius={rc}:chroma_power=3[bl];"
+             f"[base][bl]overlay={x}:{y}")
+        if cover == "blur_dim":
+            f += f",drawbox={rects[0]}:color=black@0.45:t=fill"
+        return f + "[cv]"
+    parts, src = [], "[0:v]"
+    for i, ((x, y, w, h), rect) in enumerate(zip(boxes, rects)):
+        r = max(2, min(20, min(w, h) // 4)); rc = max(1, r // 2)
+        dst = "[cv]" if i == len(boxes) - 1 else f"[c{i}]"
+        step = (f"{src}split=2[base{i}][tmp{i}];[tmp{i}]crop={w}:{h}:{x}:{y},"
+                f"boxblur=luma_radius={r}:luma_power=3:chroma_radius={rc}:chroma_power=3[bl{i}];"
+                f"[base{i}][bl{i}]overlay={x}:{y}")
+        if cover == "blur_dim":
+            step += f",drawbox={rect}:color=black@0.45:t=fill"
+        parts.append(step + dst)
+        src = dst
+    return ";".join(parts)
+
+def cover_boxes(settings: JobSettings, info: VideoInfo) -> list[tuple[int, int, int, int]]:
+    """Pixel boxes to cover: the subtitle region first, then the extra regions."""
+    return [region_px(r, info.width, info.height) for r in [settings.region, *settings.extra_regions]]
 
 def build_filter(box, cover: str, color: str, ass_name: str = "subs.ass", fonts_dir: str = "fonts") -> str:
     return cover_filter(box, cover, color) + f";[cv]ass={ass_name}:fontsdir={fonts_dir}[v]"
@@ -34,8 +53,8 @@ def _link_fonts(work_dir: Path) -> None:
             shutil.copytree(config.FONTS_DIR, link)
 
 def _graph(info: VideoInfo, settings: JobSettings, ass_name: str) -> str:
-    box = region_px(settings.region, info.width, info.height)
-    graph = build_filter(box, settings.cover, settings.cover_color, ass_name=ass_name, fonts_dir="fonts")
+    graph = build_filter(cover_boxes(settings, info), settings.cover, settings.cover_color, ass_name=ass_name,
+                         fonts_dir="fonts")
     if info.width % 2 or info.height % 2:
         graph = graph[:-3] + ",scale=trunc(iw/2)*2:trunc(ih/2)*2[v]"
     return graph

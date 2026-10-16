@@ -18,6 +18,7 @@ export default function Setup({ job, options, onJob, onRun }: {
   const [s, setS] = useState<Settings>(job.settings);
   const [frame, setFrame] = useState(Math.min(3, job.frames.length - 1));
   const [frameH, setFrameH] = useState(0);
+  const [activeRegion, setActiveRegion] = useState(0);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [presets, setPresets] = useState<Record<string, Settings>>({});
@@ -49,6 +50,7 @@ export default function Setup({ job, options, onJob, onRun }: {
   const t = (info.duration * (frame + 0.5)) / Math.max(1, job.frames.length);
   const autoFont = autoFontSize(s.region, info);
   const portrait = isPortrait(info);
+  const extras = s.extra_regions ?? [];
 
   return (
     <div className={`setup ${portrait ? "portrait" : "landscape"}`}>
@@ -56,16 +58,25 @@ export default function Setup({ job, options, onJob, onRun }: {
         <header className="card-head">
           <div>
             <h2>Chọn vùng phụ đề cũ</h2>
-            <p className="muted">Kéo trên ảnh để khoanh vùng cần che; kéo khung để di chuyển, kéo góc để đổi kích thước. Phụ đề mới sẽ nằm giữa vùng này.</p>
+            <p className="muted">Kéo trên ảnh để khoanh vùng cần che; kéo khung để di chuyển, kéo góc để đổi kích thước. Phụ đề mới nằm giữa vùng <strong>Phụ đề</strong>; các vùng <strong>Che</strong> chỉ bị làm mờ (logo, chữ chú thích…).</p>
+            <div className="row region-actions">
+              <button className="ghost small" disabled={extras.length >= 5} onClick={() => {
+                const r = { x: 0.03, y: 0.04 + 0.12 * extras.length, w: 0.3, h: 0.1 };
+                set({ extra_regions: [...extras, r] }); setActiveRegion(extras.length + 1);
+              }}>+ Thêm vùng che</button>
+              {extras.length > 0 && <span className="muted small">{extras.length} vùng che thêm · đang sửa: {activeRegion === 0 ? "Phụ đề" : `Che ${activeRegion}`}</span>}
+            </div>
           </div>
           <span className="meta">{info.width}×{info.height} · {fmtDur(info.duration)}{info.has_audio ? "" : " · không có tiếng"}</span>
         </header>
         <div className="stage">
           <div className="stage-frame" ref={imgWrap} style={{ width: `min(100%, calc(var(--stage-h) * ${info.width / info.height}))` }}>
             <RegionPicker src={api.file(job.id, `frames/${job.frames[frame]}`)} aspect={info.width / info.height}
-              region={s.region} onChange={(region) => set({ region })}>
+              regions={[s.region, ...extras]} active={activeRegion} onActive={setActiveRegion}
+              onChange={(i, r) => i === 0 ? set({ region: r }) : set({ extra_regions: extras.map((x, k) => k === i - 1 ? r : x) })}
+              onRemove={(i) => { set({ extra_regions: extras.filter((_, k) => k !== i - 1) }); setActiveRegion(0); }}>
               <SubOverlay region={s.region} cover={s.cover} coverColor={s.cover_color} style={s.style} text={SAMPLE}
-                frameH={frameH} info={info} fonts={options.fonts} />
+                frameH={frameH} info={info} fonts={options.fonts} extraRegions={extras} />
             </RegionPicker>
           </div>
           <div className="stage-side">

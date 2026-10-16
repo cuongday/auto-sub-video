@@ -177,7 +177,7 @@ export default function Review({ job, fonts, onRender }: { job: Job; fonts: Font
               style={{ aspectRatio: `${info.width} / ${info.height}` }} />
             <div className="overlay-layer" style={{ height: frameH }}>
               <SubOverlay region={job.settings.region} cover={job.settings.cover} coverColor={job.settings.cover_color}
-                style={job.settings.style} text={activeSeg?.vi ?? ""} frameH={frameH} info={info} fonts={fonts} />
+                style={job.settings.style} text={activeSeg?.vi ?? ""} frameH={frameH} info={info} fonts={fonts} extraRegions={job.settings.extra_regions ?? []} />
             </div>
           </div>
           <p className="muted small">Space: phát/dừng · Ctrl+↑/↓: câu trước/sau · Ctrl+Enter: nghe thử</p>

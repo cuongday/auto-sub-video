@@ -16,6 +16,7 @@ from .llm import get_llm
 from .models import STEPS, Job, Segment, TranslationContext, Word
 from .proc import Cancelled
 from .segmenter import build_segments
+from .speakers import voice_for
 from .subtitles import build_ass, build_srt
 from .timing import max_chars, slots
 from .tts import get_tts
@@ -75,15 +76,16 @@ def step_hash(ctx: Ctx, step: str) -> str:
     if step == "separate":
         return _h(prev, step, st.separate)
     if step == "asr":
-        return _h(prev, st.lang, st.asr_model)
+        return _h(prev, st.lang, st.asr_model, st.diarize and st.lang == "zh")
     if step == "segment":
         return _h(prev)
     if step == "translate":
         return _h(prev, st.llm_provider, st.llm_model, st.translator_notes)
     if step == "tts":
         ref = ctx.work.store.stat(ctx.work.key(st.ref_audio)) if st.ref_audio else None
-        return _h(prev, _segments_key(store.load_segments(j.id)), st.tts_engine, st.tts_voice, st.tts_rate,
-                  ref.etag if ref else "")
+        segs = store.load_segments(j.id)
+        return _h(prev, _segments_key(segs), [s.speaker for s in segs], st.tts_engine, st.tts_voice,
+                  sorted(st.speaker_voices.items()), st.tts_rate, ref.etag if ref else "")
     if step == "fit":
         return _h(prev)
     if step == "mix":
@@ -123,7 +125,9 @@ def _separate(ctx: Ctx):
 
 def _asr(ctx: Ctx):
     st = ctx.job.settings
-    words = ctx.engines.asr(st.lang, st.asr_model).transcribe(ctx.dir / "vocals16k.wav",
+    asr = ctx.engines.asr(st.lang, st.asr_model, diarize=True) if st.diarize and st.lang == "zh" \
+        else ctx.engines.asr(st.lang, st.asr_model)
+    words = asr.transcribe(ctx.dir / "vocals16k.wav",
                                                                progress=lambda p: ctx.progress("asr", p))
     ctx.check()
     store.save_json(ctx.job.id, "words.json", [w.model_dump() for w in words])
@@ -131,8 +135,11 @@ def _asr(ctx: Ctx):
 
 def _segment(ctx: Ctx):
     words = [Word.model_validate(w) for w in store.load_json(ctx.job.id, "words.json", default=[])]
-    segs = build_segments(words, ctx.job.settings.lang)
+    from .speakers import assign_speakers, speakers_of
+    segs = assign_speakers(build_segments(words, ctx.job.settings.lang), words)
     segs = _flag_lyrics(ctx, segs)
+    if speakers_of(segs):
+        ctx.log(f"Nhận ra {len(speakers_of(segs))} người nói")
     store.save_segments(ctx.job.id, segs)
     store.delete_context(ctx.job.id)      # new transcript -> context is analyzed again
     ctx.job.segments_edited = False
@@ -195,7 +202,7 @@ def _fit_all(ctx: Ctx, segs: list[Segment], only: set[int] | None = None) -> lis
         if ctx.cancel.is_set():
             return s.id, None, "cancelled"
         try:
-            r = fit_segment(engine, s, slot, st.tts_voice, st.tts_rate, ref, _tts_dir(ctx) / f"seg_{s.id:04d}.wav")
+            r = fit_segment(engine, s, slot, voice_for(st, s), st.tts_rate, ref, _tts_dir(ctx) / f"seg_{s.id:04d}.wav")
             res = (s.id, r, None)
         except Exception as e:  # noqa: BLE001
             res = (s.id, None, str(e))
@@ -460,5 +467,6 @@ def preview_tts(jid: str, sid: int, engines: Engines | None = None) -> Path:
     slot = slots(segs, job.info.duration)[idx]
     st = job.settings
     out = ctx.dir / "preview" / f"seg_{sid}.wav"
-    r = fit_segment(ctx.engines.tts(st.tts_engine), segs[idx], slot, st.tts_voice, st.tts_rate, ctx.ref_audio(), out)
+    r = fit_segment(ctx.engines.tts(st.tts_engine), segs[idx], slot, voice_for(st, segs[idx]), st.tts_rate,
+                    ctx.ref_audio(), out)
     return r.path

@@ -283,3 +283,11 @@ button.small { padding: 4px 10px; font-size: .85em; }
 .storage-box input[type="checkbox"] { width: auto; accent-color: var(--amber); }
 label.check { color: var(--ink); }
 label.check input { width: auto; accent-color: var(--amber); }
+.speakers { padding: 12px 16px; }
+.speaker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px 16px; margin-top: 10px; }
+.speaker-row { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); }
+.speaker-row select { flex: 1; min-width: 0; }
+.spk-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.spk-name { white-space: nowrap; }
+.spk-tag { font-size: .72em; border: 1px solid; border-radius: 99px; padding: 0 6px; align-self: flex-start; }
+.spk-pick { font-size: .74em; padding: 1px 4px; background: transparent; }

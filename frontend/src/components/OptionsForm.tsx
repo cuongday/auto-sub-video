@@ -58,6 +58,12 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
           <input type="checkbox" checked={s.separate} onChange={(e) => set({ separate: e.target.checked })} />
           Tách giọng khỏi nhạc nền (Demucs)
         </label>
+        {s.lang === "zh" && (
+          <label className="inline check" title="Nhận ra ai đang nói từng câu, để mỗi người một giọng thuyết minh">
+            <input type="checkbox" checked={s.diarize} onChange={(e) => set({ diarize: e.target.checked })} />
+            Nhận diện người nói
+          </label>
+        )}
         <p className="muted small">{s.separate
           ? "Thay hẳn giọng gốc, giữ nhạc nền. Tốn khoảng 0,5× thời lượng video."
           : "Nhanh hơn: giữ âm thanh gốc làm nền và tự hạ nhỏ khi có thuyết minh (kiểu thuyết minh truyền hình). Hợp với vlog, review ít nhạc."}</p>

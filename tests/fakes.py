@@ -39,7 +39,7 @@ class FakeTTS:
     def synthesize(self, text, out: Path, voice="", rate=1.0, ref_audio=None):
         if self.fail_on and self.fail_on in text:
             raise RuntimeError("tts down")
-        self.calls.append((text, rate))
+        self.calls.append((text, rate, voice))
         sr = 24000
         n = int(sr * len(text) * self.spc / rate)
         pcm = 0.3 * np.sin(2 * np.pi * 220 * np.arange(n) / sr).astype(np.float32)
@@ -53,15 +53,16 @@ class FakeTTS:
 
 class FakeASR:
     def __init__(self, text="你好世界。今天天气很好！我们去公园吧。"):
-        self.text = text; self.calls = 0
+        self.text = text; self.calls = 0; self.speakers = False
 
     def transcribe(self, wav16k, progress=None):
         self.calls += 1
-        words, t = [], 0.2
+        words, t, spk = [], 0.2, 0
         for c in self.text:
-            words.append(Word(text=c, start=round(t, 3), end=round(t + 0.15, 3))); t += 0.15
+            words.append(Word(text=c, start=round(t, 3), end=round(t + 0.15, 3), speaker=spk if self.speakers else None))
+            t += 0.15
             if c in "。！":
-                t += 0.5
+                t += 0.5; spk = 1 - spk
         return words
 
 def fake_separate(calls: list | None = None):

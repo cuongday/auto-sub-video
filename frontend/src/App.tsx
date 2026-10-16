@@ -143,7 +143,7 @@ export default function App() {
               <Progress job={job} steps={options.steps} pct={pct[job.id] ?? {}} logs={logs[job.id] ?? []}
                 onCancel={() => api.cancel(job.id)} onRetry={(step) => run(job.mode, step || job.stale_from)} />
             )}
-            {view === "review" && <Review key={job.id} job={job} fonts={options.fonts} onRender={() => run("review", "tts")} />}
+            {view === "review" && <Review key={job.id} job={job} fonts={options.fonts} onJob={replace} onRender={() => run("review", "tts")} />}
             {view === "result" && <Result job={job} onEdit={() => setView("review")} onSetup={() => setView("setup")} />}
             {view !== "progress" && job.state === "done" && job.stale_from && view !== "review" && (
               <div className="actions sticky stale">

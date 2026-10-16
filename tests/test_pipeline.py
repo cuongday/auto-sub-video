@@ -74,7 +74,7 @@ def test_edited_text_rerenders_changed_lines_only(rig):
     job = store.load(rig.job.id); job.segments_edited = True; store.save(job)
     n = len(rig.tts.calls)
     rig.run(mode="auto")
-    assert [t for t, _ in rig.tts.calls[n:]] == ["Câu đã sửa"]
+    assert [c[0] for c in rig.tts.calls[n:]] == ["Câu đã sửa"]
 
 def test_needs_confirm_when_overwriting_edits(rig):
     rig.run(mode="review")

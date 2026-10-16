@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import ContextEditor from "../components/ContextEditor";
+import SpeakerVoices, { speakerColor } from "../components/SpeakerVoices";
 import SubOverlay from "../components/SubOverlay";
 import { FLAG_LABEL, fmtTime, parseTime } from "../labels";
 import type { FontOption, Job, Segment } from "../types";
@@ -12,7 +13,7 @@ function computeSlots(segs: Segment[], duration: number): number[] {
   return segs.map((s, i) => Math.max(0.3, i + 1 < segs.length ? segs[i + 1].start - s.start - GAP : Math.min(s.end + 1, duration) - s.start));
 }
 
-export default function Review({ job, fonts, onRender }: { job: Job; fonts: FontOption[]; onRender: () => Promise<void> }) {
+export default function Review({ job, fonts, onRender, onJob }: { job: Job; fonts: FontOption[]; onRender: () => Promise<void>; onJob: (j: Job) => void }) {
   const [segs, setSegs] = useState<Segment[]>([]);
   const [measured, setMeasured] = useState<Record<number, { text: string; dur: number }>>({});
   const [cur, setCur] = useState<number | null>(null);
@@ -110,11 +111,13 @@ export default function Review({ job, fonts, onRender }: { job: Job; fonts: Font
 
   const red = segs.filter((s, i) => s.vi && ratio(s, i) > MAX_SPEED).length;
   const lyricCount = segs.filter((s) => s.flags.includes("lyrics")).length;
+  const speakerIds = [...new Set(segs.map((s) => s.speaker).filter((x): x is number => x != null))].sort((a, b) => a - b);
   const flagged = segs.filter((s) => s.flags.length).length;
 
   return (
     <div className="review">
       <ContextEditor jobId={job.id} busy={busy === "tr-all"} onRetranslate={() => retranslate()} />
+      <SpeakerVoices job={job} segs={segs} onSaved={onJob} />
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}
       {job.error && <p className="warn">{job.error}</p>}
       {lyricCount > 0 && (
@@ -147,6 +150,13 @@ export default function Review({ job, fonts, onRender }: { job: Job; fonts: Font
                         <TimeInput value={s.start} onChange={(v) => patch(s.id, { start: v })} />
                         <TimeInput value={s.end} onChange={(v) => patch(s.id, { end: v })} />
                         <button className="link small" onClick={() => seek(s)}>▶ xem</button>
+                        {speakerIds.length > 1 && (
+                          <select className="spk-pick" value={s.speaker ?? ""} aria-label="Người nói"
+                            style={{ color: s.speaker != null ? speakerColor(s.speaker) : undefined }}
+                            onChange={(e) => patch(s.id, { speaker: e.target.value === "" ? null : +e.target.value })}>
+                            {speakerIds.map((k) => <option key={k} value={k}>Người {k + 1}</option>)}
+                          </select>
+                        )}
                       </td>
                       <td className="src">{s.source}</td>
                       <td className="vi">

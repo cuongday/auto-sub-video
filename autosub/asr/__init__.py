@@ -7,13 +7,13 @@ def available(lang: Lang) -> tuple[bool, str]:
     ok = importlib.util.find_spec(mod) is not None
     return ok, "" if ok else f"Chưa cài {mod}: make setup-full"
 
-def get_asr(lang: Lang, model: str = "") -> ASR:
+def get_asr(lang: Lang, model: str = "", diarize: bool = False) -> ASR:
     ok, why = available(lang)
     if not ok:
         raise RuntimeError(why)
     if lang == "zh":
         from .funasr_zh import FunASRZH
-        return FunASRZH(model)
+        return FunASRZH(model, diarize=diarize)
     from .whisper_en import WhisperEN
     return WhisperEN(model)
 

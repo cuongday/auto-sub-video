@@ -6,7 +6,7 @@ export type FontOption = { id: string; label: string; family: string; weight: nu
 export type Settings = {
   lang: Lang; asr_model: string; llm_provider: "gemini" | "openai"; llm_model: string; translator_notes: string;
   tts_engine: "edge" | "vieneu"; tts_voice: string; tts_rate: number; ref_audio: string | null;
-  region: Region; extra_regions: Region[]; cover: Cover; cover_color: string; style: SubStyle; bg_volume_db: number; separate: boolean; duck_db: number;
+  region: Region; extra_regions: Region[]; cover: Cover; cover_color: string; style: SubStyle; bg_volume_db: number; separate: boolean; duck_db: number; diarize: boolean; speaker_voices: Record<string, string>;
 };
 export type StepStatus = "pending" | "running" | "done" | "error";
 export type StepState = { status: StepStatus; hash: string | null; seconds: number | null; error: string | null };
@@ -18,7 +18,7 @@ export type Job = {
   current_step: string | null; error: string | null; segments_edited: boolean; warnings: string[];
   frames: string[]; files: Record<string, boolean>; stale_from: string | null; pruned: string[];
 };
-export type Segment = { id: number; start: number; end: number; source: string; vi: string; flags: string[]; speed: number | null };
+export type Segment = { id: number; start: number; end: number; source: string; vi: string; flags: string[]; speed: number | null; speaker?: number | null };
 export type Character = { name: string; vi_name: string; addressing: string };
 export type Context = { summary: string; genre_tone: string; characters: Character[]; glossary: { source: string; vi: string }[] };
 export type Option = { id: string; label: string };

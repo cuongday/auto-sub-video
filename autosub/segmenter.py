@@ -53,14 +53,17 @@ def build_segments(words: list[Word], lang: Lang, *, max_dur: float = 6.0, min_d
     for i, w in enumerate(words):
         chunks[-1].append(w)
         nxt = words[i + 1] if i + 1 < len(words) else None
-        if nxt and (w.text.strip().endswith(SENTENCE_END) or nxt.start - w.end > gap):
+        speaker_change = nxt is not None and w.speaker is not None and nxt.speaker is not None and nxt.speaker != w.speaker
+        if nxt and (w.text.strip().endswith(SENTENCE_END) or nxt.start - w.end > gap or speaker_change):
             chunks.append([])
     chunks = [c for big in chunks for c in _split_big(big, lang, max_dur)]
 
     merged: list[list[Word]] = []
     dur = lambda c: c[-1].end - c[0].start  # noqa: E731
     for c in chunks:
-        if merged and (dur(c) < min_dur or dur(merged[-1]) < min_dur) \
+        same_speaker = not merged or c[0].speaker is None or merged[-1][-1].speaker is None \
+            or c[0].speaker == merged[-1][-1].speaker
+        if merged and same_speaker and (dur(c) < min_dur or dur(merged[-1]) < min_dur) \
                 and c[0].start - merged[-1][-1].end < merge_gap and not _too_big(merged[-1] + c, lang, max_dur):
             merged[-1] = merged[-1] + c
         else:

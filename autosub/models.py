@@ -50,12 +50,15 @@ class JobSettings(BaseModel):
     bg_volume_db: float = Field(0.0, ge=-30, le=10)
     # False: skip Demucs; the original audio is the background and is ducked under the narration
     separate: bool = True
+    diarize: bool = False                 # label who speaks each line (Chinese ASR, CAM++)
+    speaker_voices: dict[str, str] = Field(default_factory=dict)   # speaker label -> TTS voice; others use tts_voice
     duck_db: float = Field(-14.0, ge=-40, le=0)
 
 class Word(BaseModel):
     text: str
     start: float
     end: float
+    speaker: int | None = None            # diarization label (Chinese ASR with speaker labels on)
 
 class Segment(BaseModel):
     id: int
@@ -65,6 +68,7 @@ class Segment(BaseModel):
     vi: str = ""
     flags: list[str] = Field(default_factory=list)
     speed: float | None = None            # actual speed-up applied by the fit step
+    speaker: int | None = None
 
 class Character(BaseModel):
     name: str

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import browse, checks, config, jobs, media, pipeline, prune, render, store, translate, voices, workdir
+from . import browse, checks, config, douyin, jobs, media, pipeline, prune, render, store, translate, voices, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .fonts import FONTS
@@ -480,6 +480,99 @@ def get_file(jid: str, name: str, request: Request, download: bool = False):
         return Response(b"", media_type=ctype, headers=headers)
     headers["Content-Length"] = str(size)
     return StreamingResponse(st.open_range(k, 0, None), media_type=ctype, headers=headers)
+
+# ------------------------------------------------------------------ Douyin
+
+_DY_LOGIN: list[douyin.Login] = []
+_DY_TASKS: dict[str, dict] = {}            # download batches: id -> {items: [{id,title,state,pct,job,error}]}
+
+class DyLinkIn(BaseModel):
+    url: str
+
+@app.post("/api/douyin/lookup")
+async def douyin_lookup(body: DyLinkIn):
+    """A video link -> that video; a channel link -> its videos (first page only unless logged in)."""
+    try:
+        kind, val = await asyncio.to_thread(douyin.resolve, body.url)
+        if kind == "video":
+            it = await asyncio.to_thread(douyin.video_info, val)
+            return {"kind": "video", "items": [it.public()], "complete": True, "logged_in": douyin.logged_in()}
+        ch = await asyncio.to_thread(douyin.channel, val)
+        return {"kind": "channel", "name": ch["name"], "items": [i.public() for i in ch["items"]],
+                "complete": ch["complete"], "logged_in": ch["logged_in"], "sec_uid": val}
+    except douyin.DouyinError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001  (browser / network)
+        raise HTTPException(502, f"Không đọc được Douyin: {e}")
+
+class DyDownloadIn(BaseModel):
+    ids: list[str]
+    titles: dict[str, str] = {}
+    preset: str | None = None             # apply this preset to every created job
+
+def _dy_worker(task_id: str, preset: dict | None):
+    task = _DY_TASKS[task_id]
+    for row in task["items"]:
+        row["state"] = "running"
+        try:
+            it = douyin.video_info(row["id"])
+            name = douyin.safe_name(it.title or row.get("title", ""), it.id)
+            job = store.create(name, "source.mp4")
+            w = workdir.WorkDir(job.id)
+            douyin.download(it, w.local("source.mp4"), progress=lambda p, r=row: r.update(pct=round(p, 3)))
+            job = _init_job(job, w.local("source.mp4"))
+            if preset:
+                keep = job.settings.region if not preset.get("region") else None
+                job.settings = JobSettings.model_validate({**job.settings.model_dump(), **preset})
+                if keep is not None:
+                    job.settings.region = keep
+                store.save(job)
+            row.update(state="done", pct=1, job=job.id)
+        except Exception as e:  # noqa: BLE001
+            row.update(state="error", error=str(getattr(e, "detail", e)))
+        QUEUE.emit({"type": "douyin", "task": task_id})
+    task["done"] = True
+    QUEUE.emit({"type": "douyin", "task": task_id})
+
+@app.post("/api/douyin/download")
+def douyin_download(body: DyDownloadIn):
+    if not body.ids:
+        raise HTTPException(400, "Chưa chọn video nào")
+    preset = store.load_presets().get(body.preset) if body.preset else None
+    import threading, uuid
+    tid = uuid.uuid4().hex[:8]
+    _DY_TASKS[tid] = {"id": tid, "done": False,
+                      "items": [{"id": i, "title": body.titles.get(i, ""), "state": "queued", "pct": 0, "job": None,
+                                 "error": None} for i in body.ids]}
+    threading.Thread(target=_dy_worker, args=(tid, preset), daemon=True).start()
+    return _DY_TASKS[tid]
+
+@app.get("/api/douyin/download/{tid}")
+def douyin_download_status(tid: str):
+    if tid not in _DY_TASKS:
+        raise HTTPException(404, "Không có lượt tải này")
+    return _DY_TASKS[tid]
+
+@app.get("/api/douyin/session")
+def douyin_session():
+    login = _DY_LOGIN[0] if _DY_LOGIN else None
+    return {"logged_in": douyin.logged_in(), "login": None if login is None else
+            {"state": login.state, "qr": login.qr, "error": login.error}}
+
+@app.post("/api/douyin/login")
+def douyin_login():
+    if _DY_LOGIN and _DY_LOGIN[0].state in ("starting", "waiting"):
+        return douyin_session()
+    _DY_LOGIN[:] = [douyin.Login()]
+    return douyin_session()
+
+@app.delete("/api/douyin/session")
+def douyin_logout():
+    if _DY_LOGIN:
+        _DY_LOGIN[0].cancel()
+    _DY_LOGIN.clear()
+    douyin.clear_session()
+    return douyin_session()
 
 # ------------------------------------------------------------------ host folder browser
 

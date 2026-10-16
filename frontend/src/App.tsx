@@ -4,6 +4,7 @@ import { useDialog } from "./components/Dialog";
 import { STATE_LABEL, STEP_LABEL } from "./labels";
 import type { Job, JobEvent, Options } from "./types";
 import { useEvents } from "./useEvents";
+import DouyinImport from "./views/DouyinImport";
 import NewJob from "./views/NewJob";
 import Progress from "./views/Progress";
 import Result from "./views/Result";
@@ -122,7 +123,12 @@ export default function App() {
         )}
       </aside>
       <main className="main">
-        {!job ? <NewJob onCreated={(j) => { replace(j); setSel(j.id); setView("setup"); history.replaceState(null, "", `?job=${j.id}`); }} /> : (
+        {!job ? (
+          <>
+            <NewJob onCreated={(j) => { replace(j); setSel(j.id); setView("setup"); history.replaceState(null, "", `?job=${j.id}`); }} />
+            <DouyinImport onJobsCreated={refresh} />
+          </>
+        ) : (
           <>
             <header className="job-head">
               <div>

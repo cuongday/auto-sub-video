@@ -41,6 +41,11 @@ COPY autosub/ autosub/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev $( [ "$FULL" = "1" ] && echo "--extra full" )
 
+# headless Chromium for Douyin (the page signs its API calls); browsers in a shared, readable path
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN playwright install --with-deps --only-shell chromium && chmod -R a+rX /opt/ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY fonts/ fonts/
 COPY --from=web /web/dist frontend/dist
 

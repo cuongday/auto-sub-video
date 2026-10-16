@@ -66,6 +66,14 @@ ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
 | `AUTOSUB_WORK_MAX_GB` | `20` | giới hạn thư mục tạm trong container |
 | `AUTOSUB_PORT` | `8020` | |
 
+### Tải video Douyin
+
+Ở màn **Video mới**, dán link vào ô "Tải video từ Douyin":
+- **link video** (`douyin.com/video/…`, hoặc cả đoạn chia sẻ có link `v.douyin.com/…`) → tải video đó;
+- **link kênh** (`douyin.com/user/…`) → hiện danh sách video để tích chọn, rồi "Tải N video thành job mới" (có thể áp một preset cho tất cả).
+
+Không đăng nhập thì mỗi kênh chỉ xem được trang đầu (~10–20 video). Bấm **Đăng nhập bằng mã QR** và quét bằng app Douyin để xem hết; phiên đăng nhập lưu trong MinIO (`douyin/session.json`). App dùng Chromium chạy ngầm trong container để đọc Douyin; video tải về đúng bản gốc không logo. Chỉ tải video bạn có quyền sử dụng.
+
 ## Sử dụng
 
 1. **Video mới**: kéo thả / bấm chọn file để tải lên, hoặc chọn video có sẵn trên máy trong hộp duyệt thư mục (không phải tải lên). Video được copy vào MinIO.

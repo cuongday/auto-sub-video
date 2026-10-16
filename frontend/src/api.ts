@@ -1,4 +1,4 @@
-import type { AppSettings, BrowseListing, Context, Job, Options, Segment, Settings, Voice } from "./types";
+import type { AppSettings, BrowseListing, Context, DyLookup, DyTask, Job, Options, Segment, Settings, Voice } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -51,6 +51,13 @@ export const api = {
   prune: (id: string) => j<{ freed: number; total: number; reclaimable: number }>(post(`/api/jobs/${id}/prune`)),
   createVoice: (fd: FormData) => j<{ id: string; name: string; duration: number }>(fetch("/api/voices/custom", { method: "POST", body: fd })),
   deleteVoice: (name: string) => j(fetch(`/api/voices/custom/${encodeURIComponent(name)}`, { method: "DELETE" })),
+  douyinLookup: (url: string) => j<DyLookup>(post("/api/douyin/lookup", { url })),
+  douyinDownload: (ids: string[], titles: Record<string, string>, preset: string | null) =>
+    j<DyTask>(post("/api/douyin/download", { ids, titles, preset })),
+  douyinTask: (id: string) => j<DyTask>(fetch(`/api/douyin/download/${id}`)),
+  douyinSession: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(fetch("/api/douyin/session")),
+  douyinLogin: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(post("/api/douyin/login")),
+  douyinLogout: () => j<{ logged_in: boolean; login: null }>(fetch("/api/douyin/session", { method: "DELETE" })),
   remove: (id: string) => j(fetch(`/api/jobs/${id}`, { method: "DELETE" })),
   saveSettings: (id: string, s: Settings) => j<Job>(put(`/api/jobs/${id}/settings`, s)),
   uploadRef: (id: string, file: File) => {

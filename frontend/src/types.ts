@@ -41,3 +41,6 @@ export type BrowseEntry = { name: string; path: string };
 export type BrowseFile = BrowseEntry & { size: number; mtime: number };
 export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
 export type AppSettings = { video_dir: string; browse_available: boolean; auto_prune: boolean };
+export type DyItem = { id: string; title: string; duration: number; cover: string; created: number; width: number; height: number; size: number; is_images: boolean };
+export type DyLookup = { kind: "video" | "channel"; name?: string; items: DyItem[]; complete: boolean; logged_in: boolean };
+export type DyTask = { id: string; done: boolean; items: { id: string; title: string; state: string; pct: number; job: string | null; error: string | null }[] };

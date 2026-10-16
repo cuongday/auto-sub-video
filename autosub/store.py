@@ -47,6 +47,10 @@ def names(jid: str, prefix: str = "") -> set[str]:
     base = job_prefix(jid)
     return {o.key[len(base):] for o in get_store().list(base + prefix)}
 
+def object_sizes(jid: str) -> dict[str, int]:
+    base = job_prefix(jid)
+    return {o.key[len(base):]: o.size for o in get_store().list(base)}
+
 def delete(jid: str) -> None:
     from . import workdir
     get_store().delete_prefix(job_prefix(jid))

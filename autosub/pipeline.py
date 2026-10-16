@@ -295,16 +295,33 @@ def _fresh(ctx: Ctx, step: str, h: str, present: set[str] | None = None) -> bool
     if not (s.status == "done" and s.hash == h):
         return False
     present = store.names(ctx.job.id) if present is None else present
-    return all(any(n.startswith(o) for n in present) if o.endswith("/") else o in present for o in OUTPUTS[step])
+    # a pruned output does not make its step stale: later steps rebuild it on demand
+    ok = lambda o: (any(n.startswith(o) for n in present) if o.endswith("/") else o in present) or o in ctx.job.pruned  # noqa: E731
+    return all(ok(o) for o in OUTPUTS[step])
+
+def _rebuild(ctx: Ctx, name: str) -> bool:
+    """Regenerate a pruned intermediate from what is kept (cheap: no Demucs, no TTS)."""
+    if name == "audio.wav":
+        _extract(ctx); ctx.work.push("audio.wav")
+    elif name == "voice_raw.wav":
+        _fit(ctx); ctx.work.push("voice_raw.wav")
+    else:
+        return False
+    if name in ctx.job.pruned:
+        ctx.job.pruned.remove(name)
+    ctx.log(f"Tạo lại {name} (đã dọn trước đó)")
+    return True
 
 def _run_step(ctx: Ctx, step: str) -> None:
     for name in INPUTS.get(step, []):
-        if ctx.work.fetch(name) is None:
+        if ctx.work.fetch(name) is None and not (_rebuild(ctx, name) and ctx.work.fetch(name) is not None):
             raise RuntimeError(f"Thiếu file {name} của bước trước, hãy chạy lại từ đầu")
     RUNNERS[step](ctx)
     ctx.check()
     for name in PUSH.get(step, []):
         ctx.work.push(name)
+        if name in ctx.job.pruned:
+            ctx.job.pruned.remove(name)
 
 def make_ctx(job: Job, engines: Engines | None = None) -> Ctx:
     return Ctx(job=job, work=WorkDir(job.id), engines=engines or Engines())
@@ -399,6 +416,12 @@ def _run(jid, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
     job.state, job.current_step = "done", None
     store.save(job)
     _flush_log()
+    if store.load_app_settings().get("auto_prune"):
+        from . import prune
+        freed = prune.prune(jid)
+        if freed:
+            _log(f"Đã dọn {freed / (1 << 20):.0f} MB dữ liệu tạm"); _flush_log()
+        job = store.load(jid)
     return job
 
 def preview_tts(jid: str, sid: int, engines: Engines | None = None) -> Path:

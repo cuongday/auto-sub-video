@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import browse, checks, config, jobs, media, pipeline, render, store, translate, voices, workdir
+from . import browse, checks, config, jobs, media, pipeline, prune, render, store, translate, voices, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .fonts import FONTS
@@ -56,6 +56,20 @@ def _view(job: Job) -> dict:
     d["files"] = {n: n in present for n in ("output.mp4", "subs.srt", "subs.ass", "voice.wav", "preview.mp4")}
     d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job, present)
     return d
+
+@app.get("/api/jobs/{jid}/storage")
+def job_storage(jid: str):
+    _get(jid)
+    sizes = store.object_sizes(jid)
+    return {"total": sum(sizes.values()), "reclaimable": prune.reclaimable(jid)}
+
+@app.post("/api/jobs/{jid}/prune")
+def prune_job(jid: str):
+    job = _get(jid)
+    _idle(job)
+    freed = prune.prune(jid)
+    workdir.remove(jid)
+    return {"freed": freed, **job_storage(jid)}
 
 def _stale_from(job: Job, present: set[str]) -> str | None:
     """First step whose inputs changed since it last ran (None: everything is up to date)."""
@@ -477,7 +491,8 @@ def browse_dir(path: str = ""):
         raise HTTPException(400, str(e))
 
 class AppSettingsIn(BaseModel):
-    video_dir: str = ""
+    video_dir: str | None = None
+    auto_prune: bool | None = None
 
 @app.get("/api/app-settings")
 def get_app_settings():
@@ -488,17 +503,22 @@ def get_app_settings():
             browse.resolve(video_dir)
     except browse.BrowseError:
         video_dir = ""                     # folder gone or mount changed: fall back to the root
-    return {"video_dir": video_dir, "browse_available": browse.available()}
+    return {"video_dir": video_dir, "browse_available": browse.available(), "auto_prune": bool(s.get("auto_prune"))}
 
 @app.put("/api/app-settings")
 def put_app_settings(body: AppSettingsIn):
-    try:
-        d = browse.resolve(body.video_dir)
-    except browse.BrowseError as e:
-        raise HTTPException(400, str(e))
-    if not d.is_dir():
-        raise HTTPException(400, "Không phải thư mục")
-    store.save_app_settings({"video_dir": browse.rel_of(d)})
+    values = {}
+    if body.video_dir is not None:
+        try:
+            d = browse.resolve(body.video_dir)
+        except browse.BrowseError as e:
+            raise HTTPException(400, str(e))
+        if not d.is_dir():
+            raise HTTPException(400, "Không phải thư mục")
+        values["video_dir"] = browse.rel_of(d)
+    if body.auto_prune is not None:
+        values["auto_prune"] = body.auto_prune
+    store.save_app_settings(values)
     return get_app_settings()
 
 # ------------------------------------------------------------------ presets

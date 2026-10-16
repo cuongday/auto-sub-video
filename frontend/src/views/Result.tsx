@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { canPickLocation, saveFile } from "../save";
 import type { Job } from "../types";
@@ -17,6 +17,13 @@ export default function Result({ job, onEdit, onSetup }: { job: Job; onEdit: () 
   const [pct, setPct] = useState(0);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const pickable = canPickLocation();
+  const [storage, setStorage] = useState<{ total: number; reclaimable: number } | null>(null);
+  const [autoPrune, setAutoPrune] = useState(false);
+  useEffect(() => {
+    api.storage(job.id).then(setStorage).catch(() => {});
+    api.appSettings().then((a) => setAutoPrune(a.auto_prune)).catch(() => {});
+  }, [job.id, job.steps.render.hash]);
+  const mb = (n: number) => `${Math.max(1, Math.round(n / (1 << 20)))} MB`;
 
   const save = async (f: (typeof FILES)[number]) => {
     const fname = stem + f.suffix;
@@ -56,6 +63,28 @@ export default function Result({ job, onEdit, onSetup }: { job: Job; onEdit: () 
           : "Trình duyệt này lưu theo cài đặt tải xuống của nó. Bật “Hỏi nơi lưu mỗi tệp trước khi tải xuống” trong cài đặt trình duyệt để chọn thư mục, hoặc dùng Chrome / Edge."}
       </p>
       {msg && <p className={msg.kind === "ok" ? "ok-msg" : "error"} role="status">{msg.text}</p>}
+      {storage && (
+        <div className="storage-box">
+          <div className="row">
+            <span>Dung lượng job trên MinIO: <strong>{mb(storage.total)}</strong>
+              {storage.reclaimable > 0 && <> · dữ liệu tạm có thể dọn: <strong>{mb(storage.reclaimable)}</strong></>}</span>
+            <span className="grow" />
+            {storage.reclaimable > 0 && (
+              <button className="ghost" disabled={!!busy} onClick={async () => {
+                setBusy("prune");
+                try { const r = await api.prune(job.id); setStorage(r); setMsg({ kind: "ok", text: `Đã dọn ${mb(r.freed)}` }); }
+                catch (e) { setMsg({ kind: "err", text: (e as Error).message }); } finally { setBusy(null); }
+              }}>{busy === "prune" ? "Đang dọn…" : "Dọn dữ liệu tạm"}</button>
+            )}
+          </div>
+          <p className="muted small">Chỉ xoá file âm thanh trung gian. Thành phẩm, phụ đề, video gốc và kết quả tách giọng được giữ, nên sửa và render lại vẫn nhanh.</p>
+          <label className="inline small">
+            <input type="checkbox" checked={autoPrune} onChange={async (e) => {
+              const v = e.target.checked; setAutoPrune(v); await api.saveAppSettings({ auto_prune: v });
+            }} /> Tự dọn sau khi mỗi job chạy xong
+          </label>
+        </div>
+      )}
     </section>
   );
 }

@@ -113,7 +113,7 @@ def test_browse_and_video_dir_setting(client, tmp_path):
     r = client.get("/api/browse", params={"path": "Phim"}).json()
     assert [d["name"] for d in r["dirs"]] == ["Tap1"] and [f["path"] for f in r["files"]] == ["Phim/a.mp4"]
     assert client.get("/api/browse", params={"path": ".."}).status_code == 400
-    assert client.get("/api/app-settings").json() == {"video_dir": "", "browse_available": True}
+    assert client.get("/api/app-settings").json() == {"video_dir": "", "browse_available": True, "auto_prune": False}
     assert client.put("/api/app-settings", json={"video_dir": "Phim/Tap1"}).json()["video_dir"] == "Phim/Tap1"
     assert client.put("/api/app-settings", json={"video_dir": "Phim/a.mp4"}).status_code == 400
     assert client.put("/api/app-settings", json={"video_dir": "../x"}).status_code == 400
@@ -151,6 +151,19 @@ def test_custom_voice_api(client, tmp_path):
     assert client.get("/api/voices/custom/Thu/ref.wav").status_code == 200
     assert client.delete("/api/voices/custom/Thu").status_code == 200
     assert [v["name"] for v in client.get("/api/voices/custom").json()] == ["Up"]
+
+def test_storage_and_prune_api(client, tmp_path):
+    src = make_video(tmp_path / "p.mp4", seconds=3)
+    jid = client.post("/api/jobs", json={"path": rel(src, tmp_path)}).json()["id"]
+    client.post(f"/api/jobs/{jid}/run", json={"mode": "auto"})
+    wait(client, jid, {"done"})
+    st = client.get(f"/api/jobs/{jid}/storage").json()
+    assert st["reclaimable"] > 0 and st["total"] > st["reclaimable"]
+    r = client.post(f"/api/jobs/{jid}/prune").json()
+    assert r["freed"] == st["reclaimable"] and r["reclaimable"] == 0
+    assert client.get(f"/api/jobs/{jid}/files/output.mp4").status_code == 200
+    assert client.put("/api/app-settings", json={"auto_prune": True}).json()["auto_prune"] is True
+    assert client.get("/api/app-settings").json()["video_dir"] == ""
 
 def test_presets(client):
     from autosub.models import JobSettings

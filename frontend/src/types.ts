@@ -16,7 +16,7 @@ export type Job = {
   id: string; name: string; created: number; source: string; uploaded: boolean; info: VideoInfo | null;
   settings: Settings; steps: Record<string, StepState>; state: JobState; mode: "review" | "auto";
   current_step: string | null; error: string | null; segments_edited: boolean; warnings: string[];
-  frames: string[]; files: Record<string, boolean>; stale_from: string | null;
+  frames: string[]; files: Record<string, boolean>; stale_from: string | null; pruned: string[];
 };
 export type Segment = { id: number; start: number; end: number; source: string; vi: string; flags: string[]; speed: number | null };
 export type Character = { name: string; vi_name: string; addressing: string };
@@ -40,4 +40,4 @@ export type JobEvent =
 export type BrowseEntry = { name: string; path: string };
 export type BrowseFile = BrowseEntry & { size: number; mtime: number };
 export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
-export type AppSettings = { video_dir: string; browse_available: boolean };
+export type AppSettings = { video_dir: string; browse_available: boolean; auto_prune: boolean };

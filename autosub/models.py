@@ -107,3 +107,4 @@ class Job(BaseModel):
     error: str | None = None
     segments_edited: bool = False
     warnings: list[str] = Field(default_factory=list)
+    pruned: list[str] = Field(default_factory=list)   # intermediates deleted to save space (rebuilt on demand)

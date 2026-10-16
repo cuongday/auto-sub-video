@@ -80,6 +80,15 @@ Chọn **Tải về đâu**:
 
 Không đăng nhập thì mỗi kênh chỉ xem được trang đầu (~10–20 video). Bấm **Đăng nhập bằng mã QR** và quét bằng app Douyin để xem hết; phiên đăng nhập lưu trong MinIO (`douyin/session.json`). App dùng Chromium chạy ngầm trong container để đọc Douyin; video tải về đúng bản gốc không logo. Chỉ tải video bạn có quyền sử dụng.
 
+### Project (mỗi kênh một project)
+
+Video được gom theo **project**, thường mỗi project là một kênh Douyin (hoặc một nguồn khác). Project nằm ở thanh bên trái, bấm › để mở danh sách video bên trong.
+- **Tạo project:** nút **+ Project**, hoặc lúc tải từ Douyin chọn "Tạo project ‘tên kênh’" (link kênh được gắn vào project, lần sau dán lại link kênh đó sẽ tự chọn đúng project).
+- **Thêm video:** khi tải Douyin thành job, chọn project ở ô **Project**; ở màn **Video mới** chọn "Thêm vào project"; video có sẵn thì đổi ô **Project** ở đầu trang của video.
+- **Preset của project:** sau khi làm tốt một video (vị trí phụ đề, vùng che, font, màu, giọng đọc…), bấm **Lưu làm preset của project** ở màn Kết quả (hoặc chọn video ở mục Preset trong trang project). Video mới thêm vào project tự dùng preset này.
+- **Chạy hàng loạt:** trong trang project bấm **Chạy hàng loạt N video chưa chạy**: các video trạng thái "Mới" được áp preset rồi chạy thẳng tới thành phẩm.
+- **Duyệt:** video chạy xong ở trạng thái **Xong**; xem lại rồi bấm **✓ Duyệt video** để chuyển sang **Đã duyệt**. Sửa phụ đề hoặc tuỳ chọn của video đã duyệt thì nó quay về **Xong** để duyệt lại.
+
 ### Các tiện ích khác
 
 - **Chạy hàng loạt:** trong hộp duyệt thư mục, tích ô bên trái nhiều video → chọn preset → "Chạy thẳng N video".

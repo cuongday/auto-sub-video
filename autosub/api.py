@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import auth, browse, checks, config, douyin, eta, glossary, jobs, media, pipeline, prune, render, store, translate, voices, workdir
+from . import auth, browse, checks, config, douyin, eta, glossary, jobs, media, pipeline, projects, prune, render, store, translate, voices, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .fonts import FONTS
@@ -82,6 +82,11 @@ def _get(jid: str) -> Job:
 def _idle(job: Job) -> None:
     if QUEUE.is_active(job.id):
         raise HTTPException(409, "Job đang chạy hoặc đang chờ trong hàng đợi")
+
+def _unapprove(job: Job) -> None:
+    """Changing an approved video means it needs checking again."""
+    if job.state == "approved":
+        job.state = "done"
 
 def _view(job: Job) -> dict:
     present = store.names(job.id)
@@ -259,6 +264,7 @@ def tts_voices(engine: Literal["edge", "vieneu"]):
 
 class PathIn(BaseModel):
     path: str                 # relative to the mounted host folder (from the file browser)
+    project: str | None = None
 
 def _init_job(job: Job, local_video: Path) -> Job:
     """Probe the video, store it as jobs/<id>/<source> and grab the setup frames."""
@@ -290,6 +296,7 @@ async def create_job(request: Request):
         name = Path(up.filename or "video.mp4").name
         if Path(name).suffix.lower() not in VIDEO_EXT:
             raise HTTPException(400, "Định dạng video không hỗ trợ")
+        project = _project_or_none(str(form.get("project") or "") or None)
         job = store.create(name, "source" + Path(name).suffix.lower(), uploaded=True)
         dest = workdir.WorkDir(job.id).local(job.source)
         with dest.open("wb") as f:
@@ -301,9 +308,12 @@ async def create_job(request: Request):
             p = browse.video_file(body.path)
         except browse.BrowseError as e:
             raise HTTPException(400, str(e))
+        project = _project_or_none(body.project)
         job = store.create(Path(body.path).name, "source" + p.suffix.lower())
         dest = p
     job = await asyncio.to_thread(_init_job, job, dest)
+    if project:
+        job = _join_project(job, project)
     return _view(job)
 
 @app.get("/api/jobs")
@@ -326,6 +336,7 @@ def put_settings(jid: str, settings: JobSettings):
     job = _get(jid)
     _idle(job)
     job.settings = settings
+    _unapprove(job)
     store.save(job)
     return _view(job)
 
@@ -430,6 +441,7 @@ def put_segments(jid: str, segs: list[Segment]):
     _validate(segs, job.info.duration if job.info else 0)
     store.save_segments(jid, segs)
     job.segments_edited = True
+    _unapprove(job)
     store.save(job)
     return get_segments(jid)
 
@@ -563,6 +575,7 @@ class BatchIn(BaseModel):
     paths: list[str] = []                 # host files (relative to HOST_ROOT) to turn into new jobs
     job_ids: list[str] = []               # existing jobs to (re)run
     preset: str | None = None
+    project: str | None = None            # put new jobs in this project (its preset applies when no preset is given)
     run: bool = True                      # queue each job in auto mode (straight to the final video)
 
 def _apply_preset(job: Job, preset: dict) -> Job:
@@ -579,12 +592,15 @@ async def batch(body: BatchIn):
     preset = store.load_presets().get(body.preset) if body.preset else None
     if body.preset and preset is None:
         raise HTTPException(400, f"Không có preset {body.preset!r}")
+    project = _project_or_none(body.project)
     results = []
     for rel in body.paths:
         try:
             p = browse.video_file(rel)
             job = store.create(Path(rel).name, "source" + p.suffix.lower())
             job = await asyncio.to_thread(_init_job, job, p)
+            if project:
+                job = _join_project(job, project, apply_preset=preset is None)
             results.append({"path": rel, "ok": True, "job": job.id})
         except (browse.BrowseError, HTTPException) as e:
             results.append({"path": rel, "ok": False, "error": str(getattr(e, "detail", e))})
@@ -630,6 +646,7 @@ class DyDownloadIn(BaseModel):
     ids: list[str]
     titles: dict[str, str] = {}
     preset: str | None = None             # apply this preset to every created job
+    project: str | None = None            # put the new jobs in this project (its preset applies when no preset is given)
 
 def _dy_items(ids: list[str]) -> dict[str, "douyin.VideoItem | douyin.DouyinError"]:
     """Video details, from the lookup cache when fresh; the rest in one browser session."""
@@ -639,7 +656,7 @@ def _dy_items(ids: list[str]) -> dict[str, "douyin.VideoItem | douyin.DouyinErro
         out.update(douyin.videos_info(missing))
     return out
 
-def _dy_one(task_id: str, row: dict, it, preset: dict | None):
+def _dy_one(task_id: str, row: dict, it, preset: dict | None, project: "projects.Project | None" = None):
     row["state"] = "running"
     QUEUE.emit({"type": "douyin", "task": task_id})
     try:
@@ -654,6 +671,8 @@ def _dy_one(task_id: str, row: dict, it, preset: dict | None):
             store.delete(job.id)
             raise
         job = _init_job(job, w.local("source.mp4"))
+        if project:
+            job = _join_project(job, project, apply_preset=preset is None)
         if preset:
             job = _apply_preset(job, preset)
         row.update(state="done", pct=1, job=job.id)
@@ -661,7 +680,7 @@ def _dy_one(task_id: str, row: dict, it, preset: dict | None):
         row.update(state="error", error=str(getattr(e, "detail", e)))
     QUEUE.emit({"type": "douyin", "task": task_id})
 
-def _dy_worker(task_id: str, preset: dict | None):
+def _dy_worker(task_id: str, preset: dict | None, project: "projects.Project | None" = None):
     from concurrent.futures import ThreadPoolExecutor
     task = _DY_TASKS[task_id]
     try:
@@ -670,7 +689,7 @@ def _dy_worker(task_id: str, preset: dict | None):
         items = {r["id"]: e for r in task["items"]}
     with ThreadPoolExecutor(max(1, config.DOUYIN_WORKERS)) as pool:
         for row in task["items"]:
-            pool.submit(_dy_one, task_id, row, items.get(row["id"]) or douyin.DouyinError(douyin._NO_INFO), preset)
+            pool.submit(_dy_one, task_id, row, items.get(row["id"]) or douyin.DouyinError(douyin._NO_INFO), preset, project)
     task["done"] = True
     QUEUE.emit({"type": "douyin", "task": task_id})
 
@@ -679,12 +698,13 @@ def douyin_download(body: DyDownloadIn):
     if not body.ids:
         raise HTTPException(400, "Chưa chọn video nào")
     preset = store.load_presets().get(body.preset) if body.preset else None
+    project = _project_or_none(body.project)
     import threading, uuid
     tid = uuid.uuid4().hex[:8]
-    _DY_TASKS[tid] = {"id": tid, "done": False,
+    _DY_TASKS[tid] = {"id": tid, "done": False, "project": project.id if project else None,
                       "items": [{"id": i, "title": body.titles.get(i, ""), "state": "queued", "pct": 0, "job": None,
                                  "error": None} for i in dict.fromkeys(body.ids)]}
-    threading.Thread(target=_dy_worker, args=(tid, preset), daemon=True).start()
+    threading.Thread(target=_dy_worker, args=(tid, preset, project), daemon=True).start()
     return _DY_TASKS[tid]
 
 class DyPrepareIn(BaseModel):
@@ -822,6 +842,151 @@ def add_preset(body: PresetIn):
 def del_preset(name: str):
     store.delete_preset(name)
     return store.load_presets()
+
+# ------------------------------------------------------------------ projects
+
+def _project_or_none(pid: str | None) -> "projects.Project | None":
+    if not pid:
+        return None
+    p = projects.get(pid)
+    if p is None:
+        raise HTTPException(404, "Không có project này")
+    return p
+
+def _project(pid: str) -> "projects.Project":
+    p = _project_or_none(pid)
+    assert p is not None
+    return p
+
+def _join_project(job: Job, project: "projects.Project", apply_preset: bool = True) -> Job:
+    job.project = project.id
+    store.save(job)
+    if apply_preset and project.preset and job.state == "new":
+        job = _apply_preset(job, project.preset)
+    return job
+
+def _project_view(p: "projects.Project", all_jobs: list[Job] | None = None) -> dict:
+    mine = [j for j in (all_jobs if all_jobs is not None else store.list_jobs()) if j.project == p.id]
+    counts: dict[str, int] = {}
+    for j in mine:
+        counts[j.state] = counts.get(j.state, 0) + 1
+    return {**p.model_dump(mode="json"), "jobs": len(mine), "counts": counts}
+
+class ProjectIn(BaseModel):
+    name: str
+    source_url: str = ""
+
+@app.get("/api/projects")
+def list_projects():
+    all_jobs = store.list_jobs()
+    return [_project_view(p, all_jobs) for p in projects.list_projects()]
+
+@app.post("/api/projects")
+def create_project(body: ProjectIn):
+    if not body.name.strip():
+        raise HTTPException(400, "Cần tên project")
+    if body.source_url and (same := projects.find_by_source(body.source_url)):
+        return _project_view(same)          # one project per channel
+    return _project_view(projects.create(body.name, body.source_url))
+
+@app.put("/api/projects/{pid}")
+def update_project(pid: str, body: ProjectIn):
+    p = _project(pid)
+    if not body.name.strip():
+        raise HTTPException(400, "Cần tên project")
+    p.name, p.source_url = body.name.strip()[:80], body.source_url.strip()
+    projects.save(p)
+    return _project_view(p)
+
+@app.delete("/api/projects/{pid}")
+def delete_project(pid: str):
+    """Removes the project only; its videos stay, without a project."""
+    _project(pid)
+    for j in store.list_jobs():
+        if j.project == pid:
+            j.project = None
+            store.save(j)
+    projects.delete(pid)
+    return {"ok": True}
+
+class ProjectPresetIn(BaseModel):
+    job_id: str
+
+@app.post("/api/projects/{pid}/preset")
+def save_project_preset(pid: str, body: ProjectPresetIn):
+    """Take the subtitle position, covered regions, style and voice of a video as the project's preset."""
+    p = _project(pid)
+    job = _get(body.job_id)
+    s = job.settings.model_dump(mode="json")
+    s["ref_audio"] = None                  # a per-job upload; cloned voices (custom:<name>) carry over
+    p.preset, p.preset_from = s, job.name
+    projects.save(p)
+    return _project_view(p)
+
+@app.delete("/api/projects/{pid}/preset")
+def clear_project_preset(pid: str):
+    p = _project(pid)
+    p.preset, p.preset_from = None, None
+    projects.save(p)
+    return _project_view(p)
+
+class ProjectRunIn(BaseModel):
+    states: list[str] = ["new"]           # which videos to run: not run yet by default
+    apply_preset: bool = True             # put the project preset on them first
+
+@app.post("/api/projects/{pid}/run")
+def run_project(pid: str, body: ProjectRunIn):
+    """Queue every video of the project in one of `states` in auto mode (straight to the final video)."""
+    p = _project(pid)
+    queued, skipped = [], []
+    for j in reversed(store.list_jobs()):  # oldest first
+        if j.project != pid or j.state not in body.states or QUEUE.is_active(j.id):
+            continue
+        if not j.info:
+            skipped.append(j.id); continue
+        if body.apply_preset and p.preset:
+            j = _apply_preset(j, p.preset)
+        if QUEUE.submit(j.id, "auto", None, True):
+            queued.append(j.id)
+    return {"queued": queued, "skipped": skipped}
+
+class JobProjectIn(BaseModel):
+    project: str | None = None
+    apply_preset: bool = False
+
+@app.put("/api/jobs/{jid}/project")
+def set_job_project(jid: str, body: JobProjectIn):
+    job = _get(jid)
+    _idle(job)
+    project = _project_or_none(body.project)
+    if project is None:
+        job.project = None
+        store.save(job)
+        return _view(job)
+    job.project = project.id
+    store.save(job)
+    if body.apply_preset and project.preset:
+        job = _apply_preset(job, project.preset)
+        _unapprove(job); store.save(job)
+    return _view(job)
+
+class ApproveIn(BaseModel):
+    approved: bool = True
+
+@app.post("/api/jobs/{jid}/approve")
+def approve_job(jid: str, body: ApproveIn):
+    """Mark a finished video as checked by the user (or take that back)."""
+    job = _get(jid)
+    _idle(job)
+    if body.approved:
+        if job.state != "done":
+            raise HTTPException(409, "Chỉ duyệt được video đã xong")
+        job.state = "approved"
+    elif job.state == "approved":
+        job.state = "done"
+    store.save(job)
+    QUEUE.emit({"type": "state", "job": jid, "state": job.state})
+    return _view(job)
 
 # ------------------------------------------------------------------ events
 

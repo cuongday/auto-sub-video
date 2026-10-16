@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import FileBrowser from "../components/FileBrowser";
-import type { AppSettings, BrowseFile, Job } from "../types";
+import type { AppSettings, BrowseFile, Job, Project } from "../types";
 
-export default function NewJob({ onCreated, onBatch }: { onCreated: (j: Job) => void; onBatch?: () => void }) {
+export default function NewJob({ onCreated, onBatch, projects = [] }: { onCreated: (j: Job) => void; onBatch?: () => void; projects?: Project[] }) {
+  const [project, setProject] = useState("");
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -14,7 +15,7 @@ export default function NewJob({ onCreated, onBatch }: { onCreated: (j: Job) => 
 
   const upload = async (f: File) => {
     setErr(""); setBusy("Đang tải lên 0%");
-    try { onCreated(await api.upload(f, (p) => setBusy(p < 1 ? `Đang tải lên ${Math.round(p * 100)}%` : "Đang đọc video…"))); }
+    try { onCreated(await api.upload(f, (p) => setBusy(p < 1 ? `Đang tải lên ${Math.round(p * 100)}%` : "Đang đọc video…"), project || null)); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   };
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function NewJob({ onCreated, onBatch }: { onCreated: (j: Job) => 
   const runBatch = async () => {
     setErr(""); setBatchMsg(""); setBusy(`Đang tạo ${picked.size} job…`);
     try {
-      const r = await api.batch([...picked], preset || null);
+      const r = await api.batch([...picked], preset || null, project || null);
       const ok = r.results.filter((x) => x.ok).length;
       const bad = r.results.filter((x) => !x.ok);
       setBatchMsg(`Đã xếp ${ok} video vào hàng đợi chạy thẳng${bad.length ? ` · ${bad.length} lỗi: ${bad.map((b) => b.error).join("; ")}` : ""}`);
@@ -39,11 +40,21 @@ export default function NewJob({ onCreated, onBatch }: { onCreated: (j: Job) => 
   };
   const fromHost = async (f: BrowseFile) => {
     setErr(""); setBusy(`Đang chép ${f.name} vào kho lưu trữ…`);
-    try { onCreated(await api.createFromPath(f.path)); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
+    try { onCreated(await api.createFromPath(f.path, project || null)); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   };
   return (
     <section className="card new-job">
-      <h2>Video mới</h2>
+      <header className="card-head">
+        <h2>Video mới</h2>
+        {projects.length > 0 && (
+          <label className="inline">Thêm vào project
+            <select value={project} onChange={(e) => setProject(e.target.value)}>
+              <option value="">Không thuộc project</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}{p.preset ? " · có preset" : ""}</option>)}
+            </select>
+          </label>
+        )}
+      </header>
       <div className={`drop ${over ? "over" : ""} ${busy ? "busy" : ""}`} role="button" tabIndex={0}
         aria-label="Chọn video để tải lên" aria-disabled={!!busy} onClick={pick}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } }}
@@ -65,7 +76,7 @@ export default function NewJob({ onCreated, onBatch }: { onCreated: (j: Job) => 
             <span className="grow" />
             <label className="inline">Preset
               <select value={preset} onChange={(e) => setPreset(e.target.value)}>
-                <option value="">Mặc định</option>
+                <option value="">{projects.find((p) => p.id === project)?.preset ? "Preset của project" : "Mặc định"}</option>
                 {presets.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </label>

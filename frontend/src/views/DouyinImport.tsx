@@ -1,19 +1,22 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { canPickFolder, pickFolder, pool, saveIntoFolder } from "../save";
-import type { DyItem, DyLookup, DyTask } from "../types";
+import type { DyItem, DyLookup, DyTask, Project } from "../types";
 
 type Dest = "jobs" | "folder";
 type SaveRow = { id: string; title: string; state: "queued" | "running" | "done" | "error"; pct: number; file?: string; error?: string };
 const SAVE_PARALLEL = 3;
+const channelUrl = (secUid: string) => `https://www.douyin.com/user/${secUid}`;
 
 const fmtDur = (s: number) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : "ảnh");
 const fmtDate = (t: number) => (t ? new Date(t * 1000).toLocaleDateString("vi-VN") : "");
 
 /** Paste a Douyin video or channel link, pick videos, then download them in parallel either into new
  *  subtitle jobs (kept in storage) or straight into a folder on this computer. */
-export default function DouyinImport({ onJobsCreated, onOpenJob, onActive }: {
+export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, projects, project, onProject, onNewProject, onOpenProject }: {
   onJobsCreated: () => void; onOpenJob: (id: string) => void; onActive?: (n: number) => void;
+  projects: Project[]; project: string; onProject: (id: string) => void;
+  onNewProject: (sourceUrl?: string, name?: string) => Promise<Project | null>; onOpenProject: (id: string) => void;
 }) {
   const [url, setUrl] = useState("");
   const [look, setLook] = useState<DyLookup | null>(null);
@@ -47,6 +50,10 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive }: {
     try {
       const r = await api.douyinLookup(url.trim());
       setLook(r);
+      if (r.kind === "channel" && r.sec_uid) {
+        const same = projects.find((p) => p.source_url === channelUrl(r.sec_uid!));
+        if (same) onProject(same.id);
+      }
       setPicked(new Set(r.items.filter((i) => !i.is_images).map((i) => i.id)));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   };
@@ -54,7 +61,7 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive }: {
   const toJobs = async (items: DyItem[]) => {
     setErr(""); setBusy("download"); setSaves(null);
     try {
-      const t = await api.douyinDownload(items.map((i) => i.id), Object.fromEntries(items.map((i) => [i.id, i.title])), preset || null);
+      const t = await api.douyinDownload(items.map((i) => i.id), Object.fromEntries(items.map((i) => [i.id, i.title])), preset || null, project || null);
       setTask(t);
       window.clearInterval(poll.current);
       poll.current = window.setInterval(async () => {
@@ -192,12 +199,32 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive }: {
           </fieldset>
           <div className="row">
             {dest === "jobs" ? (
-              <label className="inline">Áp preset
-                <select value={preset} onChange={(e) => setPreset(e.target.value)}>
-                  <option value="">Không</option>
-                  {presets.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </label>
+              <>
+                <label className="inline">Project
+                  <select value={project} onChange={async (e) => {
+                    if (e.target.value !== "__new") { onProject(e.target.value); return; }
+                    const isCh = look.kind === "channel" && look.sec_uid;
+                    const p = await onNewProject(isCh ? channelUrl(look.sec_uid!) : "", "");
+                    if (p) onProject(p.id);
+                  }}>
+                    <option value="">Không thuộc project</option>
+                    {projects.map((p) => <option key={p.id} value={p.id}>{p.name}{p.preset ? " · có preset" : ""}</option>)}
+                    <option value="__new">+ Tạo project mới…</option>
+                  </select>
+                </label>
+                {look.kind === "channel" && look.sec_uid && !projects.some((p) => p.source_url === channelUrl(look.sec_uid!)) && (
+                  <button className="link small" onClick={async () => {
+                    const p = await onNewProject(channelUrl(look.sec_uid!), look.name || "Kênh Douyin");
+                    if (p) onProject(p.id);
+                  }}>Tạo project “{look.name || "kênh này"}”</button>
+                )}
+                <label className="inline">Preset
+                  <select value={preset} onChange={(e) => setPreset(e.target.value)}>
+                    <option value="">{projects.find((p) => p.id === project)?.preset ? "Preset của project" : "Không"}</option>
+                    {presets.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </label>
+              </>
             ) : folderOk && (
               <span className="small">
                 {folder ? <>Thư mục: <strong>📁 {folder.name}</strong> · </> : <span className="muted">Chưa chọn thư mục · </span>}
@@ -212,6 +239,9 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive }: {
             </button>
           </div>
         </>
+      )}
+      {task && task.done && project && task.items.some((x) => x.state === "done") && (
+        <p className="ok-msg">Đã thêm vào project. <button className="link" onClick={() => onOpenProject(project)}>Mở project để chạy hàng loạt →</button></p>
       )}
       {task && (
         <Progress title={`Tạo job · ${task.items.filter((x) => x.state === "done").length}/${task.items.length}`}

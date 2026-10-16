@@ -99,7 +99,8 @@ class StepState(BaseModel):
     seconds: float | None = None
     error: str | None = None
 
-JobState = Literal["new", "queued", "running", "awaiting_review", "done", "error", "interrupted", "cancelled"]
+# "approved": a finished video the user has checked; any re-run turns it back into "done"
+JobState = Literal["new", "queued", "running", "awaiting_review", "done", "approved", "error", "interrupted", "cancelled"]
 
 class Job(BaseModel):
     id: str
@@ -117,3 +118,4 @@ class Job(BaseModel):
     segments_edited: bool = False
     warnings: list[str] = Field(default_factory=list)
     pruned: list[str] = Field(default_factory=list)   # intermediates deleted to save space (rebuilt on demand)
+    project: str | None = None            # id of the project (e.g. one Douyin channel) this video belongs to

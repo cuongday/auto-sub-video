@@ -1,4 +1,4 @@
-import type { AppSettings, BrowseListing, Context, DyLookup, DyTask, Job, Options, Segment, Settings, SharedGlossary, Voice } from "./types";
+import type { AppSettings, BrowseListing, Context, DyLookup, DyTask, Job, Options, Project, Segment, Settings, SharedGlossary, Voice } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -32,10 +32,11 @@ export const api = {
   },
   jobs: () => j<Job[]>(fetch("/api/jobs")),
   job: (id: string) => j<Job>(fetch(`/api/jobs/${id}`)),
-  createFromPath: (path: string) => j<Job>(post("/api/jobs", { path })),
-  upload: (file: File, onProgress: (p: number) => void) => new Promise<Job>((resolve, reject) => {
+  createFromPath: (path: string, project?: string | null) => j<Job>(post("/api/jobs", { path, project: project || null })),
+  upload: (file: File, onProgress: (p: number) => void, project?: string | null) => new Promise<Job>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const fd = new FormData(); fd.append("file", file);
+    if (project) fd.append("project", project);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
       const body = JSON.parse(xhr.responseText || "{}");
@@ -52,16 +53,26 @@ export const api = {
   createVoice: (fd: FormData) => j<{ id: string; name: string; duration: number }>(fetch("/api/voices/custom", { method: "POST", body: fd })),
   deleteVoice: (name: string) => j(fetch(`/api/voices/custom/${encodeURIComponent(name)}`, { method: "DELETE" })),
   douyinLookup: (url: string) => j<DyLookup>(post("/api/douyin/lookup", { url })),
-  douyinDownload: (ids: string[], titles: Record<string, string>, preset: string | null) =>
-    j<DyTask>(post("/api/douyin/download", { ids, titles, preset })),
+  douyinDownload: (ids: string[], titles: Record<string, string>, preset: string | null, project: string | null) =>
+    j<DyTask>(post("/api/douyin/download", { ids, titles, preset, project })),
   douyinPrepare: (ids: string[]) => j<Record<string, string | null>>(post("/api/douyin/prepare", { ids })),
   douyinFileUrl: (id: string, title: string) => `/api/douyin/file/${id}?title=${encodeURIComponent(title)}`,
   douyinTask: (id: string) => j<DyTask>(fetch(`/api/douyin/download/${id}`)),
   douyinSession: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(fetch("/api/douyin/session")),
   douyinLogin: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(post("/api/douyin/login")),
   douyinLogout: () => j<{ logged_in: boolean; login: null }>(fetch("/api/douyin/session", { method: "DELETE" })),
-  batch: (paths: string[], preset: string | null) =>
-    j<{ results: { path?: string; job?: string; ok: boolean; error?: string }[] }>(post("/api/batch", { paths, preset, run: true })),
+  batch: (paths: string[], preset: string | null, project?: string | null) =>
+    j<{ results: { path?: string; job?: string; ok: boolean; error?: string }[] }>(post("/api/batch", { paths, preset, project: project || null, run: true })),
+  projects: () => j<Project[]>(fetch("/api/projects")),
+  createProject: (name: string, source_url = "") => j<Project>(post("/api/projects", { name, source_url })),
+  updateProject: (id: string, name: string, source_url: string) => j<Project>(put(`/api/projects/${id}`, { name, source_url })),
+  deleteProject: (id: string) => j<{ ok: boolean }>(fetch(`/api/projects/${id}`, { method: "DELETE" })),
+  saveProjectPreset: (id: string, jobId: string) => j<Project>(post(`/api/projects/${id}/preset`, { job_id: jobId })),
+  clearProjectPreset: (id: string) => j<Project>(fetch(`/api/projects/${id}/preset`, { method: "DELETE" })),
+  runProject: (id: string, states: string[] = ["new"]) => j<{ queued: string[]; skipped: string[] }>(post(`/api/projects/${id}/run`, { states })),
+  setJobProject: (jid: string, project: string | null, applyPreset = false) =>
+    j<Job>(put(`/api/jobs/${jid}/project`, { project, apply_preset: applyPreset })),
+  approve: (jid: string, approved = true) => j<Job>(post(`/api/jobs/${jid}/approve`, { approved })),
   glossary: () => j<SharedGlossary>(fetch("/api/glossary")),
   saveGlossary: (g: SharedGlossary) => j<SharedGlossary>(put("/api/glossary", g)),
   promoteGlossary: (id: string) => j<SharedGlossary>(post(`/api/jobs/${id}/glossary/promote`)),

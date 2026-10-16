@@ -6,7 +6,7 @@ export const STEP_LABEL: Record<string, string> = {
   render: "Ghép video",
 };
 export const STATE_LABEL: Record<JobState, string> = {
-  new: "Mới", queued: "Đang chờ", running: "Đang chạy", awaiting_review: "Chờ rà soát", done: "Xong",
+  new: "Mới", queued: "Đang chờ", running: "Đang chạy", awaiting_review: "Chờ rà soát", done: "Xong", approved: "Đã duyệt",
   error: "Lỗi", interrupted: "Bị gián đoạn", cancelled: "Đã huỷ",
 };
 export const FLAG_LABEL: Record<string, string> = {

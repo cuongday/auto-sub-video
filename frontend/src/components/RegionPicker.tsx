@@ -52,7 +52,7 @@ export default function RegionPicker({ src, aspect, regions, active, onActive, o
       <img src={src} alt="Khung hình video" draggable={false} />
       {children}
       {regions.map((rg, i) => (
-        <div key={i} className={`picker-box ${i === 0 ? "main" : "extra"} ${i === active ? "active" : ""}`}
+        <div key={i} className={`picker-box ${i === 0 ? "sub-box" : "extra"} ${i === active ? "active" : ""}`}
           onPointerDown={down("move", i)} title={i === 0 ? "Vùng phụ đề (che + chèn sub mới)" : `Vùng che ${i}`}
           style={{ left: `${rg.x * 100}%`, top: `${rg.y * 100}%`, width: `${rg.w * 100}%`, height: `${rg.h * 100}%` }}>
           <span className="tag">{i === 0 ? "Phụ đề" : `Che ${i}`}</span>

@@ -10,13 +10,13 @@ export type Settings = {
 };
 export type StepStatus = "pending" | "running" | "done" | "error";
 export type StepState = { status: StepStatus; hash: string | null; seconds: number | null; error: string | null };
-export type JobState = "new" | "queued" | "running" | "awaiting_review" | "done" | "error" | "interrupted" | "cancelled";
+export type JobState = "new" | "queued" | "running" | "awaiting_review" | "done" | "approved" | "error" | "interrupted" | "cancelled";
 export type VideoInfo = { width: number; height: number; duration: number; fps: number; has_audio: boolean };
 export type Job = {
   id: string; name: string; created: number; source: string; uploaded: boolean; info: VideoInfo | null;
   settings: Settings; steps: Record<string, StepState>; state: JobState; mode: "review" | "auto";
   current_step: string | null; error: string | null; segments_edited: boolean; warnings: string[];
-  frames: string[]; files: Record<string, boolean>; stale_from: string | null; pruned: string[];
+  frames: string[]; files: Record<string, boolean>; stale_from: string | null; pruned: string[]; project: string | null;
 };
 export type Segment = { id: number; start: number; end: number; source: string; vi: string; flags: string[]; speed: number | null; speaker?: number | null };
 export type Character = { name: string; vi_name: string; addressing: string };
@@ -42,6 +42,10 @@ export type BrowseFile = BrowseEntry & { size: number; mtime: number };
 export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
 export type AppSettings = { video_dir: string; browse_available: boolean; auto_prune: boolean };
 export type DyItem = { id: string; title: string; duration: number; cover: string; created: number; width: number; height: number; size: number; is_images: boolean };
-export type DyLookup = { kind: "video" | "channel"; name?: string; items: DyItem[]; complete: boolean; logged_in: boolean };
+export type DyLookup = { kind: "video" | "channel"; name?: string; sec_uid?: string; items: DyItem[]; complete: boolean; logged_in: boolean };
 export type DyTask = { id: string; done: boolean; items: { id: string; title: string; state: string; pct: number; job: string | null; error: string | null }[] };
 export type SharedGlossary = { terms: { source: string; vi: string }[]; characters: Character[] };
+export type Project = {
+  id: string; name: string; source_url: string; created: number; preset: Settings | null; preset_from: string | null;
+  jobs: number; counts: Partial<Record<JobState, number>>;
+};

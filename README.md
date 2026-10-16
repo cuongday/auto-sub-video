@@ -66,12 +66,17 @@ ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
 | `AUTOSUB_FFMPEG_CRF` | `20` | nhỏ hơn = nét hơn |
 | `AUTOSUB_WORK_MAX_GB` | `20` | giới hạn thư mục tạm trong container |
 | `AUTOSUB_PORT` | `8020` | |
+| `AUTOSUB_DOUYIN_WORKERS` | `4` | số video Douyin tải cùng lúc khi tạo job |
 
 ### Tải video Douyin
 
-Ở màn **Video mới**, dán link vào ô "Tải video từ Douyin":
+Chọn **Tải video Douyin** ở thanh bên trái rồi dán link:
 - **link video** (`douyin.com/video/…`, hoặc cả đoạn chia sẻ có link `v.douyin.com/…`) → tải video đó;
-- **link kênh** (`douyin.com/user/…`) → hiện danh sách video để tích chọn, rồi "Tải N video thành job mới" (có thể áp một preset cho tất cả).
+- **link kênh** (`douyin.com/user/…`) → hiện danh sách video để tích chọn.
+
+Chọn **Tải về đâu**:
+- **Tạo job làm phụ đề**: video vào kho MinIO thành job mới (có thể áp một preset cho tất cả), tải song song `AUTOSUB_DOUYIN_WORKERS` video;
+- **Lưu về máy**: lưu file MP4 gốc vào thư mục bạn chọn trên máy (Chrome/Edge), 3 video cùng lúc; trình duyệt khác thì lưu vào thư mục Tải xuống. Việc tải vẫn chạy khi bạn chuyển sang màn khác trong app.
 
 Không đăng nhập thì mỗi kênh chỉ xem được trang đầu (~10–20 video). Bấm **Đăng nhập bằng mã QR** và quét bằng app Douyin để xem hết; phiên đăng nhập lưu trong MinIO (`douyin/session.json`). App dùng Chromium chạy ngầm trong container để đọc Douyin; video tải về đúng bản gốc không logo. Chỉ tải video bạn có quyền sử dụng.
 

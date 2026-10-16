@@ -66,6 +66,7 @@ EDGE_VOICES = [("vi-VN-HoaiMyNeural", "Hoài My (nữ)"), ("vi-VN-NamMinhNeural"
 VIENEU_MODE = os.environ.get("VIENEU_MODE", "v3turbo")
 VOICE_WORKERS = int(os.environ.get("AUTOSUB_VOICE_WORKERS", "4"))
 EDGE_WORKERS = 3          # more parallel requests make edge-tts drop answers
+DOUYIN_WORKERS = int(os.environ.get("AUTOSUB_DOUYIN_WORKERS", "4"))   # parallel CDN downloads
 
 FFMPEG_PRESET = os.environ.get("AUTOSUB_FFMPEG_PRESET", "veryfast")
 FFMPEG_CRF = int(os.environ.get("AUTOSUB_FFMPEG_CRF", "20"))

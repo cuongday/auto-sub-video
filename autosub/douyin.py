@@ -18,11 +18,15 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 SESSION_KEY = "douyin/session.json"
 BASE_Q = {"device_platform": "webapp", "aid": "6383", "channel": "channel_pc_web", "version_code": "290100",
           "version_name": "29.1.0", "cookie_enabled": "true", "platform": "PC", "pc_client_type": "1"}
+DETAIL_ATTEMPTS = 3       # the first signed call sometimes gets a 403 with an empty body
 MAX_PAGES = 40            # 40 x ~18 videos; plenty for a channel
 _VIDEO_ID = re.compile(r"(?:/video/|/note/|modal_id=|aweme_id=)(\d{15,22})")
 _SEC_UID = re.compile(r"/user/([A-Za-z0-9_\-]{20,})")
 _SHORT = re.compile(r"https?://v\.douyin\.com/[A-Za-z0-9_\-]+/?")
 _LOCK = threading.Lock()  # one browser at a time
+CACHE_TTL = 20 * 60       # play URLs from a lookup stay valid for a while; reuse them instead of a new browser
+_CACHE: dict[str, tuple[float, "VideoItem"]] = {}
+_CACHE_LOCK = threading.Lock()
 
 class DouyinError(Exception):
     pass
@@ -85,6 +89,19 @@ def safe_name(title: str, vid: str, limit: int = 60) -> str:
     t = re.sub(r"\s+", " ", t)[:limit].strip()
     return f"{t or 'douyin'}_{vid}.mp4"
 
+def remember(items) -> None:
+    now = time.time()
+    with _CACHE_LOCK:
+        for it in items:
+            _CACHE[it.id] = (now, it)
+        for k in [k for k, (t, _) in _CACHE.items() if now - t > CACHE_TTL]:
+            del _CACHE[k]
+
+def cached(aweme_id: str) -> "VideoItem | None":
+    with _CACHE_LOCK:
+        hit = _CACHE.get(aweme_id)
+    return hit[1] if hit and time.time() - hit[0] <= CACHE_TTL else None
+
 # ---------------------------------------------------------------- session (MinIO)
 
 def load_session() -> list[dict]:
@@ -126,17 +143,30 @@ _FETCH = """async ([path, q]) => {
   try { return JSON.parse(t); } catch (e) { return {__empty: true, status: r.status}; }
 }"""
 
-async def _video(aweme_id: str) -> VideoItem:
+_NO_INFO = "Không lấy được thông tin video (video bị xoá, riêng tư hoặc Douyin chặn tạm thời)"
+
+async def _videos(ids: list[str]) -> dict[str, "VideoItem | DouyinError"]:
+    """Details of several videos from one browser page (one launch instead of one per video)."""
     from playwright.async_api import async_playwright
+    out: dict[str, VideoItem | DouyinError] = {}
     async with async_playwright() as p:
-        browser, _, page = await _open(p, f"https://www.douyin.com/video/{aweme_id}")
+        browser, _, page = await _open(p, f"https://www.douyin.com/video/{ids[0]}")
         try:
-            j = await page.evaluate(_FETCH, ["/aweme/v1/web/aweme/detail/", {**BASE_Q, "aweme_id": aweme_id}])
+            for i, aweme_id in enumerate(ids):
+                if i:
+                    await page.wait_for_timeout(300)
+                out[aweme_id] = DouyinError(_NO_INFO)
+                for attempt in range(DETAIL_ATTEMPTS):
+                    j = await page.evaluate(_FETCH, ["/aweme/v1/web/aweme/detail/", {**BASE_Q, "aweme_id": aweme_id}])
+                    if j and j.get("aweme_detail"):
+                        out[aweme_id] = to_item(j["aweme_detail"])
+                        break
+                    if not (j or {}).get("__empty"):
+                        break               # a real answer without the video: deleted or private
+                    await page.wait_for_timeout(1500 * (attempt + 1))   # 403 while the page is still warming up
         finally:
             await browser.close()
-    if not j or not j.get("aweme_detail"):
-        raise DouyinError("Không lấy được thông tin video (video bị xoá, riêng tư hoặc Douyin chặn tạm thời)")
-    return to_item(j["aweme_detail"])
+    return out
 
 async def _resolve_short(url: str) -> tuple[str, str]:
     from playwright.async_api import async_playwright
@@ -181,8 +211,18 @@ async def _channel(sec_uid: str, progress=None) -> dict:
     return {"sec_uid": sec_uid, "name": name, "items": unique, "complete": not more and not blocked,
             "logged_in": logged_in()}
 
+def videos_info(ids: list[str]) -> dict[str, "VideoItem | DouyinError"]:
+    if not ids:
+        return {}
+    out = _run(_videos(list(dict.fromkeys(ids))))
+    remember([v for v in out.values() if isinstance(v, VideoItem)])
+    return out
+
 def video_info(aweme_id: str) -> VideoItem:
-    return _run(_video(aweme_id))
+    it = videos_info([aweme_id])[aweme_id]
+    if isinstance(it, DouyinError):
+        raise it
+    return it
 
 def resolve(text: str) -> tuple[str, str]:
     kind, val = parse_url(text)
@@ -191,7 +231,9 @@ def resolve(text: str) -> tuple[str, str]:
     return kind, val
 
 def channel(sec_uid: str, progress=None) -> dict:
-    return _run(_channel(sec_uid, progress))
+    ch = _run(_channel(sec_uid, progress))
+    remember(ch["items"])
+    return ch
 
 # ---------------------------------------------------------------- QR login
 
@@ -246,6 +288,22 @@ class Login:
 
 # ---------------------------------------------------------------- download
 
+def open_stream(item: VideoItem):
+    """Open the first mirror that answers: (response, total bytes). The caller closes the response."""
+    if item.is_images:
+        raise DouyinError("Bài này là album ảnh, không có video")
+    if not item.play_urls:
+        raise DouyinError("Không có link tải video")
+    last: Exception | None = None
+    for url in item.play_urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://www.douyin.com/"})
+            r = urllib.request.urlopen(req, timeout=30)
+            return r, int(r.headers.get("Content-Length") or item.size or 0)
+        except Exception as e:  # noqa: BLE001  (expired mirror, network)
+            last = e
+    raise DouyinError(f"Tải video lỗi: {last}")
+
 def download(item: VideoItem, dest: Path, progress=None, cancel: threading.Event | None = None) -> Path:
     """Stream the best stream to dest (tries each mirror URL); writes dest.part then renames."""
     if item.is_images:
@@ -277,5 +335,5 @@ def download(item: VideoItem, dest: Path, progress=None, cancel: threading.Event
             tmp.unlink(missing_ok=True)
     raise DouyinError(f"Tải video lỗi: {last}")
 
-__all__ = ["DouyinError", "VideoItem", "Login", "channel", "download", "logged_in", "clear_session",
-           "parse_url", "pick_stream", "resolve", "safe_name", "to_item", "video_info", "json"]
+__all__ = ["DouyinError", "VideoItem", "Login", "cached", "channel", "download", "logged_in", "clear_session", "open_stream",
+           "parse_url", "pick_stream", "remember", "resolve", "safe_name", "to_item", "video_info", "videos_info", "json"]

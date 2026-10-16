@@ -60,3 +60,59 @@ export async function saveFile(url: string, suggestedName: string, onProgress?: 
   }
   return "saved";
 }
+
+/* ---------- saving several files into one folder the user picks (Douyin downloads) ---------- */
+
+type DirPicker = (opts: { id?: string; mode?: "readwrite"; startIn?: string }) => Promise<FileSystemDirectoryHandle>;
+
+export const canPickFolder = (): boolean => typeof (window as unknown as { showDirectoryPicker?: DirPicker }).showDirectoryPicker === "function";
+
+/** Ask for a folder; null when the user closes the dialog. */
+export async function pickFolder(): Promise<FileSystemDirectoryHandle | null> {
+  const picker = (window as unknown as { showDirectoryPicker: DirPicker }).showDirectoryPicker;
+  try {
+    return await picker({ id: "autosub-douyin", mode: "readwrite", startIn: "downloads" });
+  } catch (e) {
+    if ((e as DOMException).name === "AbortError") return null;
+    throw e;
+  }
+}
+
+/** Stream `url` into `dir`; the file name comes from the server's X-Filename header (or `fallback`). */
+export async function saveIntoFolder(dir: FileSystemDirectoryHandle, url: string, fallback: string,
+  onProgress?: (p: number) => void, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(url, { signal });
+  if (!res.ok || !res.body) {
+    const d = (await res.json().catch(() => ({}))).detail;
+    throw new Error(d || `Không tải được file (${res.status})`);
+  }
+  const name = decodeURIComponent(res.headers.get("X-Filename") || "") || fallback;
+  const total = Number(res.headers.get("Content-Length") || 0);
+  const handle = await dir.getFileHandle(name, { create: true });
+  const writable = await handle.createWritable();
+  const reader = res.body.getReader();
+  let done = 0;
+  try {
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      await writable.write(value);
+      done += value.byteLength;
+      if (total && onProgress) onProgress(done / total);
+    }
+    await writable.close();
+  } catch (e) {
+    await writable.abort().catch(() => {});
+    await dir.removeEntry(name).catch(() => {});
+    throw e;
+  }
+  return name;
+}
+
+/** Run `fn` over `items` with at most `limit` running at once. */
+export async function pool<T>(items: T[], limit: number, fn: (x: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    for (let x = queue.shift(); x !== undefined; x = queue.shift()) await fn(x);
+  }));
+}

@@ -631,23 +631,46 @@ class DyDownloadIn(BaseModel):
     titles: dict[str, str] = {}
     preset: str | None = None             # apply this preset to every created job
 
-def _dy_worker(task_id: str, preset: dict | None):
-    task = _DY_TASKS[task_id]
-    for row in task["items"]:
-        row["state"] = "running"
+def _dy_items(ids: list[str]) -> dict[str, "douyin.VideoItem | douyin.DouyinError"]:
+    """Video details, from the lookup cache when fresh; the rest in one browser session."""
+    out = {i: it for i in ids if (it := douyin.cached(i))}
+    missing = [i for i in ids if i not in out]
+    if missing:
+        out.update(douyin.videos_info(missing))
+    return out
+
+def _dy_one(task_id: str, row: dict, it, preset: dict | None):
+    row["state"] = "running"
+    QUEUE.emit({"type": "douyin", "task": task_id})
+    try:
+        if isinstance(it, Exception):
+            raise it
+        name = douyin.safe_name(it.title or row.get("title", ""), it.id)
+        job = store.create(name, "source.mp4")
+        w = workdir.WorkDir(job.id)
         try:
-            it = douyin.video_info(row["id"])
-            name = douyin.safe_name(it.title or row.get("title", ""), it.id)
-            job = store.create(name, "source.mp4")
-            w = workdir.WorkDir(job.id)
             douyin.download(it, w.local("source.mp4"), progress=lambda p, r=row: r.update(pct=round(p, 3)))
-            job = _init_job(job, w.local("source.mp4"))
-            if preset:
-                job = _apply_preset(job, preset)
-            row.update(state="done", pct=1, job=job.id)
-        except Exception as e:  # noqa: BLE001
-            row.update(state="error", error=str(getattr(e, "detail", e)))
-        QUEUE.emit({"type": "douyin", "task": task_id})
+        except Exception:
+            store.delete(job.id)
+            raise
+        job = _init_job(job, w.local("source.mp4"))
+        if preset:
+            job = _apply_preset(job, preset)
+        row.update(state="done", pct=1, job=job.id)
+    except Exception as e:  # noqa: BLE001
+        row.update(state="error", error=str(getattr(e, "detail", e)))
+    QUEUE.emit({"type": "douyin", "task": task_id})
+
+def _dy_worker(task_id: str, preset: dict | None):
+    from concurrent.futures import ThreadPoolExecutor
+    task = _DY_TASKS[task_id]
+    try:
+        items = _dy_items([r["id"] for r in task["items"]])
+    except Exception as e:  # noqa: BLE001  (browser / network)
+        items = {r["id"]: e for r in task["items"]}
+    with ThreadPoolExecutor(max(1, config.DOUYIN_WORKERS)) as pool:
+        for row in task["items"]:
+            pool.submit(_dy_one, task_id, row, items.get(row["id"]) or douyin.DouyinError(douyin._NO_INFO), preset)
     task["done"] = True
     QUEUE.emit({"type": "douyin", "task": task_id})
 
@@ -660,9 +683,47 @@ def douyin_download(body: DyDownloadIn):
     tid = uuid.uuid4().hex[:8]
     _DY_TASKS[tid] = {"id": tid, "done": False,
                       "items": [{"id": i, "title": body.titles.get(i, ""), "state": "queued", "pct": 0, "job": None,
-                                 "error": None} for i in body.ids]}
+                                 "error": None} for i in dict.fromkeys(body.ids)]}
     threading.Thread(target=_dy_worker, args=(tid, preset), daemon=True).start()
     return _DY_TASKS[tid]
+
+class DyPrepareIn(BaseModel):
+    ids: list[str]
+
+@app.post("/api/douyin/prepare")
+def douyin_prepare(body: DyPrepareIn):
+    """Make sure the lookup cache has fresh play links for these videos (one browser for all the misses),
+    so /api/douyin/file can start every download at once."""
+    items = _dy_items(list(dict.fromkeys(body.ids)))
+    return {i: (None if isinstance(it, douyin.VideoItem) else str(it)) for i, it in items.items()}
+
+@app.get("/api/douyin/file/{aweme_id}")
+def douyin_file(aweme_id: str, title: str = ""):
+    """The original video, streamed from Douyin's CDN, for saving straight to the user's computer."""
+    if not re.fullmatch(r"\d{15,22}", aweme_id):
+        raise HTTPException(404, "Không có video")
+    try:
+        it = douyin.cached(aweme_id) or douyin.video_info(aweme_id)
+        try:
+            r, total = douyin.open_stream(it)
+        except douyin.DouyinError:
+            it = douyin.video_info(aweme_id)            # cached links expired: ask Douyin again
+            r, total = douyin.open_stream(it)
+    except douyin.DouyinError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Không đọc được Douyin: {e}")
+    from urllib.parse import quote
+    name = douyin.safe_name(it.title or title, it.id)
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "X-Filename": quote(name)}
+    if total:
+        headers["Content-Length"] = str(total)
+
+    def body():
+        with r:
+            while chunk := r.read(1 << 20):
+                yield chunk
+    return StreamingResponse(body(), media_type="video/mp4", headers=headers)
 
 @app.get("/api/douyin/download/{tid}")
 def douyin_download_status(tid: str):

@@ -54,6 +54,8 @@ export const api = {
   douyinLookup: (url: string) => j<DyLookup>(post("/api/douyin/lookup", { url })),
   douyinDownload: (ids: string[], titles: Record<string, string>, preset: string | null) =>
     j<DyTask>(post("/api/douyin/download", { ids, titles, preset })),
+  douyinPrepare: (ids: string[]) => j<Record<string, string | null>>(post("/api/douyin/prepare", { ids })),
+  douyinFileUrl: (id: string, title: string) => `/api/douyin/file/${id}?title=${encodeURIComponent(title)}`,
   douyinTask: (id: string) => j<DyTask>(fetch(`/api/douyin/download/${id}`)),
   douyinSession: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(fetch("/api/douyin/session")),
   douyinLogin: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(post("/api/douyin/login")),

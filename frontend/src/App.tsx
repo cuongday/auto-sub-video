@@ -13,6 +13,10 @@ import Review from "./views/Review";
 import Setup from "./views/Setup";
 
 type View = "setup" | "progress" | "review" | "result";
+type Section = "subs" | "douyin";
+
+const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
+const saveOpen = (v: boolean) => { try { localStorage.setItem("autosub.jobsOpen", v ? "1" : "0"); } catch { /* private mode */ } };
 
 function defaultView(j: Job): View {
   if (j.state === "running" || j.state === "queued" || j.state === "error" || j.state === "cancelled" || j.state === "interrupted") return "progress";
@@ -25,6 +29,9 @@ export default function App() {
   const [options, setOptions] = useState<Options | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sel, setSel] = useState<string | null>(() => new URLSearchParams(location.search).get("job"));
+  const [section, setSection] = useState<Section>(() => new URLSearchParams(location.search).get("tab") === "douyin" ? "douyin" : "subs");
+  const [jobsOpen, setJobsOpen] = useState(readOpen);
+  const [dyActive, setDyActive] = useState(0);
   const [view, setView] = useState<View>("setup");
   const [pct, setPct] = useState<Record<string, Record<string, number>>>({});
   const [logs, setLogs] = useState<Record<string, string[]>>({});
@@ -47,11 +54,15 @@ export default function App() {
   const job = jobs.find((j) => j.id === sel) ?? null;
   const replace = (j: Job) => setJobs((all) => all.some((x) => x.id === j.id) ? all.map((x) => x.id === j.id ? j : x) : [j, ...all]);
   const select = (id: string | null, v?: View) => {
-    setSel(id);
+    setSel(id); setSection("subs");
     const j = jobs.find((x) => x.id === id);
     if (j) setView(v ?? defaultView(j));
     history.replaceState(null, "", id ? `?job=${id}` : location.pathname);
   };
+  const openDouyin = () => { setSection("douyin"); history.replaceState(null, "", "?tab=douyin"); };
+  const toggleJobs = () => setJobsOpen((o) => { saveOpen(!o); return !o; });
+  const onDyActive = useCallback((n: number) => setDyActive(n), []);
+  const busyJobs = jobs.filter((j) => j.state === "running" || j.state === "queued").length;
   useEffect(() => { if (job && view === "setup" && job.state !== "new" && defaultView(job) !== "setup") setView(defaultView(job)); }, [sel, jobs.length]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEvents((e: JobEvent) => {
@@ -109,19 +120,47 @@ export default function App() {
     <div className="shell">
       <aside className="side">
         <div className="brand"><span className="logo" aria-hidden /> Auto-Sub</div>
-        <button className={`new ${sel === null ? "on" : ""}`} onClick={() => select(null)}>+ Video mới</button>
-        <ul className="jobs">
-          {jobs.map((j) => (
-            <li key={j.id}>
-              <button className={j.id === sel ? "on" : ""} onClick={() => select(j.id)}>
-                <span className="jname">{j.name}</span>
-                <span className={`badge s-${j.state}`}>
-                  {j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]}
-                </span>
+        <nav className="side-nav" aria-label="Chức năng">
+          <div className={`nav-group ${section === "subs" ? "on" : ""}`}>
+            <div className="nav-head">
+              <button className="nav-item" aria-current={section === "subs" ? "page" : undefined}
+                onClick={() => { if (section !== "subs") { setSection("subs"); history.replaceState(null, "", sel ? `?job=${sel}` : location.pathname); } if (!jobsOpen) toggleJobs(); }}>
+                <span className="nav-ico" aria-hidden>🎬</span>
+                <span className="nav-label" title="Làm phụ đề &amp; thuyết minh">Làm phụ đề video</span>
+                {busyJobs > 0 && <span className="nav-count" title="Job đang chạy hoặc đang chờ">{busyJobs}</span>}
               </button>
-            </li>
-          ))}
-        </ul>
+              <button className="nav-toggle" aria-expanded={jobsOpen} aria-controls="side-jobs"
+                aria-label={jobsOpen ? "Thu gọn danh sách video" : "Mở rộng danh sách video"} onClick={toggleJobs}>
+                <span className={`chev ${jobsOpen ? "open" : ""}`} aria-hidden>›</span>
+              </button>
+            </div>
+            {jobsOpen && (
+              <div id="side-jobs" className="nav-sub">
+                <button className={`new ${section === "subs" && sel === null ? "on" : ""}`} onClick={() => select(null)}>+ Video mới</button>
+                <ul className="jobs">
+                  {jobs.map((j) => (
+                    <li key={j.id}>
+                      <button className={section === "subs" && j.id === sel ? "on" : ""} onClick={() => select(j.id)}>
+                        <span className="jname">{j.name}</span>
+                        <span className={`badge s-${j.state}`}>
+                          {j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                  {!jobs.length && <li className="muted small nav-empty">Chưa có video nào.</li>}
+                </ul>
+              </div>
+            )}
+          </div>
+          <div className={`nav-group ${section === "douyin" ? "on" : ""}`}>
+            <button className="nav-item" aria-current={section === "douyin" ? "page" : undefined} onClick={openDouyin}>
+              <span className="nav-ico" aria-hidden>⬇</span>
+              <span className="nav-label">Tải video Douyin</span>
+              {dyActive > 0 && <span className="nav-count" title="Video đang tải">{dyActive}</span>}
+            </button>
+          </div>
+        </nav>
         {checks.length > 0 && (
           <div className="checks">
             <strong>Cần cấu hình</strong>
@@ -130,11 +169,13 @@ export default function App() {
         )}
       </aside>
       <main className="main">
-        {!job ? (
-          <>
-            <NewJob onBatch={refresh} onCreated={(j) => { replace(j); setSel(j.id); setView("setup"); history.replaceState(null, "", `?job=${j.id}`); }} />
-            <DouyinImport onJobsCreated={refresh} />
-          </>
+        {/* kept mounted while hidden so downloads to a folder keep going when you switch screens */}
+        <div hidden={section !== "douyin"}>
+          <DouyinImport onJobsCreated={refresh} onActive={onDyActive}
+            onOpenJob={(id) => { refresh(); select(id, "setup"); }} />
+        </div>
+        {section !== "subs" ? null : !job ? (
+          <NewJob onBatch={refresh} onCreated={(j) => { replace(j); setSel(j.id); setView("setup"); history.replaceState(null, "", `?job=${j.id}`); }} />
         ) : (
           <>
             <header className="job-head">

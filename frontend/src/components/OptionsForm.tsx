@@ -54,6 +54,13 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
         </label>
         {!eng.asr[s.lang].ok && <p className="warn">{eng.asr[s.lang].hint}</p>}
         {!eng.separate.ok && <p className="warn">Demucs: {eng.separate.hint}</p>}
+        <label className="inline check">
+          <input type="checkbox" checked={s.separate} onChange={(e) => set({ separate: e.target.checked })} />
+          Tách giọng khỏi nhạc nền (Demucs)
+        </label>
+        <p className="muted small">{s.separate
+          ? "Thay hẳn giọng gốc, giữ nhạc nền. Tốn khoảng 0,5× thời lượng video."
+          : "Nhanh hơn: giữ âm thanh gốc làm nền và tự hạ nhỏ khi có thuyết minh (kiểu thuyết minh truyền hình). Hợp với vlog, review ít nhạc."}</p>
       </fieldset>
 
       <fieldset>
@@ -120,9 +127,14 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
         <label>Tốc độ đọc <output>{s.tts_rate.toFixed(2)}×</output>
           <input type="range" min={0.8} max={1.3} step={0.05} value={s.tts_rate} onChange={(e) => set({ tts_rate: +e.target.value })} />
         </label>
-        <label>Âm lượng nhạc nền <output>{s.bg_volume_db > 0 ? "+" : ""}{s.bg_volume_db} dB</output>
+        <label>{s.separate ? "Âm lượng nhạc nền" : "Âm lượng âm thanh gốc"} <output>{s.bg_volume_db > 0 ? "+" : ""}{s.bg_volume_db} dB</output>
           <input type="range" min={-20} max={6} step={1} value={s.bg_volume_db} onChange={(e) => set({ bg_volume_db: +e.target.value })} />
         </label>
+        {!s.separate && (
+          <label>Hạ âm thanh gốc khi có thuyết minh <output>{s.duck_db} dB</output>
+            <input type="range" min={-30} max={-4} step={1} value={s.duck_db} onChange={(e) => set({ duck_db: +e.target.value })} />
+          </label>
+        )}
         {s.tts_engine === "vieneu" && (
           <div className="wide ref">
             <span>Nhân bản giọng từ file mẫu (3–8 giây, giọng rõ, không nhạc):</span>

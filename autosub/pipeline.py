@@ -70,8 +70,10 @@ def step_hash(ctx: Ctx, step: str) -> str:
     if step == "probe":
         info = ctx.work.store.stat(ctx.work.key(j.source))
         return _h(j.source, info.etag if info else "")
-    if step in ("extract", "separate"):
+    if step == "extract":
         return _h(prev, step)
+    if step == "separate":
+        return _h(prev, step, st.separate)
     if step == "asr":
         return _h(prev, st.lang, st.asr_model)
     if step == "segment":
@@ -85,7 +87,7 @@ def step_hash(ctx: Ctx, step: str) -> str:
     if step == "fit":
         return _h(prev)
     if step == "mix":
-        return _h(prev, st.bg_volume_db)
+        return _h(prev, st.bg_volume_db, st.separate, st.duck_db if not st.separate else None)
     if step == "render":
         return _h(prev, st.region.model_dump(), [r.model_dump() for r in st.extra_regions], st.cover, st.cover_color,
                   st.style.model_dump(),
@@ -110,6 +112,11 @@ def _extract(ctx: Ctx):
         media.silent_audio(ctx.dir / "audio.wav", info.duration, cancel=ctx.cancel)
 
 def _separate(ctx: Ctx):
+    if not ctx.job.settings.separate:
+        # no Demucs: ASR listens to the original audio, the mix ducks it under the narration
+        media.to_16k_mono(ctx.dir / "audio.wav", ctx.dir / "vocals16k.wav", cancel=ctx.cancel)
+        ctx.log("Bỏ qua tách giọng: dùng âm thanh gốc làm nền, hạ nhỏ khi có thuyết minh")
+        return
     ctx.engines.separate(ctx.dir / "audio.wav", ctx.dir, progress=lambda p: ctx.progress("separate", p),
                          cancel=ctx.cancel)
     media.to_16k_mono(ctx.dir / "vocals.wav", ctx.dir / "vocals16k.wav", cancel=ctx.cancel)
@@ -134,6 +141,8 @@ def _segment(ctx: Ctx):
 def _flag_lyrics(ctx: Ctx, segs: list[Segment]) -> list[Segment]:
     """Mark lines that look like song lyrics picked up from the background music."""
     from . import lyrics
+    if not ctx.job.settings.separate:
+        return segs
     voice, music = ctx.work.fetch("vocals.wav"), ctx.work.fetch("no_vocals.wav")
     if not segs or voice is None or music is None:
         return segs
@@ -263,8 +272,10 @@ def _fit(ctx: Ctx):
     ctx.job.warnings = [f"{over} câu đọc không kịp dù đã tăng tốc ×1.35"] if over else []
 
 def _mix(ctx: Ctx):
-    mix_mod.mix(ctx.dir / "voice_raw.wav", ctx.dir / "no_vocals.wav", ctx.dir / "voice.wav", ctx.dir / "mix.m4a",
-                ctx.job.settings.bg_volume_db, ctx.job.info.duration, cancel=ctx.cancel)
+    st = ctx.job.settings
+    bg = ctx.dir / ("no_vocals.wav" if st.separate else "audio.wav")
+    mix_mod.mix(ctx.dir / "voice_raw.wav", bg, ctx.dir / "voice.wav", ctx.dir / "mix.m4a", st.bg_volume_db,
+                ctx.job.info.duration, cancel=ctx.cancel, duck_db=None if st.separate else st.duck_db)
 
 def _render(ctx: Ctx):
     j, info = ctx.job, ctx.job.info
@@ -298,7 +309,7 @@ def _fresh(ctx: Ctx, step: str, h: str, present: set[str] | None = None) -> bool
     present = store.names(ctx.job.id) if present is None else present
     # a pruned output does not make its step stale: later steps rebuild it on demand
     ok = lambda o: (any(n.startswith(o) for n in present) if o.endswith("/") else o in present) or o in ctx.job.pruned  # noqa: E731
-    return all(ok(o) for o in OUTPUTS[step])
+    return all(ok(o) for o in _outputs(ctx, step))
 
 def _rebuild(ctx: Ctx, name: str) -> bool:
     """Regenerate a pruned intermediate from what is kept (cheap: no Demucs, no TTS)."""
@@ -313,13 +324,28 @@ def _rebuild(ctx: Ctx, name: str) -> bool:
     ctx.log(f"Tạo lại {name} (đã dọn trước đó)")
     return True
 
+def _inputs(ctx: Ctx, step: str) -> list[str]:
+    if step == "mix" and not ctx.job.settings.separate:
+        return ["voice_raw.wav", "audio.wav"]
+    return INPUTS.get(step, [])
+
+def _pushes(ctx: Ctx, step: str) -> list[str]:
+    if step == "separate" and not ctx.job.settings.separate:
+        return ["vocals16k.wav"]
+    return PUSH.get(step, [])
+
+def _outputs(ctx: Ctx, step: str) -> list[str]:
+    if step == "separate" and not ctx.job.settings.separate:
+        return ["vocals16k.wav"]
+    return OUTPUTS[step]
+
 def _run_step(ctx: Ctx, step: str) -> None:
-    for name in INPUTS.get(step, []):
+    for name in _inputs(ctx, step):
         if ctx.work.fetch(name) is None and not (_rebuild(ctx, name) and ctx.work.fetch(name) is not None):
             raise RuntimeError(f"Thiếu file {name} của bước trước, hãy chạy lại từ đầu")
     RUNNERS[step](ctx)
     ctx.check()
-    for name in PUSH.get(step, []):
+    for name in _pushes(ctx, step):
         ctx.work.push(name)
         if name in ctx.job.pruned:
             ctx.job.pruned.remove(name)

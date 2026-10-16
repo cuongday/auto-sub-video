@@ -281,3 +281,5 @@ button.small { padding: 4px 10px; font-size: .85em; }
 .storage-box { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .storage-box p { margin: 0; }
 .storage-box input[type="checkbox"] { width: auto; accent-color: var(--amber); }
+label.check { color: var(--ink); }
+label.check input { width: auto; accent-color: var(--amber); }

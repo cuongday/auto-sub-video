@@ -48,6 +48,9 @@ class JobSettings(BaseModel):
     cover_color: str = "#000000"
     style: SubStyle = Field(default_factory=SubStyle)
     bg_volume_db: float = Field(0.0, ge=-30, le=10)
+    # False: skip Demucs; the original audio is the background and is ducked under the narration
+    separate: bool = True
+    duck_db: float = Field(-14.0, ge=-40, le=0)
 
 class Word(BaseModel):
     text: str

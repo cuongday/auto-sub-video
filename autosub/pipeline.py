@@ -124,10 +124,25 @@ def _asr(ctx: Ctx):
 def _segment(ctx: Ctx):
     words = [Word.model_validate(w) for w in store.load_json(ctx.job.id, "words.json", default=[])]
     segs = build_segments(words, ctx.job.settings.lang)
+    segs = _flag_lyrics(ctx, segs)
     store.save_segments(ctx.job.id, segs)
     store.delete_context(ctx.job.id)      # new transcript -> context is analyzed again
     ctx.job.segments_edited = False
     ctx.log(f"Cắt được {len(segs)} câu")
+
+def _flag_lyrics(ctx: Ctx, segs: list[Segment]) -> list[Segment]:
+    """Mark lines that look like song lyrics picked up from the background music."""
+    from . import lyrics
+    voice, music = ctx.work.fetch("vocals.wav"), ctx.work.fetch("no_vocals.wav")
+    if not segs or voice is None or music is None:
+        return segs
+    v, sr = sf.read(voice, dtype="float32", always_2d=True)
+    m, _ = sf.read(music, dtype="float32", always_2d=True)
+    segs = lyrics.flag_lyrics(segs, lyrics.levels(v.mean(axis=1), m.mean(axis=1), sr, segs), ctx.job.settings.lang)
+    n = sum(lyrics.FLAG in s.flags for s in segs)
+    if n:
+        ctx.log(f"{n} câu có thể là lời bài hát trong nhạc nền (đánh dấu để rà soát)")
+    return segs
 
 def _llm(ctx: Ctx):
     st = ctx.job.settings

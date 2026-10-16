@@ -12,6 +12,7 @@ export const STATE_LABEL: Record<JobState, string> = {
 export const FLAG_LABEL: Record<string, string> = {
   translate_failed: "Dịch lỗi — đang giữ câu gốc", too_long: "Câu dài hơn thời lượng cho phép",
   tts_failed: "Đọc TTS lỗi", overflow: "Đọc không kịp dù đã tăng tốc ×1.35",
+  lyrics: "Có thể là lời bài hát trong nhạc nền — xoá nếu không cần thuyết minh",
 };
 export const fmtTime = (t: number) => {
   const m = Math.floor(t / 60), s = t - m * 60;

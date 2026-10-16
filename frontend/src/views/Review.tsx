@@ -109,6 +109,7 @@ export default function Review({ job, fonts, onRender }: { job: Job; fonts: Font
   });
 
   const red = segs.filter((s, i) => s.vi && ratio(s, i) > MAX_SPEED).length;
+  const lyricCount = segs.filter((s) => s.flags.includes("lyrics")).length;
   const flagged = segs.filter((s) => s.flags.length).length;
 
   return (
@@ -116,6 +117,12 @@ export default function Review({ job, fonts, onRender }: { job: Job; fonts: Font
       <ContextEditor jobId={job.id} busy={busy === "tr-all"} onRetranslate={() => retranslate()} />
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}
       {job.error && <p className="warn">{job.error}</p>}
+      {lyricCount > 0 && (
+        <div className="notice row">
+          <span>🎵 {lyricCount} câu có vẻ là lời bài hát trong nhạc nền (giọng nghe lẫn vào nhạc). Thường không cần dịch và thuyết minh các câu này.</span>
+          <button className="ghost" onClick={() => update(segs.filter((s) => !s.flags.includes("lyrics")))}>Xoá {lyricCount} câu này</button>
+        </div>
+      )}
       <div className={`review-grid ${info.height > info.width ? "portrait" : ""}`}>
         <div className="card table-card">
           <div className="table-head">
@@ -147,7 +154,7 @@ export default function Review({ job, fonts, onRender }: { job: Job; fonts: Font
                         <div className={`len ${lvl}`} title={`Cần đọc nhanh ×${r.toFixed(2)} so với tốc độ thường`}>
                           <i style={{ width: `${Math.min(100, (r / MAX_SPEED) * 100)}%` }} />
                         </div>
-                        {s.flags.map((f) => <span key={f} className="flag">⚠ {FLAG_LABEL[f] ?? f}</span>)}
+                        {s.flags.map((f) => <span key={f} className={`flag ${f}`}>{f === "lyrics" ? "🎵" : "⚠"} {FLAG_LABEL[f] ?? f}</span>)}
                       </td>
                       <td className="acts">
                         <button className="icon" title="Nghe thử (Ctrl+Enter)" aria-label="Nghe thử" disabled={!s.vi || !!busy} onClick={() => listen(s)}>{busy === `tts-${s.id}` ? "…" : "🔊"}</button>

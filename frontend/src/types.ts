@@ -6,7 +6,7 @@ export type FontOption = { id: string; label: string; family: string; weight: nu
 export type Settings = {
   lang: Lang; asr_model: string; llm_provider: "gemini" | "openai"; llm_model: string; translator_notes: string;
   tts_engine: "edge" | "vieneu"; tts_voice: string; tts_rate: number; ref_audio: string | null;
-  region: Region; extra_regions: Region[]; cover: Cover; cover_color: string; style: SubStyle; bg_volume_db: number; separate: boolean; duck_db: number; diarize: boolean; speaker_voices: Record<string, string>;
+  region: Region; extra_regions: Region[]; cover: Cover; cover_color: string; style: SubStyle; bg_volume_db: number; separate: boolean; duck_db: number; diarize: boolean; speaker_voices: Record<string, string>; text_source: "asr" | "ocr";
 };
 export type StepStatus = "pending" | "running" | "done" | "error";
 export type StepState = { status: StepStatus; hash: string | null; seconds: number | null; error: string | null };
@@ -28,7 +28,7 @@ export type Options = {
   asr: Record<Lang, Option[]>;
   llm: Record<"gemini" | "openai", { default: string; models: Option[] }>;
   tts: { edge: Voice[] };
-  engines: { separate: EngineOk; asr: Record<Lang, EngineOk>; llm: Record<string, EngineOk>; tts: Record<string, EngineOk> };
+  engines: { separate: EngineOk; ocr: EngineOk; asr: Record<Lang, EngineOk>; llm: Record<string, EngineOk>; tts: Record<string, EngineOk> };
   steps: string[];
   fonts: FontOption[];
   defaults: Settings;

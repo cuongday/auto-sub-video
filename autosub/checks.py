@@ -11,6 +11,7 @@ def engines() -> dict:
     full = "Chạy: make setup-full"
     return {
         "separate": {"ok": _has("demucs"), "hint": "" if _has("demucs") else full},
+        "ocr": {"ok": _has("rapidocr"), "hint": "" if _has("rapidocr") else full},
         "asr": {"zh": {"ok": _has("funasr"), "hint": "" if _has("funasr") else full},
                 "en": {"ok": _has("faster_whisper"), "hint": "" if _has("faster_whisper") else full}},
         "llm": {"gemini": {"ok": bool(config.GCP_PROJECT), "hint": "" if config.GCP_PROJECT else "Đặt GOOGLE_CLOUD_PROJECT trong .env"},

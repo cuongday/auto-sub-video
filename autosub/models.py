@@ -51,6 +51,7 @@ class JobSettings(BaseModel):
     # False: skip Demucs; the original audio is the background and is ducked under the narration
     separate: bool = True
     diarize: bool = False                 # label who speaks each line (Chinese ASR, CAM++)
+    text_source: Literal["asr", "ocr"] = "asr"   # ocr: read the burnt-in subtitles inside `region`
     speaker_voices: dict[str, str] = Field(default_factory=dict)   # speaker label -> TTS voice; others use tts_voice
     duck_db: float = Field(-14.0, ge=-40, le=0)
 

@@ -76,6 +76,8 @@ def step_hash(ctx: Ctx, step: str) -> str:
     if step == "separate":
         return _h(prev, step, st.separate)
     if step == "asr":
+        if st.text_source == "ocr":
+            return _h(prev, "ocr", st.region.model_dump())
         return _h(prev, st.lang, st.asr_model, st.diarize and st.lang == "zh")
     if step == "segment":
         return _h(prev)
@@ -125,6 +127,9 @@ def _separate(ctx: Ctx):
 
 def _asr(ctx: Ctx):
     st = ctx.job.settings
+    if st.text_source == "ocr":
+        _ocr(ctx)
+        return
     asr = ctx.engines.asr(st.lang, st.asr_model, diarize=True) if st.diarize and st.lang == "zh" \
         else ctx.engines.asr(st.lang, st.asr_model)
     words = asr.transcribe(ctx.dir / "vocals16k.wav",
@@ -133,8 +138,26 @@ def _asr(ctx: Ctx):
     store.save_json(ctx.job.id, "words.json", [w.model_dump() for w in words])
     ctx.log(f"ASR: {len(words)} từ")
 
+def _ocr(ctx: Ctx):
+    """Read the burnt-in subtitles: each line already comes with its timing, stored like ASR output."""
+    from . import ocr
+    info, st = ctx.job.info, ctx.job.settings
+    segs = ocr.read_subtitles(ctx.source(), st.region, info.width, info.height, info.duration,
+                              progress=lambda p: ctx.progress("asr", p), cancel=ctx.cancel)
+    store.save_json(ctx.job.id, "words.json", [{"text": s.source, "start": s.start, "end": s.end, "line": True}
+                                               for s in segs])
+    ctx.log(f"OCR: đọc được {len(segs)} dòng phụ đề có sẵn")
+
 def _segment(ctx: Ctx):
-    words = [Word.model_validate(w) for w in store.load_json(ctx.job.id, "words.json", default=[])]
+    raw = store.load_json(ctx.job.id, "words.json", default=[])
+    if raw and all(w.get("line") for w in raw):          # OCR lines: already one subtitle each
+        segs = [Segment(id=i, start=w["start"], end=w["end"], source=w["text"]) for i, w in enumerate(raw, 1)]
+        store.save_segments(ctx.job.id, segs)
+        store.delete_context(ctx.job.id)
+        ctx.job.segments_edited = False
+        ctx.log(f"Cắt được {len(segs)} câu")
+        return
+    words = [Word.model_validate(w) for w in raw]
     from .speakers import assign_speakers, speakers_of
     segs = assign_speakers(build_segments(words, ctx.job.settings.lang), words)
     segs = _flag_lyrics(ctx, segs)

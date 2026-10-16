@@ -11,7 +11,7 @@ dependencies = [
 # onnxruntime>=1.24 rejects VieNeu's external weights stored in the Hugging Face blob cache
 # ("External data path escapes model directory"); 1.23.x is the last release that loads them
 full = ["torch>=2.4", "torchaudio>=2.4", "demucs>=4.0", "funasr>=1.1", "modelscope", "faster-whisper>=1.0",
-        "vieneu", "onnxruntime>=1.20,<1.24"]
+        "vieneu", "onnxruntime>=1.20,<1.24", "rapidocr>=3.0"]
 
 [dependency-groups]
 dev = ["pytest>=8", "httpx>=0.27"]

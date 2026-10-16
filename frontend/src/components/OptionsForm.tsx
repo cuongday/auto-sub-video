@@ -41,7 +41,17 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
   return (
     <div className="opts">
       <fieldset>
-        <legend>Nhận dạng giọng nói</legend>
+        <legend>Lấy lời thoại</legend>
+        <div className="seg" role="radiogroup" aria-label="Nguồn lời thoại">
+          <button type="button" role="radio" aria-checked={s.text_source === "asr"} className={s.text_source === "asr" ? "on" : ""}
+            onClick={() => set({ text_source: "asr" })}>Nghe giọng (ASR)</button>
+          <button type="button" role="radio" aria-checked={s.text_source === "ocr"} className={s.text_source === "ocr" ? "on" : ""}
+            disabled={!eng.ocr?.ok} onClick={() => set({ text_source: "ocr" })}>Đọc phụ đề có sẵn (OCR)</button>
+        </div>
+        <p className="muted small">{s.text_source === "ocr"
+          ? "Đọc chữ trong vùng “Phụ đề” đã khoanh ở trên. Chính xác hơn khi video đã có sub cứng; video không có sub sẽ ra trống."
+          : "Nghe giọng nói rồi chép ra chữ. Dùng được cho mọi video."}</p>
+        {!eng.ocr?.ok && <p className="warn">OCR: {eng.ocr?.hint}</p>}
         <label>Ngôn ngữ video
           <select value={s.lang} onChange={(e) => set({ lang: e.target.value as Settings["lang"], asr_model: "" })}>
             <option value="zh">Tiếng Trung</option><option value="en">Tiếng Anh</option>

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import browse, checks, config, douyin, jobs, media, pipeline, prune, render, store, translate, voices, workdir
+from . import auth, browse, checks, config, douyin, eta, glossary, jobs, media, pipeline, prune, render, store, translate, voices, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .fonts import FONTS
@@ -31,6 +31,40 @@ async def lifespan(_app):
     yield
 
 app = FastAPI(title="Auto-Sub", lifespan=lifespan)
+
+_OPEN = {"/api/auth", "/api/auth/login", "/api/auth/logout"}
+
+@app.middleware("http")
+async def _require_login(request: Request, call_next):
+    if config.APP_PASSWORD and request.url.path.startswith("/api/") and request.url.path not in _OPEN:
+        if not auth.valid(request.cookies.get(auth.COOKIE, ""), config.APP_PASSWORD):
+            return JSONResponse({"detail": "Cần đăng nhập"}, status_code=401)
+    return await call_next(request)
+
+@app.get("/api/auth")
+def auth_status(request: Request):
+    if not config.APP_PASSWORD:
+        return {"required": False, "ok": True}
+    return {"required": True, "ok": auth.valid(request.cookies.get(auth.COOKIE, ""), config.APP_PASSWORD)}
+
+class LoginIn(BaseModel):
+    password: str
+
+@app.post("/api/auth/login")
+def auth_login(body: LoginIn):
+    if not config.APP_PASSWORD:
+        return {"ok": True}
+    if not auth.check_password(body.password, config.APP_PASSWORD):
+        raise HTTPException(401, "Sai mật khẩu")
+    r = JSONResponse({"ok": True})
+    r.set_cookie(auth.COOKIE, auth.make_token(config.APP_PASSWORD), max_age=auth.MAX_AGE, httponly=True, samesite="lax")
+    return r
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    r = JSONResponse({"ok": True})
+    r.delete_cookie(auth.COOKIE)
+    return r
 _JID = re.compile(r"^[a-f0-9]{10}$")
 VIDEO_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".m4v", ".ts"}
 
@@ -53,9 +87,32 @@ def _view(job: Job) -> dict:
     present = store.names(job.id)
     d = job.model_dump(mode="json")
     d["frames"] = sorted(n.split("/", 1)[1] for n in present if n.startswith("frames/f") and n.endswith(".jpg"))
-    d["files"] = {n: n in present for n in ("output.mp4", "subs.srt", "subs.ass", "voice.wav", "preview.mp4")}
+    d["files"] = {n: n in present for n in ("output.mp4", "output_softsub.mp4", "subs.srt", "subs.ass", "voice.wav",
+                                            "preview.mp4")}
     d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job, present)
     return d
+
+@app.get("/api/jobs/{jid}/eta")
+def job_eta(jid: str, step: str | None = None, pct: float = 0.0):
+    """Remaining seconds for the job, from this machine's past step timings."""
+    return eta.estimate(_get(jid), current=step, pct=max(0.0, min(1.0, pct)))
+
+@app.post("/api/jobs/{jid}/softsub")
+async def make_softsub(jid: str):
+    """Build output_softsub.mp4: the rendered video plus the Vietnamese SRT as a toggleable track."""
+    job = _get(jid)
+    _idle(job)
+
+    def run():
+        with workdir.pinned(jid):
+            w = workdir.WorkDir(jid)
+            video, srt = w.fetch("output.mp4"), w.fetch("subs.srt")
+            if video is None or srt is None:
+                raise HTTPException(400, "Chưa có video thành phẩm")
+            render.soft_subtitles(video, srt, w.local("output_softsub.mp4"))
+            w.push("output_softsub.mp4")
+    await asyncio.to_thread(run)
+    return {"ok": True}
 
 @app.get("/api/jobs/{jid}/storage")
 def job_storage(jid: str):
@@ -436,7 +493,7 @@ async def preview_render(jid: str, body: PreviewIn):
         raise HTTPException(500, str(e))
     return {"ok": True}
 
-_FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|ref\.wav|log\.txt)$")
+_FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|output_softsub\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|ref\.wav|log\.txt)$")
 
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
 
@@ -481,6 +538,70 @@ def get_file(jid: str, name: str, request: Request, download: bool = False):
     headers["Content-Length"] = str(size)
     return StreamingResponse(st.open_range(k, 0, None), media_type=ctype, headers=headers)
 
+# ------------------------------------------------------------------ shared glossary
+
+@app.get("/api/glossary")
+def get_glossary():
+    return glossary.load()
+
+@app.put("/api/glossary")
+def put_glossary(body: dict):
+    return glossary.save(body)
+
+@app.post("/api/jobs/{jid}/glossary/promote")
+def promote_glossary(jid: str):
+    """Add this job's characters and terms to the shared glossary."""
+    _get(jid)
+    ctx = store.load_context(jid)
+    if ctx is None:
+        raise HTTPException(400, "Job chưa có bối cảnh dịch")
+    return glossary.add_from(ctx)
+
+# ------------------------------------------------------------------ batch
+
+class BatchIn(BaseModel):
+    paths: list[str] = []                 # host files (relative to HOST_ROOT) to turn into new jobs
+    job_ids: list[str] = []               # existing jobs to (re)run
+    preset: str | None = None
+    run: bool = True                      # queue each job in auto mode (straight to the final video)
+
+def _apply_preset(job: Job, preset: dict) -> Job:
+    """Preset settings on top of the job's own; the per-video cover region is kept unless the preset sets one."""
+    merged = {**job.settings.model_dump(mode="json"), **{k: v for k, v in preset.items() if k != "region"}}
+    if preset.get("region") and preset["region"] != JobSettings().region.model_dump(mode="json"):
+        merged["region"] = preset["region"]
+    job.settings = JobSettings.model_validate(merged)
+    store.save(job)
+    return job
+
+@app.post("/api/batch")
+async def batch(body: BatchIn):
+    preset = store.load_presets().get(body.preset) if body.preset else None
+    if body.preset and preset is None:
+        raise HTTPException(400, f"Không có preset {body.preset!r}")
+    results = []
+    for rel in body.paths:
+        try:
+            p = browse.video_file(rel)
+            job = store.create(Path(rel).name, "source" + p.suffix.lower())
+            job = await asyncio.to_thread(_init_job, job, p)
+            results.append({"path": rel, "ok": True, "job": job.id})
+        except (browse.BrowseError, HTTPException) as e:
+            results.append({"path": rel, "ok": False, "error": str(getattr(e, "detail", e))})
+    results += [{"job": jid, "ok": True} for jid in body.job_ids]
+    for r in results:
+        if not r["ok"]:
+            continue
+        try:
+            job = _get(r["job"])
+            if preset:
+                job = _apply_preset(job, preset)
+            if body.run and not QUEUE.is_active(job.id):
+                QUEUE.submit(job.id, "auto", None, True)
+        except HTTPException as e:
+            r.update(ok=False, error=str(e.detail))
+    return {"results": results}
+
 # ------------------------------------------------------------------ Douyin
 
 _DY_LOGIN: list[douyin.Login] = []
@@ -522,11 +643,7 @@ def _dy_worker(task_id: str, preset: dict | None):
             douyin.download(it, w.local("source.mp4"), progress=lambda p, r=row: r.update(pct=round(p, 3)))
             job = _init_job(job, w.local("source.mp4"))
             if preset:
-                keep = job.settings.region if not preset.get("region") else None
-                job.settings = JobSettings.model_validate({**job.settings.model_dump(), **preset})
-                if keep is not None:
-                    job.settings.region = keep
-                store.save(job)
+                job = _apply_preset(job, preset)
             row.update(state="done", pct=1, job=job.id)
         except Exception as e:  # noqa: BLE001
             row.update(state="error", error=str(getattr(e, "detail", e)))

@@ -7,8 +7,9 @@ const fmtDate = (t: number) => new Date(t * 1000).toLocaleDateString("vi-VN");
 
 /** Browse the host folder mounted into the app. `start` is the saved video folder;
  *  onPick receives a video; onSetDefault saves the folder being viewed as the default. */
-export default function FileBrowser({ start, onPick, onSetDefault, busy }: {
+export default function FileBrowser({ start, onPick, onSetDefault, busy, selected, onToggle }: {
   start: string; onPick: (f: BrowseFile) => void; onSetDefault: (dir: string) => Promise<void>; busy: boolean;
+  selected?: Set<string>; onToggle?: (f: BrowseFile) => void;     // multi-select for batch runs
 }) {
   const [listing, setListing] = useState<BrowseListing | null>(null);
   const [err, setErr] = useState("");
@@ -48,7 +49,9 @@ export default function FileBrowser({ start, onPick, onSetDefault, busy }: {
           <li key={d.path}><button className="entry dir" onClick={() => open(d.path)}><span aria-hidden>📁</span> {d.name}</button></li>
         ))}
         {listing.files.map((f) => (
-          <li key={f.path}>
+          <li key={f.path} className="file-row">
+            {onToggle && <input type="checkbox" aria-label={`Chọn ${f.name} để chạy hàng loạt`} checked={!!selected?.has(f.path)}
+              disabled={busy} onChange={() => onToggle(f)} />}
             <button className="entry file" disabled={busy} onClick={() => onPick(f)} title="Mở video này">
               <span aria-hidden>🎬</span> <span className="fname">{f.name}</span>
               <span className="muted small">{fmtSize(f.size)} · {fmtDate(f.mtime)}</span>

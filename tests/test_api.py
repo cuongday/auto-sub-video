@@ -170,3 +170,16 @@ def test_presets(client):
     s = JobSettings(lang="en").model_dump(mode="json")
     assert "phim" in client.post("/api/presets", json={"name": "phim", "settings": s}).json()
     assert client.delete("/api/presets/phim").json() == {}
+
+def test_batch_create_and_run(client, tmp_path):
+    from autosub.models import JobSettings
+    a = make_video(tmp_path / "a.mp4", seconds=2); b = make_video(tmp_path / "b.mp4", seconds=2)
+    s = JobSettings(lang="zh", cover="solid", region={"x": 0, "y": 0.8, "w": 1, "h": 0.2}).model_dump(mode="json")
+    client.post("/api/presets", json={"name": "loat", "settings": s})
+    r = client.post("/api/batch", json={"paths": ["a.mp4", "b.mp4", "../x.mp4"], "preset": "loat", "run": True}).json()
+    assert [x["ok"] for x in r["results"]] == [True, True, False]
+    ids = [x["job"] for x in r["results"] if x["ok"]]
+    for jid in ids:
+        j = wait(client, jid, {"done", "error"})
+        assert j["state"] == "done" and j["settings"]["cover"] == "solid" and j["mode"] == "auto"
+    assert client.post("/api/batch", json={"job_ids": ids, "run": True}).status_code == 200

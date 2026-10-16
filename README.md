@@ -59,6 +59,7 @@ ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
 | `OPENAI_MODEL` | `gpt-4.1-mini` | |
 | `HOST_ROOT` | `./videos` | thư mục máy được duyệt chọn video trên web (chỉ đọc) |
 | `AUTOSUB_BIND` | `127.0.0.1` | `0.0.0.0` để mở cho mạng LAN |
+| `AUTOSUB_PASSWORD` | (trống) | mật khẩu đăng nhập web; trống = không cần đăng nhập |
 | `VIENEU_MODE` | `v3turbo` | |
 | `AUTOSUB_VOICE_WORKERS` | `4` | số bản VieNeu đọc song song (~1,5 GB RAM mỗi bản) |
 | `AUTOSUB_FFMPEG_PRESET` | `veryfast` | preset x264 |
@@ -73,6 +74,19 @@ ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
 - **link kênh** (`douyin.com/user/…`) → hiện danh sách video để tích chọn, rồi "Tải N video thành job mới" (có thể áp một preset cho tất cả).
 
 Không đăng nhập thì mỗi kênh chỉ xem được trang đầu (~10–20 video). Bấm **Đăng nhập bằng mã QR** và quét bằng app Douyin để xem hết; phiên đăng nhập lưu trong MinIO (`douyin/session.json`). App dùng Chromium chạy ngầm trong container để đọc Douyin; video tải về đúng bản gốc không logo. Chỉ tải video bạn có quyền sử dụng.
+
+### Các tiện ích khác
+
+- **Chạy hàng loạt:** trong hộp duyệt thư mục, tích ô bên trái nhiều video → chọn preset → "Chạy thẳng N video".
+- **Đọc phụ đề có sẵn (OCR):** ở "Lấy lời thoại" chọn *Đọc phụ đề có sẵn* — đọc chữ trong vùng **Phụ đề** đã khoanh; chính xác hơn nghe giọng khi video đã có sub cứng.
+- **Nhiều người nói:** bật "Nhận diện người nói" (video tiếng Trung), rồi ở màn rà soát chọn giọng cho từng người.
+- **Bỏ qua tách giọng:** tắt "Tách giọng khỏi nhạc nền" với vlog/review ít nhạc — nhanh hơn, giữ âm thanh gốc và tự hạ nhỏ khi có thuyết minh.
+- **Nhiều vùng che:** "+ Thêm vùng che" để che logo, chữ chú thích ngoài vùng phụ đề.
+- **Lời bài hát:** câu nghi là lời bài hát trong nhạc nền được đánh dấu 🎵, xoá một lần ở màn rà soát.
+- **Bảng thuật ngữ dùng chung:** "Lưu vào bảng dùng chung" ở bối cảnh dịch — tên nhân vật, xưng hô, thuật ngữ áp cho mọi video sau.
+- **Phụ đề mềm:** ở màn Kết quả, "Tạo bản có phụ đề mềm" thêm track phụ đề tiếng Việt bật/tắt được.
+- **Dọn dữ liệu tạm:** ở màn Kết quả, hoặc bật tự dọn sau mỗi job.
+- **Mật khẩu:** đặt `AUTOSUB_PASSWORD` trong `.env` (nên đặt khi mở app cho mạng LAN bằng `AUTOSUB_BIND=0.0.0.0`).
 
 ## Sử dụng
 

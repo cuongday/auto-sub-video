@@ -30,6 +30,7 @@ WORK_MAX_BYTES = int(float(os.environ.get("AUTOSUB_WORK_MAX_GB", "20")) * (1 << 
 FONTS_DIR = ROOT / "fonts"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 PORT = int(os.environ.get("AUTOSUB_PORT", "8020"))
+APP_PASSWORD = os.environ.get("AUTOSUB_PASSWORD", "")   # empty: no login (default, app bound to 127.0.0.1)
 
 GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT")
 GCP_LOCATION = os.environ.get("GOOGLE_LOCATION") or os.environ.get("GOOGLE_CLOUD_LOCATION", "global")

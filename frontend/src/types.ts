@@ -44,3 +44,4 @@ export type AppSettings = { video_dir: string; browse_available: boolean; auto_p
 export type DyItem = { id: string; title: string; duration: number; cover: string; created: number; width: number; height: number; size: number; is_images: boolean };
 export type DyLookup = { kind: "video" | "channel"; name?: string; items: DyItem[]; complete: boolean; logged_in: boolean };
 export type DyTask = { id: string; done: boolean; items: { id: string; title: string; state: string; pct: number; job: string | null; error: string | null }[] };
+export type SharedGlossary = { terms: { source: string; vi: string }[]; characters: Character[] };

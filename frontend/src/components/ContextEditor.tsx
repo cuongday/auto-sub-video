@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useDialog } from "./Dialog";
+import SharedGlossaryDialog from "./SharedGlossaryDialog";
 import type { Context } from "../types";
 
 /** Translation context (summary, characters/addressing, glossary). Saving + "dịch lại" re-translates everything. */
@@ -11,6 +12,8 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
   const [open, setOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const dialog = useDialog();
+  const [shared, setShared] = useState("");
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
   useEffect(() => { api.context(jobId).then(setCtx).catch(() => setCtx(null)); }, [jobId]);
   if (!ctx) return null;
   const upd = (p: Partial<Context>) => { setCtx({ ...ctx, ...p }); setDirty(true); };
@@ -51,6 +54,11 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
       </div>
       <div className="row">
         <button className="ghost" disabled={!dirty} onClick={save}>Lưu bối cảnh</button>
+        <button className="ghost" title="Thêm nhân vật và thuật ngữ của video này vào bảng dùng chung cho mọi video sau"
+          onClick={async () => { await save(); const g = await api.promoteGlossary(jobId); setShared(`Bảng dùng chung: ${g.characters.length} nhân vật, ${g.terms.length} thuật ngữ`); }}>
+          Lưu vào bảng dùng chung</button>
+        <button className="link" onClick={() => setGlossaryOpen(true)}>Sửa bảng dùng chung</button>
+        {shared && <span className="ok-msg small">{shared}</span>}
         <button className="primary" disabled={busy} onClick={async () => {
           const ok = await dialog.confirm({
             title: "Dịch lại toàn bộ?",
@@ -61,6 +69,7 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
           await save(); await onRetranslate();
         }}>{busy ? "Đang dịch lại…" : "Dịch lại theo bối cảnh mới"}</button>
       </div>
+      {glossaryOpen && <SharedGlossaryDialog onClose={() => setGlossaryOpen(false)} />}
     </details>
   );
 }

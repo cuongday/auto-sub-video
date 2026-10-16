@@ -9,6 +9,7 @@ from .storage import get_store
 from .workdir import job_prefix
 
 PRUNABLE = ["audio.wav", "vocals.wav", "voice_raw.wav", "preview.mp4"]
+# output_softsub.mp4 is kept: the user asked for it explicitly
 
 def reclaimable(jid: str) -> int:
     sizes = store.object_sizes(jid)

@@ -75,6 +75,15 @@ def render_video(src, audio: Path, ass_path: Path, out: Path, info: VideoInfo, s
     tmp.replace(out)
     return Path(out)
 
+def soft_subtitles(video: Path, srt: Path, out: Path, cancel=None) -> Path:
+    """Copy of `video` with the SRT added as a selectable Vietnamese subtitle track (no re-encode)."""
+    tmp = Path(out).with_name(Path(out).stem + ".tmp.mp4")
+    proc.run_ffmpeg(["-i", str(video), "-i", str(srt), "-map", "0", "-map", "1", "-c", "copy", "-c:s", "mov_text",
+                     "-metadata:s:s:0", "language=vie", "-metadata:s:s:0", "title=Tiếng Việt",
+                     "-movflags", "+faststart", str(tmp)], cancel=cancel)
+    tmp.replace(out)
+    return Path(out)
+
 SAMPLE_TEXT = "Đây là phụ đề tiếng Việt mẫu để xem thử vị trí và cỡ chữ"
 
 def preview(src, out: Path, info: VideoInfo, settings: JobSettings, t: float, segments: list[Segment] | None = None,

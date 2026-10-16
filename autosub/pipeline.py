@@ -197,7 +197,8 @@ def _translate(ctx: Ctx):
     llm = _llm(ctx)
     ctx_obj = store.load_context(jid)
     if ctx_obj is None:
-        ctx_obj = translate.analyze(llm, segs, st.lang, st.translator_notes)
+        from . import glossary
+        ctx_obj = glossary.merge(translate.analyze(llm, segs, st.lang, st.translator_notes))
         store.save_context(jid, ctx_obj)
     ctx.progress("translate", 0.1)
     out = translate.translate_all(llm, segs, slots(segs, ctx.job.info.duration), ctx_obj, st.lang,

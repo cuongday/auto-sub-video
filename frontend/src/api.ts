@@ -1,4 +1,4 @@
-import type { AppSettings, BrowseListing, Context, DyLookup, DyTask, Job, Options, Segment, Settings, Voice } from "./types";
+import type { AppSettings, BrowseListing, Context, DyLookup, DyTask, Job, Options, Segment, Settings, SharedGlossary, Voice } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -58,6 +58,14 @@ export const api = {
   douyinSession: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(fetch("/api/douyin/session")),
   douyinLogin: () => j<{ logged_in: boolean; login: { state: string; qr: string | null; error: string | null } | null }>(post("/api/douyin/login")),
   douyinLogout: () => j<{ logged_in: boolean; login: null }>(fetch("/api/douyin/session", { method: "DELETE" })),
+  batch: (paths: string[], preset: string | null) =>
+    j<{ results: { path?: string; job?: string; ok: boolean; error?: string }[] }>(post("/api/batch", { paths, preset, run: true })),
+  glossary: () => j<SharedGlossary>(fetch("/api/glossary")),
+  saveGlossary: (g: SharedGlossary) => j<SharedGlossary>(put("/api/glossary", g)),
+  promoteGlossary: (id: string) => j<SharedGlossary>(post(`/api/jobs/${id}/glossary/promote`)),
+  eta: (id: string, step?: string | null, pct = 0) =>
+    j<{ steps: Record<string, number>; total: number; calibrated: boolean }>(fetch(`/api/jobs/${id}/eta?pct=${pct}${step ? `&step=${step}` : ""}`)),
+  softsub: (id: string) => j(post(`/api/jobs/${id}/softsub`)),
   remove: (id: string) => j(fetch(`/api/jobs/${id}`, { method: "DELETE" })),
   saveSettings: (id: string, s: Settings) => j<Job>(put(`/api/jobs/${id}/settings`, s)),
   uploadRef: (id: string, file: File) => {

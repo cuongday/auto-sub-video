@@ -53,3 +53,19 @@ def test_render_covers_extra_region(tmp_path):
     top_left = np.abs(a[:72, :256] - b[:72, :256]).mean()
     middle = np.abs(a[120:250, 300:600] - b[120:250, 300:600]).mean()
     assert top_left > 5 and middle < 3, (top_left, middle)
+
+def test_soft_subtitle_variant(tmp_path):
+    src = make_video(tmp_path / "src.mp4", seconds=2)
+    info = media.probe(src)
+    work = tmp_path / "job"; work.mkdir()
+    audio = media.silent_audio(work / "mix.wav", info.duration)
+    st = JobSettings(region=Region(x=0.0, y=0.8, w=1.0, h=0.18))
+    (work / "subs.ass").write_text(build_ass([], 640, 360, st.region, st.style))
+    (work / "subs.srt").write_text("1\n00:00:00,500 --> 00:00:01,500\nXin chào\n", encoding="utf-8")
+    hard = render.render_video(src, audio, work / "subs.ass", work / "output.mp4", info, st)
+    soft = render.soft_subtitles(hard, work / "subs.srt", work / "output_softsub.mp4")
+    import subprocess, json
+    streams = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(soft)],
+                                        capture_output=True, text=True).stdout)["streams"]
+    kinds = [(s["codec_type"], s["codec_name"], s.get("tags", {}).get("language")) for s in streams]
+    assert ("subtitle", "mov_text", "vie") in kinds and any(k[0] == "video" for k in kinds)

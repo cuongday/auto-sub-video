@@ -5,12 +5,13 @@ import type { Job } from "../types";
 
 const FILES = [
   { name: "output.mp4", label: "Tải video (.mp4)", suffix: ".vi.mp4", primary: true },
+  { name: "output_softsub.mp4", label: "Video + phụ đề mềm (.mp4)", suffix: ".vi.softsub.mp4" },
   { name: "subs.srt", label: "Phụ đề .srt", suffix: ".vi.srt" },
   { name: "subs.ass", label: "Phụ đề .ass", suffix: ".vi.ass" },
   { name: "voice.wav", label: "Giọng thuyết minh .wav", suffix: ".voice.wav" },
 ];
 
-export default function Result({ job, onEdit, onSetup }: { job: Job; onEdit: () => void; onSetup: () => void }) {
+export default function Result({ job, onEdit, onSetup, onRefresh }: { job: Job; onEdit: () => void; onSetup: () => void; onRefresh?: () => void }) {
   const bust = job.steps.render.hash ?? "";
   const stem = job.name.replace(/\.[^.]+$/, "");
   const [busy, setBusy] = useState<string | null>(null);
@@ -57,6 +58,16 @@ export default function Result({ job, onEdit, onSetup }: { job: Job; onEdit: () 
           </button>
         ))}
       </div>
+      {!job.files["output_softsub.mp4"] && job.files["output.mp4"] && (
+        <p className="muted small">
+          <button className="link" disabled={!!busy} onClick={async () => {
+            setBusy("softsub"); setMsg(null);
+            try { await api.softsub(job.id); onRefresh?.(); setMsg({ kind: "ok", text: "Đã tạo bản có phụ đề mềm" }); }
+            catch (e) { setMsg({ kind: "err", text: (e as Error).message }); } finally { setBusy(null); }
+          }}>{busy === "softsub" ? "Đang tạo…" : "Tạo bản có phụ đề mềm"}</button>
+          {" "}— thêm phụ đề tiếng Việt thành một track bật/tắt được trong trình phát (vẫn giữ sub in cứng).
+        </p>
+      )}
       <p className="muted small">
         {pickable
           ? "Bấm tải sẽ mở hộp thoại để chọn thư mục và tên file; lần sau tự mở lại thư mục đã chọn."

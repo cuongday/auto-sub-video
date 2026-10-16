@@ -5,6 +5,7 @@ import { STATE_LABEL, STEP_LABEL } from "./labels";
 import type { Job, JobEvent, Options } from "./types";
 import { useEvents } from "./useEvents";
 import DouyinImport from "./views/DouyinImport";
+import Login from "./views/Login";
 import NewJob from "./views/NewJob";
 import Progress from "./views/Progress";
 import Result from "./views/Result";
@@ -31,12 +32,17 @@ export default function App() {
   const [checks, setChecks] = useState<{ name: string; ok: boolean; hint: string }[]>([]);
   const dialog = useDialog();
 
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const refresh = useCallback(() => api.jobs().then(setJobs).catch((e) => setFatal(e.message)), []);
   useEffect(() => {
+    fetch("/api/auth").then((r) => r.json()).then((a) => setAuthed(a.ok)).catch(() => setAuthed(true));
+  }, []);
+  useEffect(() => {
+    if (!authed) return;
     api.options().then(setOptions).catch((e) => setFatal(`Không kết nối được server: ${e.message}`));
     api.health().then((h) => setChecks(h.checks.filter((c) => !c.ok))).catch(() => {});
     refresh();
-  }, [refresh]);
+  }, [refresh, authed]);
 
   const job = jobs.find((j) => j.id === sel) ?? null;
   const replace = (j: Job) => setJobs((all) => all.some((x) => x.id === j.id) ? all.map((x) => x.id === j.id ? j : x) : [j, ...all]);
@@ -95,6 +101,7 @@ export default function App() {
     try { await api.remove(j.id); select(null); refresh(); } catch (e) { setFatal((e as Error).message); }
   };
 
+  if (authed === false) return <Login onDone={() => setAuthed(true)} />;
   if (fatal) return <div className="app"><p className="error">{fatal}</p></div>;
   if (!options) return <div className="app"><p className="muted pad">Đang tải…</p></div>;
 
@@ -125,7 +132,7 @@ export default function App() {
       <main className="main">
         {!job ? (
           <>
-            <NewJob onCreated={(j) => { replace(j); setSel(j.id); setView("setup"); history.replaceState(null, "", `?job=${j.id}`); }} />
+            <NewJob onBatch={refresh} onCreated={(j) => { replace(j); setSel(j.id); setView("setup"); history.replaceState(null, "", `?job=${j.id}`); }} />
             <DouyinImport onJobsCreated={refresh} />
           </>
         ) : (
@@ -150,7 +157,8 @@ export default function App() {
                 onCancel={() => api.cancel(job.id)} onRetry={(step) => run(job.mode, step || job.stale_from)} />
             )}
             {view === "review" && <Review key={job.id} job={job} fonts={options.fonts} onJob={replace} onRender={() => run("review", "tts")} />}
-            {view === "result" && <Result job={job} onEdit={() => setView("review")} onSetup={() => setView("setup")} />}
+            {view === "result" && <Result job={job} onEdit={() => setView("review")} onSetup={() => setView("setup")}
+              onRefresh={() => api.job(job.id).then(replace)} />}
             {view !== "progress" && job.state === "done" && job.stale_from && view !== "review" && (
               <div className="actions sticky stale">
                 <span>Tuỳ chọn đã đổi từ bước “{STEP_LABEL[job.stale_from]}”.</span>

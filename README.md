@@ -61,12 +61,32 @@ ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
 | `AUTOSUB_BIND` | `127.0.0.1` | `0.0.0.0` để mở cho mạng LAN |
 | `AUTOSUB_PASSWORD` | (trống) | mật khẩu đăng nhập web; trống = không cần đăng nhập |
 | `VIENEU_MODE` | `v3turbo` | |
-| `AUTOSUB_VOICE_WORKERS` | `4` | số bản VieNeu đọc song song (~1,5 GB RAM mỗi bản) |
+| `AUTOSUB_VOICE_WORKERS` | `4` | số bản VieNeu đọc song song trên CPU (~1,5 GB RAM mỗi bản) |
 | `AUTOSUB_FFMPEG_PRESET` | `veryfast` | preset x264 |
 | `AUTOSUB_FFMPEG_CRF` | `20` | nhỏ hơn = nét hơn |
 | `AUTOSUB_WORK_MAX_GB` | `20` | giới hạn thư mục tạm trong container |
 | `AUTOSUB_PORT` | `8020` | |
 | `AUTOSUB_DOUYIN_WORKERS` | `4` | số video Douyin tải cùng lúc khi tạo job |
+
+### Chạy VieNeu bằng GPU (NVIDIA)
+
+Mặc định VieNeu chạy bằng CPU, máy nào cũng chạy được. Máy có GPU NVIDIA thì dùng bản GPU để đọc nhanh hơn nhiều lần:
+
+1. Cài driver NVIDIA (≥ 525) và [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (Linux), hoặc Docker Desktop dùng WSL2 + driver NVIDIA mới (Windows). Kiểm tra: `docker run --rm --gpus all ubuntu nvidia-smi`.
+2. Chạy bản GPU:
+   ```bash
+   make up-gpu
+   # = docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+   ```
+   Muốn `docker compose up -d --build` luôn ra bản GPU thì thêm vào `.env`: `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` (Windows dùng `;`).
+3. Trên web, ở mục **Thuyết minh** chọn VieNeu, phần **VieNeu chạy trên** chọn **Tự động** hoặc **GPU (NVIDIA)**; dòng bên dưới cho biết đang chạy trên GPU nào.
+
+GPU cần ≥ 3,5 GB VRAM và compute capability ≥ 6.0 (GTX 10xx trở lên). Nếu chọn GPU mà máy không dùng được, app tự chạy CPU và ghi rõ lý do. Image GPU nặng khoảng 10 GB (so với ~3,4 GB bản CPU) vì có thư viện CUDA, và lần build đầu mất khoảng 10–15 phút để tải. Chỉ VieNeu dùng GPU; tách giọng, ASR, OCR vẫn chạy CPU.
+
+| Biến `.env` | Mặc định | |
+|---|---|---|
+| `VIENEU_DEVICE` | `auto` | `auto` / `cpu` / `cuda`, chọn trên web sẽ ghi đè |
+| `AUTOSUB_VIENEU_GPU_WORKERS` | `2` | số câu đọc song song trên GPU |
 
 ### Tải video Douyin
 

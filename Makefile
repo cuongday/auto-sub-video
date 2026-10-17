@@ -1,7 +1,10 @@
-.PHONY: setup setup-full up down logs build test test-slow test-minio
+.PHONY: setup setup-full up up-gpu down logs build test test-slow test-minio
 # The app runs only through docker compose (it needs the MinIO service).
 up:
 	docker compose up -d --build
+# NVIDIA GPU for VieNeu (see docker-compose.gpu.yml)
+up-gpu:
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 down:
 	docker compose down
 logs:

@@ -3,6 +3,7 @@ import json
 import queue
 import re
 import shutil
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -784,6 +785,7 @@ def browse_dir(path: str = ""):
 class AppSettingsIn(BaseModel):
     video_dir: str | None = None
     auto_prune: bool | None = None
+    vieneu_device: Literal["auto", "cpu", "cuda"] | None = None
 
 @app.get("/api/app-settings")
 def get_app_settings():
@@ -794,7 +796,8 @@ def get_app_settings():
             browse.resolve(video_dir)
     except browse.BrowseError:
         video_dir = ""                     # folder gone or mount changed: fall back to the root
-    return {"video_dir": video_dir, "browse_available": browse.available(), "auto_prune": bool(s.get("auto_prune"))}
+    return {"video_dir": video_dir, "browse_available": browse.available(), "auto_prune": bool(s.get("auto_prune")),
+            "vieneu_device": s.get("vieneu_device") or config.VIENEU_DEVICE}
 
 @app.put("/api/app-settings")
 def put_app_settings(body: AppSettingsIn):
@@ -809,8 +812,21 @@ def put_app_settings(body: AppSettingsIn):
         values["video_dir"] = browse.rel_of(d)
     if body.auto_prune is not None:
         values["auto_prune"] = body.auto_prune
+    if body.vieneu_device is not None:
+        values["vieneu_device"] = body.vieneu_device
     store.save_app_settings(values)
+    if body.vieneu_device is not None and "autosub.tts.vieneu_tts" in sys.modules:
+        sys.modules["autosub.tts.vieneu_tts"].reset_pool()      # next line is built on the new device
     return get_app_settings()
+
+@app.get("/api/gpu")
+def gpu_status():
+    """What the VieNeu device setting resolves to on this machine (probes CUDA once)."""
+    from . import gpu
+    s = store.load_app_settings()
+    requested = s.get("vieneu_device") if s.get("vieneu_device") in gpu.DEVICES else config.VIENEU_DEVICE
+    device, note = gpu.resolve(requested)
+    return {"requested": requested, "device": device, "note": note, "cuda": gpu.cuda_info()}
 
 # ------------------------------------------------------------------ presets
 

@@ -40,7 +40,12 @@ export type JobEvent =
 export type BrowseEntry = { name: string; path: string };
 export type BrowseFile = BrowseEntry & { size: number; mtime: number };
 export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
-export type AppSettings = { video_dir: string; browse_available: boolean; auto_prune: boolean };
+export type VieneuDevice = "auto" | "cpu" | "cuda";
+export type AppSettings = { video_dir: string; browse_available: boolean; auto_prune: boolean; vieneu_device: VieneuDevice };
+export type GpuStatus = {
+  requested: VieneuDevice; device: "cpu" | "cuda"; note: string;
+  cuda: { available: boolean; name: string; vram_gb: number; capability: string; torch: string; cuda: string; reason: string };
+};
 export type DyItem = { id: string; title: string; duration: number; cover: string; created: number; width: number; height: number; size: number; is_images: boolean };
 export type DyLookup = { kind: "video" | "channel"; name?: string; sec_uid?: string; items: DyItem[]; complete: boolean; logged_in: boolean };
 export type DyTask = { id: string; done: boolean; items: { id: string; title: string; state: string; pct: number; job: string | null; error: string | null }[] };

@@ -64,6 +64,10 @@ ASR_MODELS = {
 
 EDGE_VOICES = [("vi-VN-HoaiMyNeural", "Hoài My (nữ)"), ("vi-VN-NamMinhNeural", "Nam Minh (nam)")]
 VIENEU_MODE = os.environ.get("VIENEU_MODE", "v3turbo")
+# where VieNeu runs: "cpu" (ONNX Runtime, every machine), "cuda" (PyTorch on an NVIDIA GPU, needs the GPU
+# image), "auto" (GPU when one is usable, else CPU). The web UI can override it (app setting vieneu_device).
+VIENEU_DEVICE = os.environ.get("VIENEU_DEVICE", "auto").strip().lower()
+VIENEU_GPU_WORKERS = int(os.environ.get("AUTOSUB_VIENEU_GPU_WORKERS", "2"))   # parallel lines on one GPU
 VOICE_WORKERS = int(os.environ.get("AUTOSUB_VOICE_WORKERS", "4"))
 EDGE_WORKERS = 3          # more parallel requests make edge-tts drop answers
 DOUYIN_WORKERS = int(os.environ.get("AUTOSUB_DOUYIN_WORKERS", "4"))   # parallel CDN downloads

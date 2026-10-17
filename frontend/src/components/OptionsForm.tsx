@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import CloneVoiceDialog from "./CloneVoiceDialog";
 import { useDialog } from "./Dialog";
+import VieneuDevice from "./VieneuDevice";
 import type { Job, Options, Settings, Voice } from "../types";
 
 const GENDER: Record<string, string> = { custom: "Giọng nhân bản", female: "Giọng nữ", male: "Giọng nam" };
@@ -138,6 +139,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
             )}
           </div>
         )}
+        {s.tts_engine === "vieneu" && eng.tts.vieneu.ok && <VieneuDevice />}
         {cloneOpen && <CloneVoiceDialog onClose={() => setCloneOpen(false)}
           onCreated={(id) => { setCloneOpen(false); reloadVoices(id); }} />}
         <label>Tốc độ đọc <output>{s.tts_rate.toFixed(2)}×</output>

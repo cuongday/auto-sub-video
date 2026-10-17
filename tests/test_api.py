@@ -113,7 +113,8 @@ def test_browse_and_video_dir_setting(client, tmp_path):
     r = client.get("/api/browse", params={"path": "Phim"}).json()
     assert [d["name"] for d in r["dirs"]] == ["Tap1"] and [f["path"] for f in r["files"]] == ["Phim/a.mp4"]
     assert client.get("/api/browse", params={"path": ".."}).status_code == 400
-    assert client.get("/api/app-settings").json() == {"video_dir": "", "browse_available": True, "auto_prune": False}
+    assert client.get("/api/app-settings").json() == {"video_dir": "", "browse_available": True, "auto_prune": False,
+                                                     "vieneu_device": config.VIENEU_DEVICE}
     assert client.put("/api/app-settings", json={"video_dir": "Phim/Tap1"}).json()["video_dir"] == "Phim/Tap1"
     assert client.put("/api/app-settings", json={"video_dir": "Phim/a.mp4"}).status_code == 400
     assert client.put("/api/app-settings", json={"video_dir": "../x"}).status_code == 400

@@ -217,7 +217,13 @@ def _fit_all(ctx: Ctx, segs: list[Segment], only: set[int] | None = None) -> lis
     ref = ctx.ref_audio()
     sl = slots(segs, ctx.job.info.duration)
     todo = [(s, slot) for s, slot in zip(segs, sl) if s.vi.strip() and (only is None or s.id in only)]
-    workers = config.EDGE_WORKERS if st.tts_engine == "edge" else max(1, config.VOICE_WORKERS)
+    if st.tts_engine == "edge":
+        workers = config.EDGE_WORKERS
+    else:
+        from .tts import vieneu_tts
+        workers = vieneu_tts.workers()
+        device, note = vieneu_tts.current_device()
+        ctx.log(f"VieNeu chạy trên {'GPU' if device == 'cuda' else 'CPU'}" + (f" ({note})" if note else ""))
     done = [0]
     lock = threading.Lock()
 

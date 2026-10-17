@@ -428,3 +428,6 @@ button.srow.on, button.srow.on:hover:not(:disabled) { background: var(--selected
 .checks strong { display: inline-flex; align-items: center; gap: 6px; color: var(--amber); }
 .with-icon { display: inline-flex; align-items: center; gap: 8px; }
 .crumb { display: inline-flex; align-items: center; gap: 5px; }
+.device { display: flex; flex-direction: column; gap: 6px; }
+.device-head { font-size: .9em; color: var(--muted); }
+.device p { margin: 0; }

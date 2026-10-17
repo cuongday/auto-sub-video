@@ -1,37 +1,81 @@
-"""VieNeu-TTS v3 Turbo on CPU. One instance runs one inference at a time, so a small pool of
-instances (each with cpu_count // workers ONNX threads) synthesizes lines in parallel."""
+"""VieNeu-TTS v3 Turbo on CPU (ONNX Runtime) or an NVIDIA GPU (PyTorch). One instance runs one inference
+at a time, so a small pool of instances synthesizes lines in parallel: on CPU each gets cpu_count // workers
+ONNX threads; on GPU a couple of instances share the card. Changing the device empties the pool."""
 import os
 import threading
+import time
 from pathlib import Path
 import numpy as np
 import soundfile as sf
-from .. import config
+from .. import config, gpu
 from .base import TTSError
 
 _POOL: list = []
 _CREATED = [0]
 _COND = threading.Condition()
+_DEVICE = ["", ""]          # [device the pool was built for ("cpu" | "cuda"), fallback note]
+_REQ: list = ["", 0.0]      # [requested device, read at] — the app setting, re-read every few seconds
+_REQ_TTL = 5.0
 _CLONES: dict[tuple, object] = {}
 _CLONE_LOCK = threading.Lock()
 
-def _new_instance(threads: int = 0):
+def requested_device() -> str:
+    """The web setting wins over VIENEU_DEVICE from .env."""
+    if _REQ[0] and time.time() - _REQ[1] < _REQ_TTL:
+        return _REQ[0]
+    try:
+        from ..store import load_app_settings
+        v = load_app_settings().get("vieneu_device")
+    except Exception:  # noqa: BLE001  (storage down: use the env default)
+        v = None
+    _REQ[:] = [v if v in gpu.DEVICES else config.VIENEU_DEVICE, time.time()]
+    return _REQ[0]
+
+def current_device() -> tuple[str, str]:
+    """('cpu' | 'cuda', note) that new VieNeu work runs on."""
+    return gpu.resolve(requested_device())
+
+def workers() -> int:
+    return max(1, config.VIENEU_GPU_WORKERS if current_device()[0] == "cuda" else config.VOICE_WORKERS)
+
+def _new_instance(device: str, threads: int = 0):
     try:
         from vieneu import Vieneu
     except ImportError as e:
         raise TTSError("Chưa cài VieNeu: make setup-full") from e
-    return Vieneu(mode=config.VIENEU_MODE, threads=threads)
+    if device == "cuda":
+        try:
+            return Vieneu(mode=config.VIENEU_MODE, device="cuda", backend="pytorch")
+        except Exception as e:  # noqa: BLE001
+            raise TTSError(f"Không chạy được VieNeu trên GPU ({e}). Chọn “Chạy trên: CPU” ở mục Thuyết minh") from e
+    return Vieneu(mode=config.VIENEU_MODE, device="cpu", backend="onnx", threads=threads)
+
+def _switch_if_needed(device: str, note: str) -> None:
+    """Called with _COND held: drop idle instances built for another device."""
+    if _DEVICE[0] != device:
+        _POOL.clear()
+        _CREATED[0] = 0
+        with _CLONE_LOCK:
+            _CLONES.clear()
+        _DEVICE[0] = device
+    _DEVICE[1] = note
 
 class _Borrow:
     def __enter__(self):
+        device, note = current_device()
+        limit = workers()
         with _COND:
-            while not _POOL and _CREATED[0] >= max(1, config.VOICE_WORKERS):
+            _switch_if_needed(device, note)
+            while not _POOL and _CREATED[0] >= limit:
                 _COND.wait()
             if _POOL:
                 self.tts = _POOL.pop()
+                self.device = device
                 return self.tts
             _CREATED[0] += 1
+        self.device = device
         try:
-            self.tts = _new_instance(max(1, (os.cpu_count() or 8) // max(1, config.VOICE_WORKERS)))
+            self.tts = _new_instance(device, max(1, (os.cpu_count() or 8) // max(1, config.VOICE_WORKERS)))
         except BaseException:
             with _COND:
                 _CREATED[0] -= 1; _COND.notify()
@@ -40,7 +84,20 @@ class _Borrow:
 
     def __exit__(self, *exc):
         with _COND:
-            _POOL.append(self.tts); _COND.notify()
+            if _DEVICE[0] == self.device:       # an instance from before a device switch is dropped
+                _POOL.append(self.tts)
+            else:
+                _CREATED[0] = max(0, _CREATED[0] - 1)
+            _COND.notify()
+
+def reset_pool() -> None:
+    """Forget every idle instance (e.g. after the user switches CPU/GPU)."""
+    _REQ[:] = ["", 0.0]
+    with _COND:
+        _POOL.clear(); _CREATED[0] = 0; _DEVICE[0] = ""
+        with _CLONE_LOCK:
+            _CLONES.clear()
+        _COND.notify_all()
 
 class VieneuTTS:
     name = "vieneu"

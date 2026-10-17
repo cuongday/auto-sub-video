@@ -1,4 +1,4 @@
-import type { AppSettings, BrowseListing, Context, DyLookup, DyTask, Job, Options, Project, Segment, Settings, SharedGlossary, Voice } from "./types";
+import type { AppSettings, BrowseListing, GpuStatus, VieneuDevice, Context, DyLookup, DyTask, Job, Options, Project, Segment, Settings, SharedGlossary, Voice } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -47,7 +47,8 @@ export const api = {
   }),
   browse: (path: string) => j<BrowseListing>(fetch(`/api/browse?path=${encodeURIComponent(path)}`)),
   appSettings: () => j<AppSettings>(fetch("/api/app-settings")),
-  saveAppSettings: (s: { video_dir?: string; auto_prune?: boolean }) => j<AppSettings>(put("/api/app-settings", s)),
+  saveAppSettings: (s: { video_dir?: string; auto_prune?: boolean; vieneu_device?: VieneuDevice }) => j<AppSettings>(put("/api/app-settings", s)),
+  gpu: () => j<GpuStatus>(fetch("/api/gpu")),
   storage: (id: string) => j<{ total: number; reclaimable: number }>(fetch(`/api/jobs/${id}/storage`)),
   prune: (id: string) => j<{ freed: number; total: number; reclaimable: number }>(post(`/api/jobs/${id}/prune`)),
   createVoice: (fd: FormData) => j<{ id: string; name: string; duration: number }>(fetch("/api/voices/custom", { method: "POST", body: fd })),

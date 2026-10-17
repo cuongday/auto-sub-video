@@ -1,0 +1,20 @@
+# NVIDIA GPU for VieNeu-TTS. Needs the NVIDIA driver (>= 525) and the NVIDIA Container Toolkit on the host
+# (Windows: Docker Desktop with the WSL2 backend and a recent NVIDIA driver).
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# or put COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml in .env (Windows: separate with ;)
+# and keep using `docker compose up -d --build`.
+services:
+  auto-sub:
+    build:
+      args:
+        GPU: "1"
+    image: auto-sub:gpu
+    environment:
+      VIENEU_DEVICE: ${VIENEU_DEVICE:-auto}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

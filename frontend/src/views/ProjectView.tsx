@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useDialog } from "../components/Dialog";
+import Icon from "../components/Icon";
 import { STATE_LABEL, STEP_LABEL } from "../labels";
 import type { Job, JobState, Project } from "../types";
 
@@ -75,7 +76,7 @@ export default function ProjectView({ project, jobs, onOpenJob, onChanged, onDel
       <section className="card project-head">
         <header className="card-head">
           <div>
-            <h2>📂 {project.name}</h2>
+            <h2 className="with-icon"><Icon name="folder" size={18} /> {project.name}</h2>
             {project.source_url && <a className="small src-link" href={project.source_url} target="_blank" rel="noreferrer">{project.source_url}</a>}
           </div>
           <div className="row">

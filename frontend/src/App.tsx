@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "./api";
 import { useDialog } from "./components/Dialog";
-import { STATE_LABEL, STEP_LABEL } from "./labels";
+import Icon from "./components/Icon";
+import Sidebar, { NO_PROJECT } from "./components/Sidebar";
+import { STEP_LABEL } from "./labels";
 import type { Job, JobEvent, Options, Project } from "./types";
 import { useEvents } from "./useEvents";
 import DouyinImport from "./views/DouyinImport";
@@ -18,10 +20,8 @@ type Section = "subs" | "douyin";
 
 const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
 const saveOpen = (v: boolean) => { try { localStorage.setItem("autosub.jobsOpen", v ? "1" : "0"); } catch { /* private mode */ } };
-const NO_PROJECT = "_none";
 const readExpanded = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem("autosub.projOpen") || "[]")); } catch { return new Set(); } };
 const saveExpanded = (v: Set<string>) => { try { localStorage.setItem("autosub.projOpen", JSON.stringify([...v])); } catch { /* private mode */ } };
-const stateBadge = (j: Job) => (j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]);
 
 function defaultView(j: Job): View {
   if (j.state === "running" || j.state === "queued" || j.state === "error" || j.state === "cancelled" || j.state === "interrupted") return "progress";
@@ -87,6 +87,9 @@ export default function App() {
   };
   const putProject = (p?: Project) => { if (p) setProjects((all) => all.map((x) => x.id === p.id ? p : x)); refresh(); refreshProjects(); };
   const project = projects.find((p) => p.id === selProject) ?? null;
+  // opened from a ?job= link: unfold the group holding that video so it is visible in the sidebar
+  useEffect(() => { if (job) expand(job.project && projects.some((p) => p.id === job.project) ? job.project : NO_PROJECT); },  // eslint-disable-line react-hooks/exhaustive-deps
+    [job?.id, job?.project, projects.length]);
   const openDouyin = (pid?: string) => { if (pid !== undefined) setDyProject(pid); setSection("douyin"); history.replaceState(null, "", "?tab=douyin"); };
   const toggleJobs = () => setJobsOpen((o) => { saveOpen(!o); return !o; });
   const onDyActive = useCallback((n: number) => setDyActive(n), []);
@@ -146,84 +149,15 @@ export default function App() {
 
   return (
     <div className="shell">
-      <aside className="side">
-        <div className="brand"><span className="logo" aria-hidden /> Auto-Sub</div>
-        <nav className="side-nav" aria-label="Chức năng">
-          <div className={`nav-group ${section === "subs" ? "on" : ""}`}>
-            <div className="nav-head">
-              <button className="nav-item" aria-current={section === "subs" ? "page" : undefined}
-                onClick={() => { if (section !== "subs") { setSection("subs"); history.replaceState(null, "", sel ? `?job=${sel}` : location.pathname); } if (!jobsOpen) toggleJobs(); }}>
-                <span className="nav-ico" aria-hidden>🎬</span>
-                <span className="nav-label" title="Làm phụ đề &amp; thuyết minh">Làm phụ đề video</span>
-                {busyJobs > 0 && <span className="nav-count" title="Job đang chạy hoặc đang chờ">{busyJobs}</span>}
-              </button>
-              <button className="nav-toggle" aria-expanded={jobsOpen} aria-controls="side-jobs"
-                aria-label={jobsOpen ? "Thu gọn danh sách video" : "Mở rộng danh sách video"} onClick={toggleJobs}>
-                <span className={`chev ${jobsOpen ? "open" : ""}`} aria-hidden>›</span>
-              </button>
-            </div>
-            {jobsOpen && (
-              <div id="side-jobs" className="nav-sub">
-                <div className="row nav-actions">
-                  <button className={`new grow ${section === "subs" && sel === null && !selProject ? "on" : ""}`} onClick={() => select(null)}>+ Video mới</button>
-                  <button className="new" title="Tạo project mới" onClick={async () => { const p = await newProject(); if (p) openProject(p.id); }}>+ Project</button>
-                </div>
-                <ul className="projects">
-                  {[...projects.map((p) => ({ id: p.id, name: p.name, real: true })),
-                    ...(jobs.some((j) => !j.project || !projects.some((p) => p.id === j.project)) ? [{ id: NO_PROJECT, name: "Không thuộc project", real: false }] : [])
-                  ].map((p) => {
-                    const mine = jobs.filter((j) => p.real ? j.project === p.id : !j.project || !projects.some((x) => x.id === j.project));
-                    const open = expanded.has(p.id);
-                    const pending = mine.filter((j) => j.state === "done").length;
-                    return (
-                      <li key={p.id} className={`proj ${p.real ? "" : "loose"}`}>
-                        <div className={`proj-head ${section === "subs" && selProject === p.id ? "on" : ""}`}>
-                          <button className="proj-toggle" aria-expanded={open} aria-label={open ? `Thu gọn ${p.name}` : `Mở ${p.name}`} onClick={() => expand(p.id, !open)}>
-                            <span className={`chev ${open ? "open" : ""}`} aria-hidden>›</span>
-                          </button>
-                          <button className="proj-name" onClick={() => p.real ? openProject(p.id) : expand(p.id, !open)} title={p.name}>
-                            <span aria-hidden>{p.real ? "📂" : "📄"}</span> <span className="jname">{p.name}</span>
-                          </button>
-                          <span className="proj-count" title={pending ? `${pending} video xong chờ duyệt` : `${mine.length} video`}>
-                            {pending ? <span className="badge s-done">{pending}</span> : mine.length}
-                          </span>
-                        </div>
-                        {open && (
-                          <ul className="jobs">
-                            {mine.map((j) => (
-                              <li key={j.id}>
-                                <button className={section === "subs" && j.id === sel ? "on" : ""} onClick={() => select(j.id)}>
-                                  <span className="jname">{j.name}</span>
-                                  <span className={`badge s-${j.state}`}>{stateBadge(j)}</span>
-                                </button>
-                              </li>
-                            ))}
-                            {!mine.length && <li className="muted small nav-empty">Chưa có video.</li>}
-                          </ul>
-                        )}
-                      </li>
-                    );
-                  })}
-                  {!jobs.length && !projects.length && <li className="muted small nav-empty">Chưa có video nào.</li>}
-                </ul>
-              </div>
-            )}
-          </div>
-          <div className={`nav-group ${section === "douyin" ? "on" : ""}`}>
-            <button className="nav-item" aria-current={section === "douyin" ? "page" : undefined} onClick={() => openDouyin()}>
-              <span className="nav-ico" aria-hidden>⬇</span>
-              <span className="nav-label">Tải video Douyin</span>
-              {dyActive > 0 && <span className="nav-count" title="Video đang tải">{dyActive}</span>}
-            </button>
-          </div>
-        </nav>
-        {checks.length > 0 && (
-          <div className="checks">
-            <strong>Cần cấu hình</strong>
-            {checks.map((c) => <p key={c.name} title={c.hint}>• {c.name}: <span className="muted">{c.hint}</span></p>)}
-          </div>
-        )}
-      </aside>
+      <Sidebar jobs={jobs} projects={projects} section={section} sel={sel} selProject={selProject}
+        jobsOpen={jobsOpen} expanded={expanded} busyJobs={busyJobs} dyActive={dyActive} checks={checks}
+        onSubs={() => {
+          if (section !== "subs") { setSection("subs"); history.replaceState(null, "", sel ? `?job=${sel}` : selProject ? `?project=${selProject}` : location.pathname); }
+          if (!jobsOpen) toggleJobs();
+        }}
+        onToggleJobs={toggleJobs} onExpand={expand} onNewVideo={() => select(null)} onSelectJob={(id) => select(id)}
+        onNewProject={async () => { const p = await newProject(); if (p) openProject(p.id); }}
+        onOpenProject={openProject} onDouyin={() => openDouyin()} />
       <main className="main">
         {/* kept mounted while hidden so downloads to a folder keep going when you switch screens */}
         <div hidden={section !== "douyin"}>
@@ -243,7 +177,7 @@ export default function App() {
             <header className="job-head">
               <div>
                 {job.project && projects.some((p) => p.id === job.project) && (
-                  <button className="link small crumb" onClick={() => openProject(job.project!)}>📂 {projects.find((p) => p.id === job.project)!.name} /</button>
+                  <button className="link small crumb" onClick={() => openProject(job.project!)}><Icon name="folder" size={13} /> {projects.find((p) => p.id === job.project)!.name} /</button>
                 )}
                 <h1>{job.name}</h1>
                 <span className="muted small">{job.source}</span>

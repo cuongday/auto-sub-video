@@ -1,0 +1,113 @@
+import { STATE_LABEL, STEP_LABEL } from "../labels";
+import type { Job, Project } from "../types";
+import Icon from "./Icon";
+
+export const NO_PROJECT = "_none";
+const stateText = (j: Job) => (j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]);
+
+/** Left navigation: the subtitle workspace (projects -> videos) and the Douyin downloader.
+ *  Every row is one hover target; nested buttons inside a row never paint their own hover. */
+export default function Sidebar({
+  jobs, projects, section, sel, selProject, jobsOpen, expanded, busyJobs, dyActive, checks,
+  onSubs, onToggleJobs, onExpand, onNewVideo, onNewProject, onOpenProject, onSelectJob, onDouyin,
+}: {
+  jobs: Job[]; projects: Project[]; section: "subs" | "douyin"; sel: string | null; selProject: string | null;
+  jobsOpen: boolean; expanded: Set<string>; busyJobs: number; dyActive: number;
+  checks: { name: string; hint: string }[];
+  onSubs: () => void; onToggleJobs: () => void; onExpand: (pid: string, open: boolean) => void;
+  onNewVideo: () => void; onNewProject: () => void; onOpenProject: (pid: string) => void;
+  onSelectJob: (id: string) => void; onDouyin: () => void;
+}) {
+  const known = new Set(projects.map((p) => p.id));
+  const groups = [
+    ...projects.map((p) => ({ id: p.id, name: p.name, real: true, jobs: jobs.filter((j) => j.project === p.id) })),
+    { id: NO_PROJECT, name: "Không thuộc project", real: false, jobs: jobs.filter((j) => !j.project || !known.has(j.project)) },
+  ].filter((g) => g.real || g.jobs.length);
+  const inSubs = section === "subs";
+
+  return (
+    <aside className="side">
+      <div className="brand"><span className="logo" aria-hidden /> Auto-Sub</div>
+
+      <nav className="side-nav" aria-label="Chức năng">
+        <div className={`srow top ${inSubs ? "on" : ""}`}>
+          <button className="srow-main" aria-current={inSubs ? "page" : undefined} onClick={onSubs}>
+            <Icon name="film" /> <span className="srow-label">Làm phụ đề video</span>
+            {busyJobs > 0 && <span className="pill busy" title="Video đang chạy hoặc đang chờ">{busyJobs}</span>}
+          </button>
+          <button className="srow-chev" aria-expanded={jobsOpen} aria-controls="side-jobs"
+            aria-label={jobsOpen ? "Thu gọn danh sách" : "Mở rộng danh sách"} onClick={onToggleJobs}>
+            <Icon name="chevron" size={14} className={jobsOpen ? "rot" : ""} />
+          </button>
+        </div>
+
+        {jobsOpen && (
+          <div id="side-jobs" className="side-tree">
+            <div className="side-tools">
+              <button className={`tool grow ${inSubs && !sel && !selProject ? "on" : ""}`} onClick={onNewVideo}>
+                <Icon name="plus" size={14} /> Video mới
+              </button>
+              <button className="tool" onClick={onNewProject} title="Tạo project mới (một kênh)">
+                <Icon name="folderPlus" size={14} /> Project
+              </button>
+            </div>
+
+            <ul className="tree">
+              {groups.map((g) => {
+                const open = expanded.has(g.id);
+                const waiting = g.jobs.filter((j) => j.state === "done").length;
+                const running = g.jobs.filter((j) => j.state === "running" || j.state === "queued").length;
+                return (
+                  <li key={g.id}>
+                    <div className={`srow proj ${g.real ? "" : "loose"} ${inSubs && selProject === g.id && !sel ? "on" : ""}`}>
+                      <button className="srow-chev lead" aria-expanded={open} aria-label={open ? `Thu gọn ${g.name}` : `Mở ${g.name}`}
+                        onClick={() => onExpand(g.id, !open)}>
+                        <Icon name="chevron" size={13} className={open ? "rot" : ""} />
+                      </button>
+                      <button className="srow-main" title={g.name}
+                        onClick={() => g.real ? onOpenProject(g.id) : onExpand(g.id, !open)}>
+                        <Icon name={g.real ? "folder" : "inbox"} size={15} />
+                        <span className="srow-label">{g.name}</span>
+                        {running > 0 && <span className="pill busy" title={`${running} video đang chạy`}>{running}</span>}
+                        {waiting > 0 && <span className="pill done" title={`${waiting} video xong, chờ duyệt`}>{waiting}</span>}
+                        <span className="pill" title={`${g.jobs.length} video`}>{g.jobs.length}</span>
+                      </button>
+                    </div>
+                    {open && (
+                      <ul className="tree-jobs">
+                        {g.jobs.map((j) => (
+                          <li key={j.id}>
+                            <button className={`srow job ${inSubs && j.id === sel ? "on" : ""}`} onClick={() => onSelectJob(j.id)} title={j.name}>
+                              <span className="srow-label">{j.name}</span>
+                              <span className={`jstate s-${j.state}`}><i className="dot" />{stateText(j)}</span>
+                            </button>
+                          </li>
+                        ))}
+                        {!g.jobs.length && <li className="tree-empty">Chưa có video</li>}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+              {!groups.length && <li className="tree-empty">Chưa có video nào</li>}
+            </ul>
+          </div>
+        )}
+
+        <div className={`srow top ${section === "douyin" ? "on" : ""}`}>
+          <button className="srow-main" aria-current={section === "douyin" ? "page" : undefined} onClick={onDouyin}>
+            <Icon name="download" /> <span className="srow-label">Tải video Douyin</span>
+            {dyActive > 0 && <span className="pill busy" title="Video đang tải">{dyActive}</span>}
+          </button>
+        </div>
+      </nav>
+
+      {checks.length > 0 && (
+        <div className="checks">
+          <strong><Icon name="alert" size={14} /> Cần cấu hình</strong>
+          {checks.map((c) => <p key={c.name} title={c.hint}>{c.name}: <span className="muted">{c.hint}</span></p>)}
+        </div>
+      )}
+    </aside>
+  );
+}

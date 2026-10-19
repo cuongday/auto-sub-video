@@ -1,8 +1,9 @@
-"""Flows of the review feature. "film": prepare one movie/episode once (transcript, characters, chunk summaries)."""
+"""Flows of the review feature. "film": prepare one movie/episode once (transcript, characters, chunk summaries).
+"review": one video reviewing a part of a film (script, scenes, voice, assembly, render)."""
 from .. import pipeline, projects, store
-from ..models import FILM_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Segment, Word
+from ..models import FILM_STEPS, REVIEW_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Script, Segment, Word
 from ..pipeline import Ctx, Flow, _h
-from . import film, parts, templates, transcript
+from . import film, notebook, pace, parts, script, templates, transcript
 
 NO_LINES = "Không có lời thoại: không viết được kịch bản review"
 
@@ -125,3 +126,56 @@ FILM_FLOW = Flow(steps=FILM_STEPS, runners=FILM_RUNNERS, step_hash=film_step_has
                  pushes=_film_pushes, outputs=_film_outputs, review_stop=None, overwrites=set(),
                  rebuild=pipeline._rebuild)
 pipeline.register("film", FILM_FLOW)
+
+# ---------------------------------------------------------------- review
+
+def _position(job: Job) -> tuple[int, bool]:
+    """(number of parts in the project, whether this part is the last one)."""
+    ps = parts.parts_of(job.project)
+    return len(ps), job.part.index == max(p.part.index for p in ps)
+
+def _script(ctx: Ctx):
+    job, st = ctx.job, ctx.job.settings
+    fj = store.load(job.part.film_job)
+    if fj.state not in ("done", "approved"):
+        raise RuntimeError("Phim chưa chuẩn bị xong")
+    if not _lines(fj):
+        raise RuntimeError("Không có lời thoại để viết kịch bản")
+    p = parts.project_of(job)
+    nb = p.review.notebook
+    total, last = _position(job)
+    chars = [FilmCharacter.model_validate(c) for c in store.load_json(fj.id, "characters.json", default=[])]
+    chunks = [ChunkSummary.model_validate(c) for c in store.load_json(fj.id, "summary.json", default={}).get("chunks", [])]
+    old = Script.model_validate(store.load_json(job.id, "script.json", default={}))
+    spm = pace.measure_spm(ctx.engines.tts(st.tts_engine), st.tts_voice, st.tts_rate, ctx.ref_audio())
+    s = script.build_script(pipeline._llm(ctx), meta=p.review.movie, characters=chars, chunks=chunks, part=job.part,
+                            total_parts=total, is_last=last, settings=job.review, notebook=nb, spm=spm,
+                            locked=[b for b in old.blocks if b.edited])
+    store.save_json(job.id, "script.json", s.model_dump(mode="json"))
+    job.part.notebook_rev = notebook.rev_before(nb, job.part.index)
+    job.segments_edited = False
+    ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {script.estimate_seconds(s, spm) / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
+
+def _placeholder(ctx: Ctx):
+    """ponytail: scenes/tts/assemble/render are filled in by later tasks; until then they do nothing."""
+
+REVIEW_RUNNERS = {"script": _script, "scenes": _placeholder, "tts": _placeholder, "assemble": _placeholder,
+                  "render": _placeholder}
+
+def review_step_hash(ctx: Ctx, step: str) -> str:
+    j, st = ctx.job, ctx.job.settings
+    if step == "script":
+        fj = store.load(j.part.film_job)
+        rv = j.review.model_dump(include={"minutes", "style", "hook", "opening", "notes", "spoil_ending"})
+        nb = parts.project_of(j).review.notebook
+        return _h(fj.steps["summarize"].hash, notebook.rev_before(nb, j.part.index), rv, j.part.start, j.part.end,
+                  _position(j)[1], st.llm_provider, st.llm_model, st.tts_engine, st.tts_voice, st.tts_rate)
+    return _h(j.steps[REVIEW_STEPS[REVIEW_STEPS.index(step) - 1]].hash, step)
+
+def _review_outputs(ctx: Ctx, step: str) -> list[str]:
+    return ["script.json"] if step == "script" else []
+
+REVIEW_FLOW = Flow(steps=REVIEW_STEPS, runners=REVIEW_RUNNERS, step_hash=review_step_hash,
+                   inputs=lambda ctx, step: [], pushes=lambda ctx, step: [], outputs=_review_outputs,
+                   review_stop="script", overwrites={"script"}, pins=lambda job: [job.part.film_job])
+pipeline.register("review", REVIEW_FLOW)

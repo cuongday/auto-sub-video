@@ -1,4 +1,5 @@
 """Client for the public vsmov.com movie API (stdlib only)."""
+import functools
 import json
 import urllib.parse
 import urllib.request
@@ -57,6 +58,17 @@ def _get(path: str, **params) -> dict:
         raise VsmovError(f"Không kết nối được vsmov: {e}") from e
 
 
+def _safe(fn):
+    # malformed upstream shapes surface as VsmovError, not TypeError/AttributeError/...
+    @functools.wraps(fn)
+    def wrap(*a, **k):
+        try:
+            return fn(*a, **k)
+        except (AttributeError, TypeError, KeyError, ValueError, OverflowError) as e:
+            raise VsmovError(f"Dữ liệu vsmov không hợp lệ: {e}") from e
+    return wrap
+
+
 def _items(d: dict) -> list[dict]:
     # two shapes: {"items": [...]} and {"data": {"items": [...]}}
     return d.get("items") or (d.get("data") or {}).get("items") or []
@@ -69,7 +81,7 @@ def _str(v) -> str:
 def _int(v) -> int | None:
     try:
         return int(v)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -93,27 +105,33 @@ def _page(d: dict, page: int) -> Page:
     return Page(cards, _int(pg.get("currentPage")) or page, _int(pg.get("totalPages")) or 1)
 
 
+@_safe
 def latest(page: int = 1) -> Page:
     return _page(_get("danh-sach/phim-moi-cap-nhat", page=page), page)
 
 
+@_safe
 def search(keyword: str, page: int = 1, limit: int = 24) -> Page:
     return _page(_get("tim-kiem", keyword=keyword, page=page, limit=limit), page)
 
 
+@_safe
 def listing(kind: Literal["phim-le", "phim-bo", "the-loai", "quoc-gia"], slug: str = "", page: int = 1) -> Page:
+    slug = slug.strip()
     if kind in ("the-loai", "quoc-gia") and not slug:
         raise VsmovError("Thiếu thể loại/quốc gia để lọc phim")
-    path = f"danh-sach/{kind}" if kind in ("phim-le", "phim-bo") else f"{kind}/{slug}"
+    path = f"danh-sach/{kind}" if kind in ("phim-le", "phim-bo") else f"{kind}/{urllib.parse.quote(slug)}"
     return _page(_get(path, page=page), page)
 
 
+@_safe
 def filters() -> dict[str, list[dict]]:
     def load(path):
         return [{"name": _str(i.get("name")), "slug": _str(i.get("slug"))} for i in _items(_get(path)) if isinstance(i, dict)]
     return {"genres": load("the-loai"), "countries": load("quoc-gia")}
 
 
+@_safe
 def movie(slug: str) -> MovieDetail:
     d = _get(f"phim/{urllib.parse.quote(slug)}")
     m = d.get("movie")

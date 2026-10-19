@@ -51,7 +51,7 @@ def test_latest_and_listing():
 @pytest.mark.parametrize("kind", ["the-loai", "quoc-gia"])
 def test_listing_requires_slug_for_genre_and_country(kind):
     with pytest.raises(VsmovError):
-        vsmov.listing(kind)
+        vsmov.listing(kind, "  ")
 
 
 def _serve(monkeypatch, obj):
@@ -77,6 +77,22 @@ def test_malformed_pagination_does_not_break(monkeypatch):
     assert p.page == 3 and p.total_pages == 1 and p.items[0].year is None and p.items[0].rating is None
     _serve(monkeypatch, {"data": {"items": [], "params": None}})
     assert vsmov.latest().total_pages == 1
+
+
+@pytest.mark.parametrize("fn,obj", [
+    (lambda: vsmov.latest(), [1, 2]),
+    (lambda: vsmov.filters(), [1]),
+    (lambda: vsmov.movie("s"), []),
+    (lambda: vsmov.latest(), {"data": 5}),
+    (lambda: vsmov.latest(), {"items": 5}),
+    (lambda: vsmov.movie("s"), {"movie": {"name": "X", "actor": 5}}),
+    (lambda: vsmov.movie("s"), {"movie": {"name": "X"}, "episodes": 5}),
+    (lambda: vsmov.movie("s"), {"movie": {"name": "X"}, "episodes": [{"server_data": 5}]}),
+])
+def test_garbage_shapes_are_vsmov_error(monkeypatch, fn, obj):
+    _serve(monkeypatch, obj)
+    with pytest.raises(VsmovError):
+        fn()
 
 
 def test_movie_not_found(monkeypatch):

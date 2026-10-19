@@ -89,7 +89,7 @@ def _unapprove(job: Job) -> None:
     if job.state == "approved":
         job.state = "done"
 
-def _view(job: Job) -> dict:
+def _view(job: Job, all_jobs: list[Job] | None = None) -> dict:
     present = store.names(job.id)
     d = job.model_dump(mode="json")
     d["frames"] = sorted(n.split("/", 1)[1] for n in present if n.startswith("frames/f") and n.endswith(".jpg"))
@@ -98,6 +98,8 @@ def _view(job: Job) -> dict:
     d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job, present)
     flow = pipeline.flow_for(job)
     d["flow"] = {"steps": flow.steps, "review_stop": flow.review_stop}
+    if job.kind == "review" and job.part:
+        d.update(review_api.part_view(job, all_jobs))
     return d
 
 @app.get("/api/jobs/{jid}/eta")
@@ -322,7 +324,8 @@ async def create_job(request: Request):
 
 @app.get("/api/jobs")
 def list_jobs():
-    return [_view(j) for j in store.list_jobs()]
+    all_jobs = store.list_jobs()
+    return [_view(j, all_jobs) for j in all_jobs]
 
 @app.get("/api/jobs/{jid}")
 def get_job(jid: str):
@@ -383,6 +386,8 @@ def run_job(jid: str, body: RunIn):
         raise HTTPException(400, "Bước không hợp lệ")
     if job.segments_edited and not body.confirm and _would_rerun_text(job, body.from_step):
         raise HTTPException(409, "NEEDS_CONFIRM: chạy lại sẽ ghi đè phụ đề đã sửa")
+    if job.kind == "review" and job.part:
+        review_api.check_run(job)
     QUEUE.submit(jid, body.mode, body.from_step, body.confirm)
     return _view(store.load(jid))
 
@@ -997,13 +1002,16 @@ class ApproveIn(BaseModel):
     approved: bool = True
 
 @app.post("/api/jobs/{jid}/approve")
-def approve_job(jid: str, body: ApproveIn):
-    """Mark a finished video as checked by the user (or take that back)."""
+async def approve_job(jid: str, body: ApproveIn):
+    """Mark a finished video as checked by the user (or take that back). Approving a review part updates the
+    project notebook first (an LLM call): when that fails the part stays unapproved."""
     job = _get(jid)
     _idle(job)
     if body.approved:
         if job.state != "done":
             raise HTTPException(409, "Chỉ duyệt được video đã xong")
+        if job.kind == "review" and job.part:
+            await asyncio.to_thread(review_api.on_approve, job)
         job.state = "approved"
     elif job.state == "approved":
         job.state = "done"
@@ -1038,6 +1046,11 @@ async def _needs_confirm(_req, exc):
 @app.exception_handler(StorageError)
 async def _storage_down(_req, exc):
     return JSONResponse({"detail": f"Không kết nối được kho lưu trữ MinIO: {exc}"}, status_code=503)
+
+# ------------------------------------------------------------------ review phim
+
+from . import review_api  # noqa: E402  (its routes use the helpers above)
+app.include_router(review_api.router)
 
 # ------------------------------------------------------------------ frontend
 

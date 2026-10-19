@@ -1,11 +1,18 @@
 """Flows of the review feature. "film": prepare one movie/episode once (transcript, characters, chunk summaries).
 "review": one video reviewing a part of a film (script, scenes, voice, assembly, render)."""
-from .. import pipeline, projects, store
+import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
+import soundfile as sf
+from .. import config, media, pipeline, projects, store
+from ..timing import trim_silence
+from ..tts.base import cached_synthesize
 from ..models import FILM_STEPS, REVIEW_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Script, Segment, Word
 from ..pipeline import Ctx, Flow, _h
-from . import film, notebook, pace, parts, script, templates, transcript
+from . import film, narration, notebook, pace, parts, script, templates, transcript
 
-NO_LINES = "Không có lời thoại: không viết được kịch bản review"
+SR = 44100
+NO_LINES ="Không có lời thoại: không viết được kịch bản review"
 
 def _use_subs(job: Job) -> str | None:
     return job.film.subtitle if job.film else None
@@ -159,7 +166,56 @@ def _script(ctx: Ctx):
 def _placeholder(ctx: Ctx):
     """ponytail: scenes/tts/assemble/render are filled in by later tasks; until then they do nothing."""
 
-REVIEW_RUNNERS = {"script": _script, "scenes": _placeholder, "tts": _placeholder, "assemble": _placeholder,
+def _tts(ctx: Ctx):
+    """One TTS call per sentence of every script block; the voice-over is laid out later by `assemble`."""
+    job, st = ctx.job, ctx.job.settings
+    blocks = Script.model_validate(store.load_json(job.id, "script.json", default={})).blocks
+    engine, ref = ctx.engines.tts(st.tts_engine), ctx.ref_audio()
+    if st.tts_engine == "edge":
+        workers = config.EDGE_WORKERS
+    else:
+        from ..tts import vieneu_tts
+        workers = vieneu_tts.workers()
+    tts_dir = ctx.dir / "tts"
+    if tts_dir.exists():
+        shutil.rmtree(tts_dir)
+    tts_dir.mkdir()
+    todo = [(b.id, i, s) for b in blocks for i, s in enumerate(narration.sentences(b.text))]
+    done, lock = [0], threading.Lock()
+
+    def one(item):
+        bid, i, s = item
+        if ctx.cancel.is_set():
+            return None, "cancelled"
+        rel = f"tts/b{bid:03d}_s{i:03d}.wav"
+        try:
+            raw = cached_synthesize(engine, s, st.tts_voice, st.tts_rate, ref)
+            pcm = trim_silence(media.decode_mono(raw, SR), SR)
+            sf.write(ctx.dir / rel, pcm, SR, subtype="PCM_16")
+            res = ({"block": bid, "n": i, "text": s, "file": rel, "dur": len(pcm) / SR}, None)
+        except Exception as e:  # noqa: BLE001
+            res = (None, str(e))
+        with lock:
+            done[0] += 1
+            ctx.progress("tts", done[0] / max(1, len(todo)))
+        return res
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        results = list(ex.map(one, todo))
+    ctx.check()
+    if any(err for _, err in results):   # second chance, one at a time, for sentences that failed under parallel load
+        ctx.log(f"Đọc lại {sum(1 for _, err in results if err)} câu bị lỗi")
+        results = [one(it) if err else (r, err) for it, (r, err) in zip(todo, results)]
+        ctx.check()
+    bad = [it for it, (_, err) in zip(todo, results) if err]
+    ctx.work.push("tts")
+    if bad:
+        ids = sorted({b for b, _, _ in bad})
+        raise RuntimeError(f"TTS lỗi ở {len(bad)} câu (khối {', '.join(map(str, ids))})")
+    store.save_json(job.id, "narration.json", [r for r, _ in results])
+    ctx.log(f"Lời đọc: {len(results)} câu")
+
+REVIEW_RUNNERS = {"script": _script, "scenes": _placeholder, "tts": _tts, "assemble": _placeholder,
                   "render": _placeholder}
 
 def review_step_hash(ctx: Ctx, step: str) -> str:
@@ -170,10 +226,15 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         # the notebook version and is_last stay out: a changed notebook only warns (notebook_rev), the user rewrites
         return _h(fj.steps["summarize"].hash, rv, j.part.start, j.part.end, st.llm_provider, st.llm_model,
                   st.tts_engine, st.tts_voice, st.tts_rate)
+    if step == "tts":
+        ref = ctx.work.store.stat(ctx.work.key(st.ref_audio)) if st.ref_audio else None
+        blocks = Script.model_validate(store.load_json(j.id, "script.json", default={})).blocks
+        return _h(j.steps["scenes"].hash, step, [(b.id, b.text) for b in blocks], st.tts_engine, st.tts_voice,
+                  st.tts_rate, ref.etag if ref else "")
     return _h(j.steps[REVIEW_STEPS[REVIEW_STEPS.index(step) - 1]].hash, step)
 
 def _review_outputs(ctx: Ctx, step: str) -> list[str]:
-    return ["script.json"] if step == "script" else []
+    return {"script": ["script.json"], "tts": ["narration.json"]}.get(step, [])
 
 REVIEW_FLOW = Flow(steps=REVIEW_STEPS, runners=REVIEW_RUNNERS, step_hash=review_step_hash,
                    inputs=lambda ctx, step: [], pushes=lambda ctx, step: [], outputs=_review_outputs,

@@ -1,7 +1,7 @@
 import json
 import re
 import pytest
-from autosub import store
+from autosub import projects, store
 from autosub.models import (ChunkSummary, FilmCharacter, MovieMeta, Notebook, NotebookEntry, PartInfo, ReviewSettings,
                             SceneNote, ScriptBlock, TimeSpan)
 from autosub.review import notebook, pace, script, templates
@@ -111,7 +111,7 @@ def test_duplicate_hook_retried_once():
         return r
     llm = FakeLLM(hook)
     nb = Notebook(entries=[NotebookEntry(job="a", index=1, range_label="", summary="", hooks=["Ai đã giết Tiểu Minh?"], rev=1)])
-    _build(llm, notebook=nb, spm=20, settings=ReviewSettings(minutes=1))
+    _build(llm, notebook=nb, spm=20, settings=ReviewSettings(minutes=1), part=PART.model_copy(update={"index": 2}))
     assert len(llm.prompts) == 2 and "Hook bị trùng với phần trước: viết hook khác" in llm.prompts[1]
 
 def test_script_step_stops_for_review(review_rig):
@@ -146,3 +146,46 @@ def test_rewrite_block_keeps_scenes():
     llm = FakeLLM(review_llm_hook)
     b = script.rewrite_block(llm, s, 1, "ngắn hơn", meta=MovieMeta(name="Phim thử"), settings=ReviewSettings(), part=PART)
     assert (b.text, b.edited, b.scenes) == ("Viết lại", True, s.blocks[0].scenes) and "ngắn hơn" in llm.prompts[-1]
+
+def test_notebook_change_does_not_rewrite_script(review_rig):
+    review_rig.film_done()
+    p = review_rig.part()
+    review_rig.run(p.id, mode="auto")
+    before, n = store.load_json(p.id, "script.json"), len(review_rig.llm.prompts)
+    proj = projects.get(review_rig.project.id)
+    proj.review.notebook.shared_rev = 5
+    proj.review.notebook.entries.append(NotebookEntry(job="x", index=0, range_label="", summary="Trước đó.", rev=6))
+    projects.save(proj)
+    assert review_rig.run(p.id, mode="auto").state == "done"
+    assert len(review_rig.llm.prompts) == n and store.load_json(p.id, "script.json") == before
+    job = review_rig.run(p.id, mode="auto", from_step="script")
+    assert len(review_rig.llm.prompts) > n and job.part.notebook_rev == 6
+
+def test_own_previous_hook_is_not_a_duplicate():
+    def hook(prompt, schema):
+        r = review_llm_hook(prompt, schema)
+        r["blocks"][0]["text"] = "ai đã giết tiểu minh"
+        return r
+    llm = FakeLLM(hook)
+    nb = Notebook(entries=[NotebookEntry(job="a", index=1, range_label="", summary="", hooks=["Ai đã giết Tiểu Minh?"], rev=1)])
+    _build(llm, notebook=nb, spm=20, settings=ReviewSettings(minutes=1))      # PART is index 1: its own entry
+    assert len(llm.prompts) == 1
+
+def test_rewrite_unknown_block():
+    with pytest.raises(ValueError, match="Không tìm thấy khối 9"):
+        script.rewrite_block(FakeLLM(review_llm_hook), script.Script(blocks=[]), 9, "", meta=MovieMeta(name="P"),
+                             settings=ReviewSettings(), part=PART)
+
+def test_locked_block_survives_length_retry():
+    mine = ScriptBlock(id=3, kind="than", text="Câu tôi tự viết", scenes=[TimeSpan(start=90, end=95)],
+                       source_start=200, source_end=220, edited=True)
+    calls = []
+    def hook(prompt, schema):
+        calls.append(prompt)
+        if len(calls) == 1:
+            prompt = re.sub(r"TARGET (\d+)", lambda m: f"TARGET {int(m[1]) // 2}", prompt)
+        return review_llm_hook(prompt, schema)
+    s = _build(FakeLLM(hook), locked=[mine])
+    assert len(calls) == 2 and "Câu tôi tự viết" in calls[1]
+    got = [b for b in s.blocks if b.edited]
+    assert len(got) == 1 and (got[0].text, got[0].scenes, got[0].source_start) == (mine.text, mine.scenes, 200)

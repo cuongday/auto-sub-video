@@ -106,6 +106,7 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
                  spm: float, locked: list[ScriptBlock] = ()) -> Script:
     target = round(settings.minutes * spm)
     opening = opening_for(settings, part)
+    used = nb_mod.used_hooks(notebook.model_copy(update={"entries": [e for e in notebook.entries if e.index != part.index]}))
     rows = [f"Bạn là người viết kịch bản video review phim. Viết lời đọc cho phần {part.index}/{total_parts} của video review.",
             RULES, "", _meta(meta), "", "Nhân vật:", _cast(notebook.characters or characters), "",
             "Tóm tắt các đoạn phim trong phần này:", _chunks(chunks, part), "",
@@ -119,7 +120,7 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
                  + (f" Tình tiết còn lửng: {'; '.join(e.open_threads)}." if e.open_threads else "") for e in earlier]
         if notebook.voice:
             rows.append(f"Giọng kể đã dùng, giữ cho thống nhất: {notebook.voice}")
-        rows.append(f"Hook đã dùng: {'; '.join(nb_mod.used_hooks(notebook)) or '(chưa có)'}")
+        rows.append(f"Hook đã dùng: {'; '.join(used) or '(chưa có)'}")
     if is_last and not settings.spoil_ending:
         rows.append("Không được tiết lộ cái kết của phim: dừng trước cao trào và để lửng.")
     if settings.notes.strip():
@@ -130,7 +131,6 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
     prompt = "\n".join(rows)
 
     fix, length_tries, hook_tries = "", 0, 0
-    used = {_norm(h) for h in nb_mod.used_hooks(notebook)}
     while True:
         raw = llm.generate_json(prompt + fix, SCRIPT_SCHEMA).get("blocks", [])
         blocks = validate_blocks(raw, part, settings, locked)
@@ -141,7 +141,7 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
             fix = f"{draft}\nKịch bản đang {'ngắn' if n < target else 'dài'} hơn mục tiêu: viết lại cho khoảng {target} âm tiết."
             continue
         hook = next((b for b in blocks if b.kind == "hook" and not b.edited), None)
-        if hook and _norm(hook.text) in used and hook_tries < 1:
+        if hook and _norm(hook.text) in {_norm(h) for h in used} and hook_tries < 1:
             hook_tries += 1
             fix = f"{draft}\nHook bị trùng với phần trước: viết hook khác."
             continue
@@ -152,7 +152,9 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
 def rewrite_block(llm: LLMProvider, script: Script, bid: int, instruction: str, *, meta: MovieMeta,
                   settings: ReviewSettings, part: PartInfo) -> ScriptBlock:
     """Rewrite one block's narration on the user's request; its scenes stay."""
-    block = next(b for b in script.blocks if b.id == bid)
+    block = next((b for b in script.blocks if b.id == bid), None)
+    if block is None:
+        raise ValueError(f"Không tìm thấy khối {bid}")
     prompt = "\n".join([
         "Bạn là người viết kịch bản video review phim. Viết lại một khối lời đọc theo yêu cầu.",
         "- Chỉ kể những gì có trong kịch bản và thông tin phim, không thêm tình tiết.",

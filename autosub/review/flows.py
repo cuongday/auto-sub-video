@@ -167,9 +167,9 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
     if step == "script":
         fj = store.load(j.part.film_job)
         rv = j.review.model_dump(include={"minutes", "style", "hook", "opening", "notes", "spoil_ending"})
-        nb = parts.project_of(j).review.notebook
-        return _h(fj.steps["summarize"].hash, notebook.rev_before(nb, j.part.index), rv, j.part.start, j.part.end,
-                  _position(j)[1], st.llm_provider, st.llm_model, st.tts_engine, st.tts_voice, st.tts_rate)
+        # the notebook version and is_last stay out: a changed notebook only warns (notebook_rev), the user rewrites
+        return _h(fj.steps["summarize"].hash, rv, j.part.start, j.part.end, st.llm_provider, st.llm_model,
+                  st.tts_engine, st.tts_voice, st.tts_rate)
     return _h(j.steps[REVIEW_STEPS[REVIEW_STEPS.index(step) - 1]].hash, step)
 
 def _review_outputs(ctx: Ctx, step: str) -> list[str]:

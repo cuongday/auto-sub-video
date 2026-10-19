@@ -1,0 +1,55 @@
+{
+ "status": true,
+ "items": [
+  {
+   "tmdb": {
+    "type": "movie",
+    "id": "299534",
+    "season": null,
+    "vote_average": "8.2",
+    "vote_count": 28141
+   },
+   "imdb": {
+    "id": "tt4154796"
+   },
+   "modified": {
+    "time": "2026-08-27T16:30:08+07:00"
+   },
+   "_id": 51016,
+   "name": "Avengers 4: Hồi Kết",
+   "origin_name": "Avengers: Endgame",
+   "slug": "avengers-4-hoi-ket-178544376755563",
+   "poster_url": "https://vsmov.com/storage/images/91iy9F1JOG1dvM6M6JNYgvScZpK.jpg",
+   "thumb_url": "https://vsmov.com/storage/images/8go3YE9sBMQaCXEx23j6BAfeuxd.jpg",
+   "year": 2019
+  },
+  {
+   "tmdb": {
+    "type": "movie",
+    "id": "299534",
+    "season": null,
+    "vote_average": "8.2",
+    "vote_count": 28034
+   },
+   "imdb": {
+    "id": "tt4154796"
+   },
+   "modified": {
+    "time": "2026-08-20T01:33:55+07:00"
+   },
+   "_id": 50525,
+   "name": "Avengers 4: Hồi Kết",
+   "origin_name": "Avengers: Endgame",
+   "slug": "avengers-4-hoi-ket-178435029931160",
+   "poster_url": "https://vsmov.com/storage/images/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg",
+   "thumb_url": "https://vsmov.com/storage/images/8go3YE9sBMQaCXEx23j6BAfeuxd.jpg",
+   "year": 2019
+  }
+ ],
+ "pagination": {
+  "totalItems": 10,
+  "totalItemsPerPage": "2",
+  "currentPage": 1,
+  "totalPages": 5
+ }
+}

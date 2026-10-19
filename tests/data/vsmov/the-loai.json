@@ -1,0 +1,38 @@
+{
+ "status": "success",
+ "message": "",
+ "data": {
+  "items": [
+   {
+    "_id": 85,
+    "name": "Action & Adventure",
+    "slug": "action-adventure"
+   },
+   {
+    "_id": 17,
+    "name": "Bí Ẩn",
+    "slug": "bi-an"
+   },
+   {
+    "_id": 58,
+    "name": "Chiến Tranh",
+    "slug": "chien-tranh"
+   },
+   {
+    "_id": 15,
+    "name": "Chính Kịch",
+    "slug": "chinh-kich"
+   },
+   {
+    "_id": 18,
+    "name": "Chính Trị - Chiến Tranh",
+    "slug": "chinh-tri-chien-tranh"
+   },
+   {
+    "_id": 35,
+    "name": "Chủ Đề Thực Tế",
+    "slug": "chu-de-thuc-te"
+   }
+  ]
+ }
+}

@@ -1,0 +1,86 @@
+{
+ "status": true,
+ "msg": "",
+ "movie": {
+  "tmdb": {
+   "type": "tv",
+   "id": "312423",
+   "season": 1,
+   "vote_average": "7.2",
+   "vote_count": 8
+  },
+  "imdb": {
+   "id": "tt39398591"
+  },
+  "created": {
+   "time": "2026-02-22T22:50:16+07:00"
+  },
+  "modified": {
+   "time": "2026-02-22T22:50:16+07:00"
+  },
+  "_id": 40320,
+  "name": "Kiểm Định Thực Tế: Hậu Trường Siêu Mẫu Nước Mỹ ( Phần 1 )",
+  "origin_name": "Reality Check: Inside America's Next Top Model ( Part 1 )",
+  "slug": "kiem-dinh-thuc-te-hau-truong-sieu-mau-nuoc-my-phan-1",
+  "content": "",
+  "type": "series",
+  "status": "trailer",
+  "poster_url": "https://vsmov.com/storage/images/kiem-dinh-thuc-te-hau-truong-sieu-mau-nuoc-my-phan-1/thumb_fRiAJB6VxyG0QcjSXW4BoHIGsnu.jpg",
+  "thumb_url": "https://vsmov.com/storage/images/kiem-dinh-thuc-te-hau-truong-sieu-mau-nuoc-my-phan-1/poster_lxlsvsgvEYlf2wrSV9qUipHRAuk.jpg",
+  "trailer_url": null,
+  "time": "60",
+  "episode_current": "Trailer",
+  "episode_total": "3",
+  "quality": "HD",
+  "lang": "Vietsub",
+  "notify": null,
+  "showtimes": "16/02/2026",
+  "year": 2026,
+  "keywords": [
+   "Kiểm Định Thực Tế: Hậu Trường Siêu Mẫu Nước Mỹ",
+   "Hậu Trường Siêu Mẫu Nước Mỹ Phần 1",
+   "phim tài liệu",
+   "Tyra Banks",
+   "Jay Manuel",
+   "J. Alexander",
+   "ngành thời trang",
+   "siêu mẫu",
+   "reality tv",
+   "xem phim Kiểm Định Thực Tế",
+   "phim hay 2026",
+   "phim mới 2026",
+   "phim online",
+   "phim HD",
+   "xem phim miễn phí"
+  ],
+  "view": 56,
+  "chieurap": false,
+  "sub_docquyen": false,
+  "actor": [
+   "Tyra Banks",
+   "Jay Manuel",
+   "J. Alexander",
+   "Nigel Barker",
+   "Ken Mok",
+   "Shannon Stewart",
+   "Shandi Sullivan",
+   "Giselle Samson"
+  ],
+  "director": [],
+  "category": [
+   {
+    "id": 69,
+    "name": "Truyền Hình Thực Tế",
+    "slug": "truyen-hinh-thuc-te"
+   }
+  ],
+  "country": [
+   {
+    "id": 7,
+    "name": "Âu Mỹ",
+    "slug": "au-my"
+   }
+  ]
+ },
+ "episodes": []
+}

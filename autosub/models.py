@@ -125,3 +125,31 @@ class Job(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     pruned: list[str] = Field(default_factory=list)   # intermediates deleted to save space (rebuilt on demand)
     project: str | None = None            # id of the project (e.g. one Douyin channel) this video belongs to
+
+
+class SubTrack(BaseModel):
+    code: str
+    url: str
+
+
+class MovieMeta(BaseModel):
+    slug: str = ""
+    name: str
+    origin_name: str = ""
+    year: int | None = None
+    type: str = "single"
+    poster_url: str = ""
+    thumb_url: str = ""
+    time: str = ""
+    lang: str = ""
+    content: str = ""
+    actors: list[str] = Field(default_factory=list)
+    directors: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    countries: list[str] = Field(default_factory=list)
+
+
+class Episode(BaseModel):
+    name: str
+    slug: str
+    embed: str

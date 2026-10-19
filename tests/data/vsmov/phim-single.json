@@ -1,0 +1,142 @@
+{
+ "status": true,
+ "msg": "",
+ "movie": {
+  "tmdb": {
+   "type": "movie",
+   "id": "299534",
+   "season": null,
+   "vote_average": "8.2",
+   "vote_count": 28141
+  },
+  "imdb": {
+   "id": "tt4154796"
+  },
+  "created": {
+   "time": "2026-07-31T10:36:07+07:00"
+  },
+  "modified": {
+   "time": "2026-08-27T16:30:08+07:00"
+  },
+  "_id": 51016,
+  "name": "Avengers 4: Hồi Kết",
+  "origin_name": "Avengers: Endgame",
+  "slug": "avengers-4-hoi-ket-178544376755563",
+  "content": "Sau sự kiện hủy diệt tàn khốc, vũ trụ chìm trong cảnh hoang tàn. Với sự trợ giúp của những đồng minh còn sống sót, biệt đội siêu anh hùng Avengers tập hợp một lần nữa để đảo ngược hành động của Thanos và khôi phục lại trật tự của vũ trụ.",
+  "type": "single",
+  "status": "completed",
+  "poster_url": "https://vsmov.com/storage/images/91iy9F1JOG1dvM6M6JNYgvScZpK.jpg",
+  "thumb_url": "https://vsmov.com/storage/images/8go3YE9sBMQaCXEx23j6BAfeuxd.jpg",
+  "trailer_url": "https://www.youtube.com/watch?v=4sZj4aeYUCA",
+  "time": "180 phút",
+  "episode_current": "Full",
+  "episode_total": "1",
+  "quality": "4K",
+  "lang": "Vietsub",
+  "notify": null,
+  "showtimes": null,
+  "year": 2019,
+  "keywords": [
+   "superhero",
+   "time travel",
+   "space travel",
+   "time machine",
+   "based on comic",
+   "sequel",
+   "alien invasion",
+   "superhero team",
+   "marvel cinematic universe (mcu)",
+   "alternate timeline",
+   "father daughter relationship",
+   "sister sister relationship",
+   "teamwork"
+  ],
+  "view": 460,
+  "chieurap": true,
+  "sub_docquyen": false,
+  "actor": [
+   "Robert Downey Jr.",
+   "Chris Evans",
+   "Mark Ruffalo",
+   "Chris Hemsworth",
+   "Scarlett Johansson",
+   "Jeremy Renner",
+   "Josh Brolin",
+   "Don Cheadle",
+   "Paul Rudd",
+   "Benedict Cumberbatch",
+   "Chadwick Boseman",
+   "Brie Larson",
+   "Tom Holland",
+   "Karen Gillan",
+   "Zoe Saldaña",
+   "Evangeline Lilly",
+   "Tessa Thompson",
+   "Rene Russo",
+   "Elizabeth Olsen",
+   "Anthony Mackie",
+   "Sebastian Stan",
+   "Tom Hiddleston",
+   "Danai Gurira",
+   "Benedict Wong",
+   "Pom Klementieff",
+   "Dave Bautista",
+   "Letitia Wright",
+   "John Slattery",
+   "Tilda Swinton",
+   "Jon Favreau"
+  ],
+  "director": [
+   "Anthony Russo",
+   "Joe Russo"
+  ],
+  "category": [
+   {
+    "id": 23,
+    "name": "Phiêu Lưu",
+    "slug": "phieu-luu"
+   },
+   {
+    "id": 30,
+    "name": "Hành Động",
+    "slug": "hanh-dong"
+   },
+   {
+    "id": 46,
+    "name": "Viễn Tưởng",
+    "slug": "vien-tuong"
+   }
+  ],
+  "country": [
+   {
+    "id": 7,
+    "name": "Âu Mỹ",
+    "slug": "au-my"
+   }
+  ]
+ },
+ "episodes": [
+  {
+   "server_name": "Vietsub\r\n                        #1",
+   "server_data": [
+    {
+     "name": "Full",
+     "slug": "tap-full",
+     "filename": "Full",
+     "link_embed": "https://v6.streamvsmov.com/video/3c499dca-dbf3-44e2-9317-7b69d6af6147"
+    }
+   ]
+  },
+  {
+   "server_name": "4K",
+   "server_data": [
+    {
+     "name": "Full",
+     "slug": "tap-full",
+     "filename": "Full",
+     "link_embed": "https://v5.streamvsmov.com/video/c50fa716-44e6-4089-a9fd-2839a42cd9a5"
+    }
+   ]
+  }
+ ]
+}

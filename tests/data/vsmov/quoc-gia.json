@@ -1,0 +1,38 @@
+{
+ "status": "success",
+ "message": "",
+ "data": {
+  "items": [
+   {
+    "_id": 20,
+    "name": "Ả Rập Xê Út",
+    "slug": "a-rap-xe-ut"
+   },
+   {
+    "_id": 114,
+    "name": "Afghanistan",
+    "slug": "afghanistan"
+   },
+   {
+    "_id": 70,
+    "name": "Ai Cập",
+    "slug": "ai-cap"
+   },
+   {
+    "_id": 73,
+    "name": "Albania",
+    "slug": "albania"
+   },
+   {
+    "_id": 156,
+    "name": "Algeria",
+    "slug": "algeria"
+   },
+   {
+    "_id": 15,
+    "name": "Ấn Độ",
+    "slug": "an-do"
+   }
+  ]
+ }
+}

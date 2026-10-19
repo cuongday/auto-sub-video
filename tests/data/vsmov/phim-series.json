@@ -1,0 +1,144 @@
+{
+ "status": true,
+ "msg": "",
+ "movie": {
+  "tmdb": {
+   "type": "tv",
+   "id": "239077",
+   "season": null,
+   "vote_average": "8.1",
+   "vote_count": 17
+  },
+  "imdb": {
+   "id": "tt33578048"
+  },
+  "created": {
+   "time": "2026-10-20T01:48:59+07:00"
+  },
+  "modified": {
+   "time": "2026-10-20T01:48:59+07:00"
+  },
+  "_id": 53830,
+  "name": "7 Ngày Bên Nhau",
+  "origin_name": "Way Back Love",
+  "slug": "7-ngay-ben-nhau",
+  "content": "7 ngày cuối cùng, Hee Wan cùng Ram Woo mối tình đầu nay đã là thần chết, viết lại câu chuyện tình yêu vốn sẽ rất đẹp đẽ nhưng lại bị bỏ lỡ.",
+  "type": "series",
+  "status": "completed",
+  "poster_url": "https://vsmov.com/storage/images/wnZeQJ9MJsgBb2edPhhldOp6osi.jpg",
+  "thumb_url": "https://vsmov.com/storage/images/vjptGHe4Ji44e0Mgf5077kn3Oz5.jpg",
+  "trailer_url": null,
+  "time": "46 phút",
+  "episode_current": "Hoàn Tất (6/6)",
+  "episode_total": "6",
+  "quality": "HD",
+  "lang": "Vietsub + Thuyết Minh",
+  "notify": null,
+  "showtimes": null,
+  "year": 2025,
+  "keywords": [],
+  "view": 1,
+  "chieurap": false,
+  "sub_docquyen": false,
+  "actor": [
+   "Gong Myoung",
+   "Kim Min-ha",
+   "Jung Gun-joo",
+   "Oh Woo-ri",
+   "Ko Chang-seok",
+   "Seo Young-hee",
+   "Jeon Chae-eun",
+   "Jung Lael",
+   "Jeon Jun-ho",
+   "Kim Ji-su"
+  ],
+  "director": [
+   "Choi Ha-na",
+   "Kim Hye-young"
+  ],
+  "category": [
+   {
+    "id": 15,
+    "name": "Chính Kịch",
+    "slug": "chinh-kich"
+   },
+   {
+    "id": 33,
+    "name": "Lãng Mạn",
+    "slug": "lang-man"
+   },
+   {
+    "id": 46,
+    "name": "Viễn Tưởng",
+    "slug": "vien-tuong"
+   }
+  ],
+  "country": [
+   {
+    "id": 10,
+    "name": "Hàn Quốc",
+    "slug": "han-quoc"
+   }
+  ]
+ },
+ "episodes": [
+  {
+   "server_name": "Vietsub\r\n                        #1",
+   "server_data": [
+    {
+     "name": "1",
+     "slug": "tap-1",
+     "filename": "1",
+     "link_embed": "https://v9.streamvsmov.com/video/fef9c286-a772-45a4-ab4e-7d29c7d18435"
+    },
+    {
+     "name": "2",
+     "slug": "tap-2",
+     "filename": "2",
+     "link_embed": "https://v9.streamvsmov.com/video/b6c0d095-1e67-4621-b7e0-e48e66bfeb6f"
+    },
+    {
+     "name": "3",
+     "slug": "tap-3",
+     "filename": "3",
+     "link_embed": "https://v9.streamvsmov.com/video/4c4a0f31-3c4f-4310-9a7d-131f17a336a2"
+    },
+    {
+     "name": "4",
+     "slug": "tap-4",
+     "filename": "4",
+     "link_embed": "https://v9.streamvsmov.com/video/191e49dd-96c2-485b-81d0-93ee1fa72321"
+    }
+   ]
+  },
+  {
+   "server_name": "Thuyết minh #1",
+   "server_data": [
+    {
+     "name": "1",
+     "slug": "tap-1",
+     "filename": "1",
+     "link_embed": "https://v9.streamvsmov.com/video/596b9432-4748-46d9-ac8c-7b4092bc1f1f"
+    },
+    {
+     "name": "2",
+     "slug": "tap-2",
+     "filename": "2",
+     "link_embed": "https://v9.streamvsmov.com/video/3b5592da-ae5d-45ae-8076-4065bd23226a"
+    },
+    {
+     "name": "3",
+     "slug": "tap-3",
+     "filename": "3",
+     "link_embed": "https://v9.streamvsmov.com/video/a7a55928-0019-43e0-aea7-f0ef55381e59"
+    },
+    {
+     "name": "4",
+     "slug": "tap-4",
+     "filename": "4",
+     "link_embed": "https://v9.streamvsmov.com/video/ef911a40-8501-431e-8367-ac25296710ce"
+    }
+   ]
+  }
+ ]
+}

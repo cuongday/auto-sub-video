@@ -1,0 +1,56 @@
+{
+ "status": true,
+ "items": [
+  {
+   "tmdb": {
+    "type": "tv",
+    "id": "239077",
+    "season": null,
+    "vote_average": "8.1",
+    "vote_count": 17
+   },
+   "imdb": {
+    "id": "tt33578048"
+   },
+   "modified": {
+    "time": "2026-10-20T01:48:59+07:00"
+   },
+   "_id": 53830,
+   "name": "7 Ngày Bên Nhau",
+   "origin_name": "Way Back Love",
+   "slug": "7-ngay-ben-nhau",
+   "poster_url": "https://vsmov.com/storage/images/wnZeQJ9MJsgBb2edPhhldOp6osi.jpg",
+   "thumb_url": "https://vsmov.com/storage/images/vjptGHe4Ji44e0Mgf5077kn3Oz5.jpg",
+   "year": 2025
+  },
+  {
+   "tmdb": {
+    "type": "tv",
+    "id": "70881",
+    "season": 1,
+    "vote_average": "7.6",
+    "vote_count": 2529
+   },
+   "imdb": {
+    "id": "tt6342474"
+   },
+   "modified": {
+    "time": "2026-10-20T01:45:44+07:00"
+   },
+   "_id": 53829,
+   "name": "Boruto: Naruto Hậu Sinh Khả Úy - Phần 1",
+   "origin_name": "Boruto: Naruto Next Generations - Season 1",
+   "slug": "boruto-naruto-hau-sinh-kha-uy-phan-1",
+   "poster_url": "https://vsmov.com/storage/images/4jDRuUk02VGAVMBJXabI9r0Cj6j.jpg",
+   "thumb_url": "https://vsmov.com/storage/images/n4OLeeHqP4tpdvDxiloV65N6M5h.jpg",
+   "year": 2017
+  }
+ ],
+ "pathImage": "https://nguon.vsphim.com/storage/images/",
+ "pagination": {
+  "totalItems": 20557,
+  "totalItemsPerPage": 24,
+  "currentPage": 1,
+  "totalPages": 857
+ }
+}

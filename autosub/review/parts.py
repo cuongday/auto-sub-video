@@ -25,12 +25,14 @@ def _reindex(project_id: str) -> None:
 
 def create_parts(film_job: Job, cuts: list[float]) -> list[Job]:
     p = project_of(film_job)
+    bounds = [0.0, *cuts, film_job.info.duration]
+    if cuts and any(b - a < split.MIN_PART for a, b in zip(bounds, bounds[1:])):     # no cuts: whole film, any length
+        raise ValueError("Điểm cắt không hợp lệ: các điểm phải tăng dần, nằm trong phim và mỗi phần dài ít nhất 60 giây")
     old = [j for j in parts_of(p.id) if j.part.film_job == film_job.id]
     if any(j.steps["script"].status == "done" for j in old):
         raise ValueError("Đã có phần viết kịch bản, không chia lại được")
     for j in old:
         store.delete(j.id)
-    bounds = [0.0, *cuts, film_job.info.duration]
     out = []
     for i, (a, b) in enumerate(zip(bounds, bounds[1:]), 1):
         job = store.create(f"{p.review.movie.name} · Phần {i}", film_job.source, uploaded=False, kind="review")

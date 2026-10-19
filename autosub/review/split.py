@@ -19,6 +19,8 @@ def propose_cuts(lines: list[Segment], duration: float, *, parts: int | None = N
     for k in range(1, n):
         target, prev = k * size, cuts[-1] if cuts else 0.0
         lo, hi = prev + MIN_PART, duration - MIN_PART * (n - k)
+        if lo > hi:       # no room for another part of MIN_PART
+            break
         ok = [c for c in cands if lo <= c[0] <= hi]
         near = [c for c in ok if abs(c[0] - target) <= 0.1 * size]
         if near:
@@ -26,6 +28,6 @@ def propose_cuts(lines: list[Segment], duration: float, *, parts: int | None = N
         elif ok:
             cut = min(ok, key=lambda c: abs(c[0] - target))[0]
         else:
-            cut = target
+            cut = min(max(target, lo), hi)
         cuts.append(cut)
     return cuts

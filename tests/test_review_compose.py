@@ -23,7 +23,7 @@ def fps(path):
 
 def shot(tmp_path, size, aspect, boxes=()):
     src = make_video(tmp_path / f"src{size[0]}x{size[1]}.mp4", seconds=4, size=size)
-    return compose.render_shot(src, 1, 2, tmp_path / "shot.mp4", aspect, media.probe(src), list(boxes), "blur")
+    return compose.render_shot(src, 1, 60, tmp_path / "shot.mp4", aspect, media.probe(src), list(boxes), "blur")
 
 def test_layout():
     assert compose.layout("16:9")["title"] is None and compose.layout("16:9")["subs"].y == 0.80
@@ -33,7 +33,7 @@ def test_shot_9x16_from_landscape(tmp_path):
     out = shot(tmp_path, (640, 360), "9:16")
     info = media.probe(out)
     assert (info.width, info.height, info.has_audio) == (1080, 1920, False)
-    assert abs(info.duration - 2) < 0.1 and fps(out) == 30
+    assert abs(info.duration - 2) < 0.1 and fps(out) == 30 and count(out) == 60
 
 def test_shot_16x9_from_portrait(tmp_path):
     out = shot(tmp_path, (360, 640), "16:9")
@@ -45,6 +45,34 @@ def test_shot_16x9_from_portrait(tmp_path):
 def test_shot_9x16_from_portrait(tmp_path):
     info = media.probe(shot(tmp_path, (360, 640), "9:16"))
     assert (info.width, info.height) == (1080, 1920)
+
+def test_shot_9x16_from_4x5_keeps_full_width(tmp_path):
+    out = shot(tmp_path, (320, 400), "9:16")
+    assert (media.probe(out).width, media.probe(out).height) == (1080, 1920)
+    # fit inside the frame (1080x1350 here), never wider than it: the film's sides are not cropped
+    assert "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[f]" in compose.frame_filter(
+        "9:16", media.probe(out), [], "blur")
+
+def test_frame_counts_never_drift(tmp_path):
+    durs = [2.37, 4.81, 3.03, 2.11, 5.97, 2.5, 3.33, 4.07, 2.89, 5.01, 2.21, 3.77, 4.44, 2.03, 5.55, 3.19, 2.68,
+            4.93, 3.61, 1.27]
+    frames = compose.frame_counts(durs)
+    assert sum(frames) == round(sum(durs) * 30) and all(abs(n - d * 30) <= 1 for n, d in zip(frames, durs))
+    src = make_video(tmp_path / "src.mp4", seconds=8, size=(160, 90), with_text=False, audio=False)
+    info = media.probe(src)
+    work = tmp_path / "job"; work.mkdir()
+    shots = [compose.render_shot(src, i % 3 * 2, n, work / f"shots/{i}.mp4", "16:9", info, [], "blur")
+             for i, n in enumerate(frames)]
+    assert [count(s) for s in shots] == frames      # also the shots running past the film's end
+    total = sum(durs)
+    audio = _audio(work / "mix.wav", total)
+    out = media.probe(compose.finalize(shots, audio, None, work / "output.mp4", total))
+    assert abs(out.duration - total) <= 1 / 30 + 0.03
+
+def count(path):
+    return int(subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+                               "stream=nb_read_frames", "-of", "csv=p=0", str(path)],
+                              capture_output=True, text=True, check=True).stdout.strip())
 
 def test_shot_with_cover_box(tmp_path):
     info = media.probe(shot(tmp_path, (640, 360), "16:9", [(0, 290, 640, 64)]))
@@ -80,7 +108,7 @@ def test_finalize_duration_follows_audio(tmp_path):
     src = make_video(tmp_path / "src.mp4", seconds=5, size=(320, 180))
     info = media.probe(src)
     work = tmp_path / "job"; work.mkdir()
-    shots = [compose.render_shot(src, t, 2, work / f"shots/{i}.mp4", "16:9", info, [], "blur")
+    shots = [compose.render_shot(src, t, 60, work / f"shots/{i}.mp4", "16:9", info, [], "blur")
              for i, t in enumerate((0, 2.5))]
     audio = _audio(work / "mix.wav", 3.5)
     out = compose.finalize(shots, audio, None, work / "output.mp4", 3.5)

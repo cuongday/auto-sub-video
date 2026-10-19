@@ -18,21 +18,29 @@ def frame_filter(aspect: str, info: VideoInfo, cover_boxes: list[tuple[int, int,
     """[0:v] -> [v]: cover regions (source coordinates), then fit the frame (16:9 letterbox, 9:16 blurred background)."""
     W, H = OUT[aspect]
     head, src = (render.cover_filter(cover_boxes, cover, "#000000") + ";", "[cv]") if cover_boxes else ("", "[0:v]")
+    src += f"fps={FPS},tpad=stop_mode=clone:stop=-1"      # a shot ending at the film's last frame still gets every frame
     if aspect == "16:9":
-        return head + (f"{src}fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
+        return head + (f"{src},scale={W}:{H}:force_original_aspect_ratio=decrease,"
                        f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v]")
-    # ponytail: a portrait source wider than 9:16 (e.g. 4:5) overflows the width at full height and loses its sides
-    fg = f"scale=-2:{H}" if info.height > info.width else f"scale={W}:-2"
-    return head + (f"{src}fps={FPS},split=2[bg][fg];"
+    return head + (f"{src},split=2[bg][fg];"
                    f"[bg]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=20:2,eq=brightness=-0.12[b];"
-                   f"[fg]{fg}[f];[b][f]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
+                   f"[fg]scale={W}:{H}:force_original_aspect_ratio=decrease[f];[b][f]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
 
-def render_shot(src: Path, start: float, dur: float, out: Path, aspect: str, info: VideoInfo, cover_boxes, cover: str,
+def frame_counts(durations: list[float]) -> list[int]:
+    """Frames of each shot on the FPS grid of the output timeline, so the joined picture never drifts from the audio."""
+    out, t = [], 0.0
+    for d in durations:
+        out.append(round((t + d) * FPS) - round(t * FPS))
+        t += d
+    return out
+
+def render_shot(src: Path, start: float, frames: int, out: Path, aspect: str, info: VideoInfo, cover_boxes, cover: str,
                 cancel=None) -> Path:
+    """`frames` output frames of the film from `start`, framed for `aspect`, no audio."""
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + ".tmp.mp4")
-    proc.run_ffmpeg(["-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(src),
+    proc.run_ffmpeg(["-ss", f"{start:.3f}", "-t", f"{frames / FPS + 1:.3f}", "-i", str(src), "-frames:v", str(frames),
                      "-filter_complex", frame_filter(aspect, info, cover_boxes, cover), "-map", "[v]", "-an",
                      *render._encode_args(), str(tmp)], cancel=cancel)
     tmp.replace(out)
@@ -62,7 +70,8 @@ def build_review_ass(lines: list[Segment], aspect: str, style: SubStyle, title: 
     return (ass.replace(default, default + "\n" + ",".join(f), 1)
             + f"Dialogue: 1,0:00:00.00,9:59:59.99,Title,,0,0,0,,{{\\pos({x + w // 2},{y + h // 2})}}{title}\n")
 
-def finalize(shots: list[Path], audio: Path, ass: Path | None, out: Path, duration: float, cancel=None) -> Path:
+def finalize(shots: list[Path], audio: Path, ass: Path | None, out: Path, duration: float, progress=None,
+             cancel=None) -> Path:
     """Concat the shots under `audio`, cut to `duration`. ass (burnt in) must live in out's dir."""
     out = Path(out)
     work = out.parent
@@ -76,6 +85,6 @@ def finalize(shots: list[Path], audio: Path, ass: Path | None, out: Path, durati
     tmp = work / (out.stem + ".tmp.mp4")
     proc.run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(lst.resolve()), "-i", str(Path(audio).resolve()),
                      "-map", "0:v", "-map", "1:a", *video, "-c:a", "aac", "-b:a", "192k", "-t", f"{duration:.3f}",
-                     "-movflags", "+faststart", tmp.name], cancel=cancel, cwd=work)
+                     "-movflags", "+faststart", tmp.name], duration=duration, progress=progress, cancel=cancel, cwd=work)
     tmp.replace(out)
     return out

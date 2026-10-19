@@ -122,7 +122,7 @@ def test_script_step_stops_for_review(review_rig):
     blocks = store.load_json(p.id, "script.json")["blocks"]
     assert [b["kind"] for b in blocks] == ["hook", "mo_dau", "than", "ket"]
     assert "Không được tiết lộ cái kết" in review_rig.llm.prompts[-1]          # the only part is the last
-    assert get_store().get_bytes("review/pace.json")
+    assert "TARGET 20 " in review_rig.llm.prompts[-1]                          # minutes 1 x seeded pace 20/min
     n = len(review_rig.llm.prompts)
     job = review_rig.run(p.id, mode="auto")
     assert job.state == "done" and len(review_rig.llm.prompts) == n           # script cached

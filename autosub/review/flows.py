@@ -166,13 +166,18 @@ def _script(ctx: Ctx):
     job.segments_edited = False
     ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {script.estimate_seconds(s, spm) / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
 
-def _scenes(ctx: Ctx):
-    """Real scene cuts of the film over the part; the shots are planned by `assemble` once narration is timed."""
-    job = ctx.job
-    fj = store.load(job.part.film_job)
+def _film_source(ctx: Ctx) -> tuple[Job, Path]:
+    """The film job of this part and its source video in local scratch."""
+    fj = store.load(ctx.job.part.film_job)
     src = workdir.WorkDir(fj.id, ctx.work.store).fetch(fj.source)
     if src is None:
         raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
+    return fj, src
+
+def _scenes(ctx: Ctx):
+    """Real scene cuts of the film over the part; the shots are planned by `assemble` once narration is timed."""
+    job = ctx.job
+    fj, src = _film_source(ctx)
     cuts = shots.detect_cuts(src, job.part.start, job.part.end, ctx.cancel)
     store.save_json(job.id, "cuts.json", cuts)
     ctx.log(f"Chuyển cảnh: {len(cuts)} điểm cắt")
@@ -291,20 +296,18 @@ def _assemble(ctx: Ctx):
 def _render(ctx: Ctx):
     """Encode each planned shot once (named by its content, reused across renders), then join them under the mix."""
     job, rv = ctx.job, ctx.job.review
-    fj = store.load(job.part.film_job)
-    src = workdir.WorkDir(fj.id, ctx.work.store).fetch(fj.source)
-    if src is None:
-        raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
+    fj, src = _film_source(ctx)
     etag = ctx.work.store.stat(store.key(fj.id, fj.source)).etag
     boxes = [region_px(r, fj.info.width, fj.info.height) for r in rv.cover_regions]
     plan = store.load_json(job.id, "shots.json", default=[])
     names: list[str] = []
-    for i, s in enumerate(plan):
+    frames = compose.frame_counts([s["end"] - s["start"] for s in plan])
+    for i, (s, n) in enumerate(zip(plan, frames)):
         ctx.check()
-        start, dur = round(s["start"], 3), round(s["end"] - s["start"], 3)
-        name = f"shots/{_h(etag, start, dur, rv.aspect, boxes, rv.cover)}.mp4"
+        start = round(s["start"], 3)
+        name = f"shots/{_h(etag, start, n, rv.aspect, boxes, rv.cover)}.mp4"
         if name not in names and ctx.work.fetch(name) is None:
-            compose.render_shot(src, start, dur, ctx.work.local(name), rv.aspect, fj.info, boxes, rv.cover, ctx.cancel)
+            compose.render_shot(src, start, n, ctx.work.local(name), rv.aspect, fj.info, boxes, rv.cover, ctx.cancel)
             ctx.work.push(name)
         names.append(name)
         ctx.progress("render", 0.9 * (i + 1) / len(plan))
@@ -312,7 +315,8 @@ def _render(ctx: Ctx):
         ctx.work.drop(old)                       # shots of an older plan
     compose.finalize([ctx.work.local(n) for n in names], ctx.dir / "mix.m4a",
                      ctx.dir / "subs.ass" if _has_ass(job) else None, ctx.dir / "output.mp4",
-                     sum(s["end"] - s["start"] for s in plan), ctx.cancel)
+                     sum(s["end"] - s["start"] for s in plan), lambda p: ctx.progress("render", 0.9 + 0.1 * p),
+                     ctx.cancel)
 
 REVIEW_RUNNERS = {"script": _script, "scenes": _scenes, "tts": _tts, "assemble": _assemble, "render": _render}
 

@@ -80,17 +80,22 @@ def test_script_edit_after_render_reencodes_changed_shots_only(review_rig, monke
     review_rig.film_done()
     p = review_rig.part()
     review_rig.run(p.id, mode="auto")
-    old = {(round(s["start"], 3), round(s["end"] - s["start"], 3)) for s in store.load_json(p.id, "shots.json")}
+    old = set(keys(p.id))
     sc = store.load_json(p.id, "script.json")
     sc["blocks"][1]["text"] = "Câu mới hoàn toàn. Và câu nữa."
     store.save_json(p.id, "script.json", sc)
     calls, real = [], compose.render_shot
     monkeypatch.setattr(compose, "render_shot", lambda *a, **k: calls.append(a[1:3]) or real(*a, **k))
     assert review_rig.run(p.id, mode="auto", from_step="tts").state == "done"
-    new = [(round(s["start"], 3), round(s["end"] - s["start"], 3)) for s in store.load_json(p.id, "shots.json")]
+    new = keys(p.id)
     changed = [k for k in dict.fromkeys(new) if k not in old]
     assert changed and len(calls) == len(changed) < len(new)
     assert abs(media.probe(fetch(p.id, "output.mp4")).duration - narration_total(p.id)) < 0.3
+
+def keys(jid):
+    """(start, frames) of each planned shot: what names an encoded shot."""
+    plan = store.load_json(jid, "shots.json")
+    return list(zip([round(s["start"], 3) for s in plan], compose.frame_counts([s["end"] - s["start"] for s in plan])))
 
 def test_title_single_and_series(review_rig):
     from autosub.review import flows

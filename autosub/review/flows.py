@@ -1,9 +1,8 @@
 """Flows of the review feature. "film": prepare one movie/episode once (transcript, characters, chunk summaries)."""
-import importlib
 from .. import pipeline, projects, store
 from ..models import FILM_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Segment, Word
 from ..pipeline import Ctx, Flow, _h
-from . import film, templates, transcript
+from . import film, parts, templates, transcript
 
 NO_LINES = "Không có lời thoại: không viết được kịch bản review"
 
@@ -82,14 +81,7 @@ def _summarize(ctx: Ctx):
             ctx.progress("summarize", (i + 1) / len(spans))
     store.save_json(job.id, "summary.json", {"chunks": [c.model_dump() for c in chunks]})
     ctx.log(f"Tóm tắt {len(chunks)} đoạn")
-    try:      # parts.py arrives with Task 8, which drops this guard
-        parts = importlib.import_module("autosub.review.parts")
-    except ModuleNotFoundError as e:
-        if e.name != "autosub.review.parts":
-            raise
-        parts = None
-    if parts:
-        parts.ensure_default_parts(job)
+    parts.ensure_default_parts(job)
 
 FILM_RUNNERS = {"probe": pipeline._probe, "extract": _skip_with_subs(pipeline._extract),
                 "separate": _skip_with_subs(pipeline._separate), "asr": _skip_with_subs(pipeline._asr),

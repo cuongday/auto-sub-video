@@ -62,7 +62,7 @@ class ReviewRig:
         """One review part of the film covering [start, end] (needs parts.py)."""
         from autosub.review import parts
         film = store.load(self.film.id)
-        cuts = [c for c in (start, end) if 0 < c < film.info.duration]
+        cuts = [c for c in (start, end) if 0 < c < film.info.duration]  # interior boundaries
         jobs = parts.create_parts(film, cuts)
         return next(j for j in jobs if j.part.index == index)
 

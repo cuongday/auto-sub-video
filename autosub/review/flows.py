@@ -4,12 +4,12 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import soundfile as sf
-from .. import config, media, pipeline, projects, store
+from .. import config, media, pipeline, projects, store, workdir
 from ..timing import trim_silence
 from ..tts.base import cached_synthesize
 from ..models import FILM_STEPS, REVIEW_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Script, Segment, Word
 from ..pipeline import Ctx, Flow, _h
-from . import film, narration, notebook, pace, parts, script, templates, transcript
+from . import film, narration, notebook, pace, parts, script, shots, templates, transcript
 
 SR = 44100
 NO_LINES ="Không có lời thoại: không viết được kịch bản review"
@@ -164,7 +164,18 @@ def _script(ctx: Ctx):
     ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {script.estimate_seconds(s, spm) / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
 
 def _placeholder(ctx: Ctx):
-    """ponytail: scenes/tts/assemble/render are filled in by later tasks; until then they do nothing."""
+    """ponytail: assemble/render are filled in by later tasks; until then they do nothing."""
+
+def _scenes(ctx: Ctx):
+    """Real scene cuts of the film over the part; the shots are planned by `assemble` once narration is timed."""
+    job = ctx.job
+    fj = store.load(job.part.film_job)
+    src = workdir.WorkDir(fj.id, ctx.work.store).fetch(fj.source)
+    if src is None:
+        raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
+    cuts = shots.detect_cuts(src, job.part.start, job.part.end, ctx.cancel)
+    store.save_json(job.id, "cuts.json", cuts)
+    ctx.log(f"Chuyển cảnh: {len(cuts)} điểm cắt")
 
 def _tts(ctx: Ctx):
     """One TTS call per sentence of every script block; the voice-over is laid out later by `assemble`."""
@@ -215,7 +226,7 @@ def _tts(ctx: Ctx):
     store.save_json(job.id, "narration.json", [r for r, _ in results])
     ctx.log(f"Lời đọc: {len(results)} câu")
 
-REVIEW_RUNNERS = {"script": _script, "scenes": _placeholder, "tts": _tts, "assemble": _placeholder,
+REVIEW_RUNNERS = {"script": _script, "scenes": _scenes, "tts": _tts, "assemble": _placeholder,
                   "render": _placeholder}
 
 def review_step_hash(ctx: Ctx, step: str) -> str:
@@ -226,6 +237,10 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         # the notebook version and is_last stay out: a changed notebook only warns (notebook_rev), the user rewrites
         return _h(fj.steps["summarize"].hash, rv, j.part.start, j.part.end, st.llm_provider, st.llm_model,
                   st.tts_engine, st.tts_voice, st.tts_rate)
+    if step == "scenes":
+        fj = store.load(j.part.film_job)
+        info = ctx.work.store.stat(store.key(fj.id, fj.source))
+        return _h(step, info.etag if info else "", j.part.start, j.part.end)
     if step == "tts":
         ref = ctx.work.store.stat(ctx.work.key(st.ref_audio)) if st.ref_audio else None
         blocks = Script.model_validate(store.load_json(j.id, "script.json", default={})).blocks
@@ -234,7 +249,7 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
     return _h(j.steps[REVIEW_STEPS[REVIEW_STEPS.index(step) - 1]].hash, step)
 
 def _review_outputs(ctx: Ctx, step: str) -> list[str]:
-    return {"script": ["script.json"], "tts": ["narration.json"]}.get(step, [])
+    return {"script": ["script.json"], "scenes": ["cuts.json"], "tts": ["narration.json"]}.get(step, [])
 
 REVIEW_FLOW = Flow(steps=REVIEW_STEPS, runners=REVIEW_RUNNERS, step_hash=review_step_hash,
                    inputs=lambda ctx, step: [], pushes=lambda ctx, step: [], outputs=_review_outputs,

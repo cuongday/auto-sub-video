@@ -50,7 +50,7 @@ def test_edit_one_block_resynthesizes_only_it(review_rig):
     store.save_json(p.id, "script.json", sc)
     review_rig.tts.calls.clear()
     review_rig.run(p.id, mode="auto", from_step="tts")
-    assert [c[0] for c in review_rig.tts.calls] == sentences_of("Câu mới hoàn toàn. Và câu nữa.")
+    assert sorted(c[0] for c in review_rig.tts.calls) == sorted(sentences_of("Câu mới hoàn toàn. Và câu nữa."))  # parallel: any order
 
 def sentences_of(t):
     return sentences(t)

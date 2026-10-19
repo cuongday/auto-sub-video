@@ -1,7 +1,7 @@
 """Job documents in object storage: jobs/<id>/job.json, segments.json, context.json; presets.json."""
 import time
 import uuid
-from .models import STEPS, Job, Segment, TranslationContext
+from .models import STEPS, STEPS_BY_KIND, Job, JobKind, StepState, Segment, TranslationContext
 from .storage import get_store, read_json, write_json
 from .workdir import job_prefix
 
@@ -11,10 +11,11 @@ APP_SETTINGS = "settings.json"
 def key(jid: str, name: str) -> str:
     return job_prefix(jid) + name
 
-def create(name: str, source: str = "source", uploaded: bool = False) -> Job:
+def create(name: str, source: str = "source", uploaded: bool = False, kind: JobKind = "sub") -> Job:
     """`source` is the object name of the video inside the job (always copied into storage)."""
     jid = uuid.uuid4().hex[:10]
-    job = Job(id=jid, name=name, created=time.time(), source=source, uploaded=uploaded)
+    job = Job(id=jid, name=name, created=time.time(), source=source, uploaded=uploaded, kind=kind,
+              steps={s: StepState() for s in STEPS_BY_KIND[kind]})
     save(job)
     return job
 

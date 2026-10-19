@@ -96,6 +96,8 @@ def _view(job: Job) -> dict:
     d["files"] = {n: n in present for n in ("output.mp4", "output_softsub.mp4", "subs.srt", "subs.ass", "voice.wav",
                                             "preview.mp4")}
     d["stale_from"] = None if QUEUE.is_active(job.id) else _stale_from(job, present)
+    flow = pipeline.flow_for(job)
+    d["flow"] = {"steps": flow.steps, "review_stop": flow.review_stop}
     return d
 
 @app.get("/api/jobs/{jid}/eta")
@@ -137,9 +139,10 @@ def prune_job(jid: str):
 def _stale_from(job: Job, present: set[str]) -> str | None:
     """First step whose inputs changed since it last ran (None: everything is up to date)."""
     ctx = pipeline.Ctx(job=job, work=_LazyWork(job.id), engines=pipeline.Engines())
-    for step in STEPS:
+    flow = pipeline.flow_for(job)
+    for step in flow.steps:
         try:
-            if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step), present):
+            if not pipeline._fresh(ctx, step, flow.step_hash(ctx, step), present):
                 return step
         except Exception:  # noqa: BLE001
             return step
@@ -375,22 +378,26 @@ class RunIn(BaseModel):
 def run_job(jid: str, body: RunIn):
     job = _get(jid)
     _idle(job)
-    if body.from_step and body.from_step not in STEPS:
+    flow = pipeline.flow_for(job)
+    if body.from_step and body.from_step not in flow.steps:
         raise HTTPException(400, "Bước không hợp lệ")
-    if job.segments_edited and not body.confirm:
-        start = STEPS.index(body.from_step) if body.from_step else 0
-        if start <= STEPS.index("translate") and _would_rerun_text(job, body.from_step):
-            raise HTTPException(409, "NEEDS_CONFIRM: chạy lại sẽ ghi đè phụ đề đã sửa")
+    if job.segments_edited and not body.confirm and _would_rerun_text(job, body.from_step):
+        raise HTTPException(409, "NEEDS_CONFIRM: chạy lại sẽ ghi đè phụ đề đã sửa")
     QUEUE.submit(jid, body.mode, body.from_step, body.confirm)
     return _view(store.load(jid))
 
 def _would_rerun_text(job: Job, from_step: str | None) -> bool:
-    if from_step and STEPS.index(from_step) <= STEPS.index("translate"):
-        return True
+    """Would this run redo a step that overwrites the user's edited text?"""
+    flow = pipeline.flow_for(job)
+    if not flow.overwrites or flow.review_stop is None:
+        return False
+    last = flow.steps.index(flow.review_stop)            # text is edited at review; later steps only read it
+    if from_step:
+        return flow.steps.index(from_step) <= last
     ctx = pipeline.Ctx(job=job, work=_LazyWork(job.id), engines=_engines())
     present = store.names(job.id)
-    for step in STEPS[:STEPS.index("translate") + 1]:
-        if not pipeline._fresh(ctx, step, pipeline.step_hash(ctx, step), present):
+    for step in flow.steps[:last + 1]:
+        if not pipeline._fresh(ctx, step, flow.step_hash(ctx, step), present):
             return True
     return False
 

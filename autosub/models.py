@@ -3,6 +3,11 @@ from pydantic import BaseModel, Field, model_validator
 
 Lang = Literal["zh", "en"]
 STEPS = ["probe", "extract", "separate", "asr", "segment", "translate", "tts", "fit", "mix", "render"]
+FILM_STEPS = ["probe", "extract", "separate", "asr", "transcript", "characters", "summarize"]
+REVIEW_STEPS = ["script", "scenes", "tts", "assemble", "render"]
+STEPS_BY_KIND = {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS}
+# "sub": subtitle/voice-over a video; "film": analyze a whole movie; "review": one review video of a film part
+JobKind = Literal["sub", "film", "review"]
 
 class Region(BaseModel):
     """Rectangle in normalized frame coordinates (0..1)."""
@@ -108,6 +113,7 @@ class Job(BaseModel):
     created: float
     source: str                           # absolute path of the video
     uploaded: bool = False                # source lives inside the job dir
+    kind: JobKind = "sub"                 # which flow runs it (pipeline.flow_for)
     info: VideoInfo | None = None
     settings: JobSettings = Field(default_factory=JobSettings)
     steps: dict[str, StepState] = Field(default_factory=lambda: {s: StepState() for s in STEPS})

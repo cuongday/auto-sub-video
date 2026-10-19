@@ -1,5 +1,8 @@
-"""Named, cached steps for one job. Each step's hash covers its inputs; unchanged steps are skipped."""
+"""Named, cached steps for one job. Each step's hash covers its inputs; unchanged steps are skipped.
+Each job kind has its own Flow (steps, runners, hashes, files); "sub" is the subtitle/voice-over flow."""
+import contextlib
 import hashlib
+import importlib
 import json
 import shutil
 import threading
@@ -323,6 +326,11 @@ def _render(ctx: Ctx):
     render.render_video(ctx.source(), ctx.dir / "mix.m4a", ctx.dir / "subs.ass", ctx.dir / "output.mp4", info, j.settings,
                         progress=lambda p: ctx.progress("render", p), cancel=ctx.cancel)
 
+def _sub_after_step(ctx: Ctx, step: str) -> str | None:
+    if step == "tts" and any("tts_failed" in s.flags for s in store.load_segments(ctx.job.id)):
+        return "Một số câu đọc TTS bị lỗi, sửa rồi bấm Render lại"
+    return None
+
 RUNNERS = {"probe": _probe, "extract": _extract, "separate": _separate, "asr": _asr, "segment": _segment,
            "translate": _translate, "tts": _tts, "fit": _fit, "mix": _mix, "render": _render}
 # files a step reads from earlier steps (fetched into the scratch dir first) and the files it produces
@@ -336,17 +344,6 @@ OUTPUTS = {"probe": ["frames/f0.jpg"], "extract": ["audio.wav"], "separate": ["v
            "fit": ["voice_raw.wav"], "mix": ["mix.m4a"], "render": ["output.mp4"]}
 REVIEW_STOP = "translate"
 OVERWRITES_SEGMENTS = {"segment", "translate"}
-
-# ---------------------------------------------------------------- driver
-
-def _fresh(ctx: Ctx, step: str, h: str, present: set[str] | None = None) -> bool:
-    s = ctx.job.steps[step]
-    if not (s.status == "done" and s.hash == h):
-        return False
-    present = store.names(ctx.job.id) if present is None else present
-    # a pruned output does not make its step stale: later steps rebuild it on demand
-    ok = lambda o: (any(n.startswith(o) for n in present) if o.endswith("/") else o in present) or o in ctx.job.pruned  # noqa: E731
-    return all(ok(o) for o in _outputs(ctx, step))
 
 def _rebuild(ctx: Ctx, name: str) -> bool:
     """Regenerate a pruned intermediate from what is kept (cheap: no Demucs, no TTS)."""
@@ -376,13 +373,59 @@ def _outputs(ctx: Ctx, step: str) -> list[str]:
         return ["vocals16k.wav"]
     return OUTPUTS[step]
 
+# ---------------------------------------------------------------- flows
+
+@dataclass
+class Flow:
+    steps: list[str]
+    runners: dict[str, Callable[[Ctx], None]]
+    step_hash: Callable[[Ctx, str], str]
+    inputs: Callable[[Ctx, str], list[str]]
+    pushes: Callable[[Ctx, str], list[str]]
+    outputs: Callable[[Ctx, str], list[str]]
+    review_stop: str | None
+    overwrites: set[str]                                   # steps guarded by job.segments_edited
+    rebuild: Callable[[Ctx, str], bool] = lambda ctx, name: False
+    after_step: Callable[[Ctx, str], str | None] = lambda ctx, step: None   # a warning -> stop at awaiting_review (review mode)
+    pins: Callable[[Job], list[str]] = lambda job: []                      # other job ids pinned while running
+
+SUB_FLOW = Flow(steps=STEPS, runners=RUNNERS, step_hash=step_hash, inputs=_inputs, pushes=_pushes, outputs=_outputs,
+                review_stop=REVIEW_STOP, overwrites=OVERWRITES_SEGMENTS, rebuild=_rebuild, after_step=_sub_after_step)
+_FLOWS: dict[str, Flow] = {"sub": SUB_FLOW}
+
+def register(kind: str, flow: Flow) -> None:
+    _FLOWS[kind] = flow
+
+def flow_for(job: Job) -> Flow:
+    if job.kind not in _FLOWS:
+        try:
+            importlib.import_module("autosub.review.flows")      # registers the film/review flows
+        except ModuleNotFoundError as e:
+            if e.name not in ("autosub.review", "autosub.review.flows"):
+                raise
+    if job.kind not in _FLOWS:
+        raise LookupError(f"Chưa hỗ trợ loại job {job.kind}")
+    return _FLOWS[job.kind]
+
+# ---------------------------------------------------------------- driver
+
+def _fresh(ctx: Ctx, step: str, h: str, present: set[str] | None = None) -> bool:
+    s = ctx.job.steps[step]
+    if not (s.status == "done" and s.hash == h):
+        return False
+    present = store.names(ctx.job.id) if present is None else present
+    # a pruned output does not make its step stale: later steps rebuild it on demand
+    ok = lambda o: (any(n.startswith(o) for n in present) if o.endswith("/") else o in present) or o in ctx.job.pruned  # noqa: E731
+    return all(ok(o) for o in flow_for(ctx.job).outputs(ctx, step))
+
 def _run_step(ctx: Ctx, step: str) -> None:
-    for name in _inputs(ctx, step):
-        if ctx.work.fetch(name) is None and not (_rebuild(ctx, name) and ctx.work.fetch(name) is not None):
+    flow = flow_for(ctx.job)
+    for name in flow.inputs(ctx, step):
+        if ctx.work.fetch(name) is None and not (flow.rebuild(ctx, name) and ctx.work.fetch(name) is not None):
             raise RuntimeError(f"Thiếu file {name} của bước trước, hãy chạy lại từ đầu")
-    RUNNERS[step](ctx)
+    flow.runners[step](ctx)
     ctx.check()
-    for name in _pushes(ctx, step):
+    for name in flow.pushes(ctx, step):
         ctx.work.push(name)
         if name in ctx.job.pruned:
             ctx.job.pruned.remove(name)
@@ -391,18 +434,23 @@ def make_ctx(job: Job, engines: Engines | None = None) -> Ctx:
     return Ctx(job=job, work=WorkDir(job.id), engines=engines or Engines())
 
 def invalidate_from(job: Job, step: str) -> None:
-    for s in STEPS[STEPS.index(step):]:
+    steps = flow_for(job).steps
+    for s in steps[steps.index(step):]:
         job.steps[s].status = "pending"; job.steps[s].hash = None
 
 def run(jid: str, mode: str = "review", from_step: str | None = None, confirm: bool = False,
         engines: Engines | None = None, progress=None, log=None, cancel: threading.Event | None = None) -> Job:
-    """Run the job's steps in order, skipping fresh ones. mode=review stops after translation
-    (unless the job is already past review: from_step at or after tts)."""
-    with pinned(jid):
-        return _run(jid, mode, from_step, confirm, engines, progress, log, cancel)
+    """Run the job's steps in order, skipping fresh ones. mode=review stops after the flow's review step
+    (subtitles: translation), unless the job is already past it (from_step after that step)."""
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(pinned(jid))
+        job = store.load(jid)
+        for other in flow_for(job).pins(job):
+            stack.enter_context(pinned(other))
+        return _run(job, mode, from_step, confirm, engines, progress, log, cancel)
 
-def _run(jid, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
-    job = store.load(jid)
+def _run(job, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
+    jid, flow = job.id, flow_for(job)
     ctx = make_ctx(job, engines)
     ctx.cancel = cancel or threading.Event()
     logf = ctx.dir / "log.txt"
@@ -427,22 +475,23 @@ def _run(jid, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
     job.error = None
     if from_step:
         invalidate_from(job, from_step)
-    start_idx = STEPS.index(from_step) if from_step else 0
-    stop_at_review = mode == "review" and start_idx <= STEPS.index(REVIEW_STOP)
+    start_idx = flow.steps.index(from_step) if from_step else 0
+    stop_at_review = mode == "review" and flow.review_stop is not None and \
+        start_idx <= flow.steps.index(flow.review_stop)
 
     present = store.names(jid)
-    for step in STEPS:
+    for step in flow.steps:
         if ctx.cancel.is_set():
             job.state, job.current_step = "cancelled", None
             store.save(job); _log("Đã huỷ"); _flush_log()
             raise Cancelled()
-        h = step_hash(ctx, step)
+        h = flow.step_hash(ctx, step)
         if _fresh(ctx, step, h, present):
             continue
         present = set()                    # from here on everything reruns; no need to list again
-        if step in OVERWRITES_SEGMENTS and job.segments_edited and not confirm:
+        if step in flow.overwrites and job.segments_edited and not confirm:
             raise NeedsConfirm(f"Chạy lại bước {step} sẽ ghi đè phụ đề đã sửa")
-        if step in OVERWRITES_SEGMENTS:
+        if step in flow.overwrites:
             invalidate_from(job, step)
         st = job.steps[step]
         st.status, st.error, st.hash = "running", None, None
@@ -463,18 +512,18 @@ def _run(jid, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
             store.save(job); _log(f"Lỗi bước {step}: {e}"); _flush_log()
             raise
         st.status, st.seconds = "done", round(time.time() - t0, 1)
-        st.hash = step_hash(ctx, step)
+        st.hash = flow.step_hash(ctx, step)
         # later steps' inputs may have changed (e.g. tts rewrites segments): recompute lazily via their hashes
         ctx.progress(step, 1.0)
         store.save(job)
         _log(f"Xong bước {step} ({st.seconds}s)"); _flush_log()
-        if step == REVIEW_STOP and stop_at_review:
+        if step == flow.review_stop and stop_at_review:
             job.state, job.current_step = "awaiting_review", None
             store.save(job)
             return job
-        if step == "tts" and mode == "review" and any("tts_failed" in s.flags for s in store.load_segments(jid)):
+        if mode == "review" and (warning := flow.after_step(ctx, step)):
             job.state, job.current_step = "awaiting_review", None
-            job.warnings = ["Một số câu đọc TTS bị lỗi, sửa rồi bấm Render lại"]
+            job.warnings = [warning]
             store.save(job)
             return job
     job.state, job.current_step = "done", None

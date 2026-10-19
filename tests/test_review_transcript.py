@@ -1,5 +1,5 @@
-from autosub.models import Segment
-from autosub.review.transcript import chunk, filter_ads, parse_vtt
+from autosub.models import FilmInfo, Job, JobSettings, Segment
+from autosub.review.transcript import chunk, transcript_lang, filter_ads, parse_vtt
 
 SAMPLE = """WEBVTT
 
@@ -41,3 +41,24 @@ def test_chunk_cuts_at_biggest_gap_in_window():
 
 def test_chunk_merges_short_tail():
     assert chunk(_lines(range(0, 1000, 5)), 1000) == [(0, 1000)]
+
+def test_chunk_cuts_at_small_gap_not_window_end():
+    # 4.7 s lines, 0.3 s gaps, one 0.5 s gap after the line ending at 705.8 -> cut at its midpoint
+    ls, t = [], 0.0
+    while t < 1500:
+        ls.append(Segment(id=len(ls) + 1, start=t, end=t + 4.7, source="x"))
+        t += 5.0 if not 700 <= t < 705 else 5.2
+    cut = chunk(ls, 1500)[0][1]
+    assert 600 <= cut < 900 and cut != 900
+    prev = max((l for l in ls if l.end < cut), key=lambda l: l.end)
+    nxt = min((l for l in ls if l.start > cut), key=lambda l: l.start)
+    assert prev.start == 700 and abs(cut - (prev.end + nxt.start) / 2) < 1e-9
+
+def _job(film, lang="ko"):
+    return Job(id="j", name="n", created=0, source="s", film=film, settings=JobSettings(lang=lang))
+
+def test_transcript_lang():
+    assert transcript_lang(_job(FilmInfo(subtitle="vie"))) == "vi"
+    assert transcript_lang(_job(FilmInfo(subtitle="eng"))) == "en"
+    assert transcript_lang(_job(FilmInfo(subtitle=None))) == "ko"
+    assert transcript_lang(_job(None)) == "ko"

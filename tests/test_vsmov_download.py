@@ -1,3 +1,4 @@
+import http.client
 import io
 import struct
 import subprocess
@@ -78,8 +79,14 @@ def test_strip_png_plain_ts_and_garbage(segs):
     with pytest.raises(VsmovError, match="không đúng định dạng"):
         vsmov.strip_png(PNG)
 
-def _serve(monkeypatch, segs, fail: dict[int, int]):
-    """embed -> master (already a media playlist) -> 3 png-wrapped segments; fail[n] = times segment n errors."""
+class _Truncated(io.BytesIO):
+    def read(self, *a):
+        raise http.client.IncompleteRead(b"G" * 10, 1000)
+
+def _serve(monkeypatch, segs, fail: dict[int, int], truncated: dict[int, int] | None = None, on_fail=None):
+    """embed -> master (already a media playlist) -> 3 png-wrapped segments.
+    fail[n] / truncated[n] = times segment n raises URLError / returns a body cut short. Returns (requests, sleeps)."""
+    truncated = truncated or {}
     pl = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n" + "".join(
         f"#EXTINF:1.0,\nhttps://p25.streamvsmov.com/file/k/{HASH}/file-tiktok_{n}.png\n" for n in (1, 2, 3)) + "#EXT-X-ENDLIST\n"
     seen = []
@@ -94,18 +101,24 @@ def _serve(monkeypatch, segs, fail: dict[int, int]):
         n = int(url.rsplit("_", 1)[1].split(".")[0])
         if fail.get(n, 0):
             fail[n] -= 1
+            if on_fail:
+                on_fail()
             raise urllib.error.URLError("boom")
+        if truncated.get(n, 0):
+            truncated[n] -= 1
+            return _Truncated()
         return io.BytesIO(PNG + JUNK + segs[n - 1])
 
+    sleeps = []
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(vsmov.time, "sleep", lambda s: None)
-    return seen
+    monkeypatch.setattr(vsmov.time, "sleep", sleeps.append)
+    return seen, sleeps
 
 def _leftovers(tmp_path):
     return [p.name for p in tmp_path.iterdir() if p.name.startswith(".vsmov-") or p.name.endswith(".part")]
 
 def test_download_assembles_segments_in_order(tmp_path, monkeypatch, segs):
-    seen = _serve(monkeypatch, segs[0], {2: 1})
+    seen, sleeps = _serve(monkeypatch, segs[0], {2: 1}, truncated={3: 1})
     ticks = []
     out = tmp_path / "movie.mp4"
     e = vsmov.download(EMBED_URL, out, progress=ticks.append, workers=3)
@@ -117,11 +130,13 @@ def test_download_assembles_segments_in_order(tmp_path, monkeypatch, segs):
     stream = [r for r in seen if r.full_url != EMBED_URL]
     assert all(r.get_header("Referer") == EMBED_URL and r.get_header("Origin") == BASE for r in stream)
     assert all(r.get_header("User-agent") for r in seen)
+    assert sleeps == [1, 1]  # segment 2 (URLError) and segment 3 (IncompleteRead) each retried once
 
 def test_download_fails_after_retries_names_segment(tmp_path, monkeypatch, segs):
-    _serve(monkeypatch, segs[0], {2: 99})
+    _, sleeps = _serve(monkeypatch, segs[0], {2: 99})
     with pytest.raises(VsmovError, match="Tải đoạn 2/3"):
         vsmov.download(EMBED_URL, tmp_path / "movie.mp4", workers=2)
+    assert sleeps == [1, 2]
     assert _leftovers(tmp_path) == [] and not (tmp_path / "movie.mp4").exists()
 
 def test_download_cancelled(tmp_path, monkeypatch, segs):
@@ -143,3 +158,18 @@ def test_fetch_subtitle_sends_referer(monkeypatch):
     text = vsmov.fetch_subtitle(f"{BASE}/video/{HASH}/subtitle/vie.vtt", EMBED_URL)
     assert text.startswith("WEBVTT") and "Xin chào" in text
     assert seen[0].get_header("Referer") == EMBED_URL
+
+def test_download_cancel_interrupts_retry_wait(tmp_path, monkeypatch, segs):
+    cancel = threading.Event()
+    _, sleeps = _serve(monkeypatch, segs[0], {2: 99}, on_fail=cancel.set)
+    with pytest.raises(VsmovError, match="Đã huỷ"):
+        vsmov.download(EMBED_URL, tmp_path / "movie.mp4", cancel=cancel, workers=1)
+    assert sleeps == []  # waited on the event, which was already set, instead of time.sleep
+    assert _leftovers(tmp_path) == []
+
+def test_truncated_embed_read_is_vsmov_error(monkeypatch):
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Truncated())
+    with pytest.raises(VsmovError, match="Không kết nối được vsmov"):
+        vsmov.download(EMBED_URL, Path("unused.mp4"))
+    with pytest.raises(VsmovError, match="Không tải được phụ đề"):
+        vsmov.fetch_subtitle(f"{BASE}/x.vtt", EMBED_URL)

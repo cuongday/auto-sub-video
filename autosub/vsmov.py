@@ -1,5 +1,6 @@
 """Client for the public vsmov.com movie API (stdlib only)."""
 import functools
+import http.client
 import json
 import re
 import shutil
@@ -233,8 +234,11 @@ def strip_png(data: bytes) -> bytes:
 
 def _fetch(url: str, headers: dict | None = None, timeout: float = 30) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except http.client.HTTPException as e:  # IncompleteRead, RemoteDisconnected: retry/report like network errors
+        raise ConnectionError(f"{type(e).__name__}: {e}") from e
 
 def fetch_subtitle(url: str, embed_url: str) -> str:
     try:
@@ -271,7 +275,7 @@ def download(embed_url: str, dest: Path, progress=None, cancel: threading.Event 
             except (OSError, VsmovError) as ex:
                 if attempt == 2:
                     raise VsmovError(f"Tải đoạn {n}/{total} lỗi: {ex}") from ex
-                time.sleep(attempt + 1)
+                (cancel.wait if cancel is not None else time.sleep)(attempt + 1)
         (seg_dir / f"{n:05d}.ts").write_bytes(data)
 
     try:

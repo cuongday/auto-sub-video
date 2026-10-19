@@ -14,7 +14,7 @@ def get_asr(lang: Lang, model: str = "", diarize: bool = False) -> ASR:
     if lang == "zh":
         from .funasr_zh import FunASRZH
         return FunASRZH(model, diarize=diarize)
-    from .whisper_en import WhisperEN
-    return WhisperEN(model)
+    from .whisper_en import WhisperASR
+    return WhisperASR(model, lang)
 
 __all__ = ["ASR", "available", "get_asr"]

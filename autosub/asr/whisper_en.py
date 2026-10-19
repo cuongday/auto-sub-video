@@ -4,8 +4,9 @@ from ..models import Word
 
 _MODELS: dict = {}
 
-class WhisperEN:
-    def __init__(self, model: str = ""):
+class WhisperASR:
+    def __init__(self, model: str = "", language: str = "en"):
+        self.language = language
         self.model = model or "large-v3-turbo"
 
     def _load(self):
@@ -16,7 +17,7 @@ class WhisperEN:
         return _MODELS[self.model]
 
     def transcribe(self, wav16k: Path, progress=None) -> list[Word]:
-        segments, info = self._load().transcribe(str(wav16k), language="en", word_timestamps=True, vad_filter=True,
+        segments, info = self._load().transcribe(str(wav16k), language=self.language, word_timestamps=True, vad_filter=True,
                                                  beam_size=5, condition_on_previous_text=False)
         words: list[Word] = []
         for seg in segments:
@@ -26,3 +27,5 @@ class WhisperEN:
             if progress and info.duration:
                 progress(min(1.0, seg.end / info.duration))
         return words
+
+WhisperEN = WhisperASR

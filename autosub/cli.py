@@ -10,7 +10,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="Chạy thẳng một video đến thành phẩm")
     r.add_argument("video")
-    r.add_argument("--lang", choices=["zh", "en"], default="zh")
+    r.add_argument("--lang", choices=["zh", "en", "ko"], default="zh")
     r.add_argument("--asr-model", default="")
     r.add_argument("--region", default="0.05,0.8,0.9,0.14", help="x,y,w,h theo tỉ lệ 0-1")
     r.add_argument("--cover", choices=["blur", "blur_dim", "solid"], default="blur_dim")

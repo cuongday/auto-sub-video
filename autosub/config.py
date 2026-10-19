@@ -56,10 +56,12 @@ OPENAI_MODELS = _with_default([
     ("gpt-4o", "GPT-4o"),
 ], OPENAI_MODEL)
 
+_WHISPER_MODELS = [("large-v3-turbo", "Whisper large-v3-turbo — chính xác"),
+                   ("medium", "Whisper medium"), ("small", "Whisper small — nhanh")]
 ASR_MODELS = {
     "zh": [("paraformer-zh", "Paraformer (FunASR) — tiếng Trung")],
-    "en": [("large-v3-turbo", "Whisper large-v3-turbo — chính xác"),
-           ("medium", "Whisper medium"), ("small", "Whisper small — nhanh")],
+    "en": _WHISPER_MODELS,
+    "ko": _WHISPER_MODELS,
 }
 
 EDGE_VOICES = [("vi-VN-HoaiMyNeural", "Hoài My (nữ)"), ("vi-VN-NamMinhNeural", "Nam Minh (nam)")]

@@ -1,4 +1,4 @@
-export type Lang = "zh" | "en";
+export type Lang = "zh" | "en" | "ko";
 export type Cover = "blur" | "blur_dim" | "solid";
 export type Region = { x: number; y: number; w: number; h: number };
 export type SubStyle = { font: string; font_size: number | null; color: string; outline_color: string; outline: number | null };

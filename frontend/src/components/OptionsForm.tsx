@@ -55,7 +55,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload }: {
         {!eng.ocr?.ok && <p className="warn">OCR: {eng.ocr?.hint}</p>}
         <label>Ngôn ngữ video
           <select value={s.lang} onChange={(e) => set({ lang: e.target.value as Settings["lang"], asr_model: "" })}>
-            <option value="zh">Tiếng Trung</option><option value="en">Tiếng Anh</option>
+            <option value="zh">Tiếng Trung</option><option value="en">Tiếng Anh</option><option value="ko">Tiếng Hàn</option>
           </select>
         </label>
         <label>Model

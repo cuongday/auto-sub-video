@@ -6,7 +6,7 @@ from .llm.base import LLMError, LLMProvider
 from .models import Lang, Segment, TranslationContext
 from .timing import max_chars
 
-LANG_NAME = {"zh": "tiếng Trung", "en": "tiếng Anh"}
+LANG_NAME = {"zh": "tiếng Trung", "en": "tiếng Anh", "ko": "tiếng Hàn"}
 CONTEXT_CHAR_LIMIT = 30_000
 
 CONTEXT_SCHEMA = {

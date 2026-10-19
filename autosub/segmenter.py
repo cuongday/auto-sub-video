@@ -2,7 +2,7 @@
 import re
 from .models import Lang, Segment, Word
 
-MAX_CHARS = {"zh": 20, "en": 42}
+MAX_CHARS = {"zh": 20, "en": 42, "ko": 24}
 SENTENCE_END = tuple("。！？!?.;；…")
 CLAUSE_END = tuple("，,、：:")
 _NO_SPACE_BEFORE = re.compile(r"^[,.!?;:%)\]}…'’”]")

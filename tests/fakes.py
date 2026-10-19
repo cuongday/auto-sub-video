@@ -78,3 +78,31 @@ def fake_separate(calls: list | None = None):
 
 def ids_in(prompt: str) -> list[int]:
     return [int(m) for m in re.findall(r'"id": (\d+)', prompt[prompt.rindex("<<<ITEMS"):])]
+
+def review_llm_hook(prompt, schema):
+    """Answers for the review-phim prompts, keyed on the schema's top-level properties."""
+    props = schema["properties"]
+    if "events" in props:                                  # chunk summary: everything inside SPAN a b
+        a, b = map(float, re.search(r"SPAN (\S+) (\S+)", prompt).groups())
+        q = (b - a) / 4
+        return {"summary": "Tiểu Minh lên đường.", "characters": ["Tiểu Minh"],
+                "events": [{"start": a + q, "end": b - q, "text": "Tiểu Minh rời nhà"}],
+                "highlights": [{"start": a + q, "end": a + 2 * q, "text": "Câu thoại đắt giá"}]}
+    if "blocks" in props:                                  # script: TARGET n syllables, 3 s scenes inside RANGE a b
+        n = int(re.search(r"TARGET (\d+)", prompt).group(1))
+        a, b = map(float, re.search(r"RANGE (\S+) (\S+)", prompt).groups())
+        sizes = [n // 4] * 3 + [n - 3 * (n // 4)]
+        return {"blocks": [{"kind": k, "text": " ".join(["chữ"] * m),
+                            "scenes": [{"start": a + i * (b - a) / 4, "end": min(b, a + i * (b - a) / 4 + 3)}],
+                            "source_start": a, "source_end": b}
+                           for i, (k, m) in enumerate(zip(["hook", "mo_dau", "than", "ket"], sizes))]}
+    if "entry" in props:
+        return {"entry": {"summary": "Tiểu Minh lên đường.", "ending": "Tiểu Minh rời nhà", "open_threads": [],
+                          "hooks": []},
+                "characters": [{"name": "Tiểu Minh", "aliases": [], "role": "nhân vật chính", "relations": "",
+                                "arc": ""}], "voice": ""}
+    if "text" in props:
+        return {"text": "Viết lại"}
+    if "characters" in props and "summary" not in props:
+        return {"characters": [{"name": "Tiểu Minh", "aliases": ["小明"], "role": "nhân vật chính"}]}
+    return None

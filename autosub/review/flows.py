@@ -1,0 +1,135 @@
+"""Flows of the review feature. "film": prepare one movie/episode once (transcript, characters, chunk summaries)."""
+import importlib
+from .. import pipeline, projects, store
+from ..models import FILM_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Segment, Word
+from ..pipeline import Ctx, Flow, _h
+from . import film, templates, transcript
+
+NO_LINES = "Không có lời thoại: không viết được kịch bản review"
+
+def _use_subs(job: Job) -> str | None:
+    return job.film.subtitle if job.film else None
+
+def _vtt(code: str) -> str:
+    return f"subs/{code}.vtt"
+
+def _meta(job: Job) -> MovieMeta:
+    p = projects.get(job.project) if job.project else None
+    return p.review.movie if p and p.review else MovieMeta(name=job.name)
+
+def _lines(job: Job) -> list[Segment]:
+    return [Segment.model_validate(s) for s in store.load_json(job.id, "transcript.json", default=[])]
+
+def _known(job: Job) -> list[FilmCharacter]:
+    """Notebook characters, then those found in earlier episodes of the project (notebook wins on a name)."""
+    p = projects.get(job.project) if job.project else None
+    if not p:
+        return []
+    out = {c.name: FilmCharacter.model_validate(c.model_dump()) for c in (p.review.notebook.characters if p.review else [])}
+    idx = job.film.episode_index if job.film else 0
+    eps = sorted((j for j in store.list_jobs() if j.kind == "film" and j.project == job.project and j.id != job.id
+                  and j.film and j.film.episode_index < idx), key=lambda j: j.film.episode_index)
+    for j in eps:
+        for c in store.load_json(j.id, "characters.json", default=[]):
+            out.setdefault(c["name"], FilmCharacter.model_validate(c))
+    return list(out.values())
+
+# ---------------------------------------------------------------- steps
+
+def _skip_with_subs(runner):
+    def run(ctx: Ctx):
+        if code := _use_subs(ctx.job):
+            ctx.log(f"Dùng phụ đề có sẵn ({code})")
+            return
+        runner(ctx)
+    return run
+
+def _transcript(ctx: Ctx):
+    job = ctx.job
+    duration = job.info.duration
+    if code := _use_subs(job):
+        p = ctx.work.fetch(_vtt(code))
+        lines = transcript.parse_vtt(p.read_text(encoding="utf-8"))
+    else:
+        words = [Word.model_validate(w) for w in store.load_json(job.id, "words.json", default=[])]
+        lines = transcript.from_words(words, transcript.transcript_lang(job))
+    lines = transcript.filter_ads(lines, duration)
+    store.save_json(job.id, "transcript.json", [s.model_dump(mode="json") for s in lines])
+    job.warnings = [] if lines else [NO_LINES]
+    ctx.log(f"Bản thoại: {len(lines)} dòng" if lines else NO_LINES)
+
+def _characters(ctx: Ctx):
+    job = ctx.job
+    lines = _lines(job)
+    chars = film.characters(pipeline._llm(ctx), _meta(job), lines, transcript.transcript_lang(job),
+                            _known(job)) if lines else []
+    store.save_json(job.id, "characters.json", [c.model_dump() for c in chars])
+    ctx.log(f"Nhân vật: {len(chars)}")
+
+def _summarize(ctx: Ctx):
+    job = ctx.job
+    lines = _lines(job)
+    chunks: list[ChunkSummary] = []
+    if lines:
+        llm, meta, lang = pipeline._llm(ctx), _meta(job), transcript.transcript_lang(job)
+        chars = [FilmCharacter.model_validate(c) for c in store.load_json(job.id, "characters.json", default=[])]
+        spans = transcript.chunk(lines, job.info.duration)
+        for i, (a, b) in enumerate(spans):
+            ctx.check()
+            last = i == len(spans) - 1
+            part = [s for s in lines if a <= s.start < b or (last and s.start >= b)]
+            chunks.append(film.summarize_chunk(llm, meta, chars, part, (a, b), lang))
+            ctx.progress("summarize", (i + 1) / len(spans))
+    store.save_json(job.id, "summary.json", {"chunks": [c.model_dump() for c in chunks]})
+    ctx.log(f"Tóm tắt {len(chunks)} đoạn")
+    try:      # parts.py arrives with Task 8, which drops this guard
+        parts = importlib.import_module("autosub.review.parts")
+    except ModuleNotFoundError as e:
+        if e.name != "autosub.review.parts":
+            raise
+        parts = None
+    if parts:
+        parts.ensure_default_parts(job)
+
+FILM_RUNNERS = {"probe": pipeline._probe, "extract": _skip_with_subs(pipeline._extract),
+                "separate": _skip_with_subs(pipeline._separate), "asr": _skip_with_subs(pipeline._asr),
+                "transcript": _transcript, "characters": _characters, "summarize": _summarize}
+
+def film_step_hash(ctx: Ctx, step: str) -> str:
+    j, st = ctx.job, ctx.job.settings
+    if step == "probe":
+        return pipeline.step_hash(ctx, "probe")
+    prev = j.steps[FILM_STEPS[FILM_STEPS.index(step) - 1]].hash
+    if step in ("extract", "separate", "asr"):
+        return _h(prev, step, bool(_use_subs(j)), st.separate, st.lang, st.asr_model)
+    if step == "transcript":
+        code = _use_subs(j)
+        info = ctx.work.store.stat(ctx.work.key(_vtt(code))) if code else None
+        return _h(prev, code, info.etag if info else "", _h(templates.load()["ads"], templates.edge_keywords()))
+    if step == "characters":
+        return _h(prev, st.llm_provider, st.llm_model, _meta(j).model_dump(), [c.name for c in _known(j)])
+    if step == "summarize":
+        return _h(prev, store.load_json(j.id, "characters.json", default=[]), st.llm_provider, st.llm_model)
+    raise KeyError(step)
+
+def _film_inputs(ctx: Ctx, step: str) -> list[str]:
+    if code := _use_subs(ctx.job):
+        return [_vtt(code)] if step == "transcript" else []
+    return pipeline._inputs(ctx, step)
+
+def _film_pushes(ctx: Ctx, step: str) -> list[str]:
+    return [] if _use_subs(ctx.job) else pipeline._pushes(ctx, step)
+
+def _film_outputs(ctx: Ctx, step: str) -> list[str]:
+    if step in ("transcript", "characters"):
+        return [f"{step}.json"]
+    if step == "summarize":
+        return ["summary.json"]
+    if step != "probe" and _use_subs(ctx.job):
+        return []
+    return pipeline._outputs(ctx, step)
+
+FILM_FLOW = Flow(steps=FILM_STEPS, runners=FILM_RUNNERS, step_hash=film_step_hash, inputs=_film_inputs,
+                 pushes=_film_pushes, outputs=_film_outputs, review_stop=None, overwrites=set(),
+                 rebuild=pipeline._rebuild)
+pipeline.register("film", FILM_FLOW)

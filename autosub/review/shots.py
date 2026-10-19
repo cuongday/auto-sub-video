@@ -7,6 +7,7 @@ from pathlib import Path
 from .. import proc
 
 MIN_SHOT, MAX_SHOT, MIN_LAST = 2.0, 6.0, 1.0
+SAME = 0.05                                  # starts closer than this count as the same shot
 _PTS = re.compile(r"pts_time:\s*(-?[\d.]+)")
 
 @dataclass(frozen=True)
@@ -43,6 +44,8 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], cuts: list[float]) -> l
         raise RuntimeError("Phần phim quá ngắn để cắt cảnh")
     shots: list[list[float]] = []
     total = lambda: sum(e - s for s, e in shots)  # noqa: E731
+    need = b.duration - 1e-6                     # float noise never adds a shot
+    same = lambda x, y: abs(x[0] - y[0]) < SAME  # noqa: E731
 
     # 1. the block's scenes in order, snapped to a real cut within 1 s
     for a, e in b.scenes:
@@ -50,11 +53,17 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], cuts: list[float]) -> l
         near = [c for c in cuts if abs(c - a) <= 1]
         s = min(max(min(near, key=lambda c: abs(c - a)) if near else a, p0), p1 - MIN_SHOT)
         sh = [s, min(p1, s + max(MIN_SHOT, min(MAX_SHOT, e - s)))]
-        if sh not in shots:
-            shots.append(sh)
+        if any(same(sh, o) for o in shots):          # clustered scenes: same start or snapped to the same cut
+            continue
+        inside = next((o for o in shots if o[0] < s < o[1]), None)
+        if inside and s - inside[0] < MIN_SHOT:      # starts inside an earlier shot too early to trim it
+            continue
+        if inside:
+            inside[1] = s
+        shots.append(sh)
     # 2. widen each up to MAX_SHOT, never into another shot of the block
     for sh in shots:
-        if total() >= b.duration:
+        if total() >= need:
             break
         room = min([sh[0] + MAX_SHOT, p1] + [o[0] for o in shots if o is not sh and o[0] >= sh[0]])
         sh[1] = max(sh[1], min(room, sh[1] + b.duration - total()))
@@ -63,7 +72,7 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], cuts: list[float]) -> l
 
     def add_from(starts: list[float]):
         for c in sorted(starts, key=lambda c: (max(ref[0] - c, 0, c - ref[1]), c)):
-            if total() >= b.duration:
+            if total() >= need:
                 return
             if any(s <= c < e for s, e in shots):
                 continue
@@ -83,20 +92,22 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], cuts: list[float]) -> l
     add_from(grid)
     # 4. the part has no unused footage left: reuse shots, never the same one twice in a row
     if len(shots) == 1:                      # one shot fills the part: alternate it with another framing of the part
-        # ponytail: a part of exactly MIN_SHOT has no second framing and repeats back to back (parts are >= 60 s)
-        alts = [[p0, min(p1, p0 + MAX_SHOT)], [max(p0, p1 - MAX_SHOT), p1], [p0, p0 + MIN_SHOT]]
-        shots.append(next((a for a in alts if a != shots[0]), alts[0]))
+        alts = [[p0, min(p1, p0 + MAX_SHOT)], [max(p0, p1 - MAX_SHOT), p1], [p1 - MIN_SHOT, p1]]
+        shots.append(next((a for a in alts if not same(a, shots[0])), alts[0]))
     pool, i = list(shots), 0
-    while total() < b.duration:
+    # ponytail: a part under MIN_SHOT + SAME has no second framing and repeats back to back (parts are >= 60 s)
+    alternate = any(not same(x, pool[0]) for x in pool)
+    while total() < need:
         sh = pool[i % len(pool)]
         i += 1
-        if len(pool) > 1 and sh == shots[-1]:
+        if alternate and same(sh, shots[-1]):
             continue
         shots.append(list(sh))
     # 5. cut the last shot to the exact duration; a too-short last shot borrows from the one before
+    # (a block shorter than MIN_LAST gets one shot of its own length: accepted)
     out, acc = [], 0.0
     for s, e in shots:
-        if acc + e - s >= b.duration:
+        if acc + e - s >= need:
             out.append([s, s + b.duration - acc])
             break
         out.append([s, e])
@@ -106,13 +117,14 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], cuts: list[float]) -> l
         if prev[1] - prev[0] - d >= MIN_SHOT:
             prev[1] -= d
             last[1] += d
+            if last[1] > p1:
+                last[0], last[1] = last[0] - (last[1] - p1), p1
         else:                                # prev is under MIN_SHOT + MIN_LAST: it absorbs the last shot
-            n = last[1] - last[0]
-            out.pop()
-            if prev[1] + n <= p1:
-                prev[1] += n
-            else:
-                prev[0] -= n
+            n = prev[1] - prev[0] + last[1] - last[0]
+            start = min(prev[0], p1 - n)
+            if start >= p0:                  # else the part is too short to merge: keep the short last shot
+                out.pop()
+                prev[0], prev[1] = start, start + n
     return [Shot(b.id, s, e) for s, e in out]
 
 def plan_shots(blocks: list[BlockNeed], part: tuple[float, float], cuts: list[float]) -> list[Shot]:

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><body>
+<div id="player"></div>
+        <script>
+            const playerOptions = {
+                logo: "",
+                subtitles: [{"name":"vie 1785443679677 c0nzvu","type":"local","url":"/video/3c499dca-dbf3-44e2-9317-7b69d6af6147/subtitle/vie_1785443679677_c0nzvu.vtt","_inSubtitleFolder":true,"code":"vie"},{"name":"eng 1785443677313 mji8w3","type":"local","url":"/video/3c499dca-dbf3-44e2-9317-7b69d6af6147/subtitle/eng_1785443677313_mji8w3.vtt","_inSubtitleFolder":true,"code":"eng"}],
+                audios: [],
+                thumb: "",
+                linkVast: "",
+                skipOffset: "5",
+                enableSignedUrl: false,
+                signedMasterUrl: "",
+                volume: 100,
+                mute: false,
+                segmentCdnHosts: ["p25.streamvsmov.com"]
+            };
+
+            // Set sớm — không chờ window.load (origin.js đọc ngay khi setup)
+            if (playerOptions.volume !== undefined && playerOptions.volume !== null) {
+                window.initialVolume = playerOptions.volume;
+            }
+            if (playerOptions.mute === true) {
+                window.initialMute = true;
+            }
+
+            const baseUrl = "https://v6.streamvsmov.com";
+            const videoHash = "3c499dca-dbf3-44e2-9317-7b69d6af6147";
+
+            let playerSource = playerOptions.signedMasterUrl;
+            if (!playerOptions.enableSignedUrl || !playerSource) {
+                playerSource = baseUrl + '/stream/' + videoHash + '/master.m3u8';
+            }
+            window.videoSrc = playerSource;
+        </script>
+</body></html>

@@ -62,18 +62,35 @@ def _items(d: dict) -> list[dict]:
     return d.get("items") or (d.get("data") or {}).get("items") or []
 
 
-def _rating(it: dict) -> float | None:
+def _str(v) -> str:
+    return v if isinstance(v, str) else ""
+
+
+def _int(v) -> int | None:
     try:
-        return float((it.get("tmdb") or {}).get("vote_average"))
+        return int(v)
     except (TypeError, ValueError):
         return None
 
 
+def _names(v) -> list[str]:
+    return [_str(c.get("name")) for c in v or [] if isinstance(c, dict) and c.get("name")]
+
+
+def _rating(it: dict) -> float | None:
+    try:
+        return float((it.get("tmdb") or {}).get("vote_average"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
 def _page(d: dict, page: int) -> Page:
-    cards = [Card(it.get("slug", ""), it.get("name", ""), it.get("origin_name", ""), it.get("year"),
-                  it.get("poster_url", ""), it.get("thumb_url", ""), _rating(it)) for it in _items(d)]
-    pg = d.get("pagination") or (d.get("data") or {}).get("params", {}).get("pagination") or {}
-    return Page(cards, int(pg.get("currentPage") or page), int(pg.get("totalPages") or 1))
+    cards = [Card(_str(it.get("slug")), _str(it.get("name")), _str(it.get("origin_name")), _int(it.get("year")),
+                  _str(it.get("poster_url")), _str(it.get("thumb_url")), _rating(it))
+             for it in _items(d) if isinstance(it, dict)]
+    data = d.get("data") or {}
+    pg = d.get("pagination") or (data.get("params") or {}).get("pagination") or {}
+    return Page(cards, _int(pg.get("currentPage")) or page, _int(pg.get("totalPages")) or 1)
 
 
 def latest(page: int = 1) -> Page:
@@ -85,32 +102,34 @@ def search(keyword: str, page: int = 1, limit: int = 24) -> Page:
 
 
 def listing(kind: Literal["phim-le", "phim-bo", "the-loai", "quoc-gia"], slug: str = "", page: int = 1) -> Page:
+    if kind in ("the-loai", "quoc-gia") and not slug:
+        raise VsmovError("Thiếu thể loại/quốc gia để lọc phim")
     path = f"danh-sach/{kind}" if kind in ("phim-le", "phim-bo") else f"{kind}/{slug}"
     return _page(_get(path, page=page), page)
 
 
 def filters() -> dict[str, list[dict]]:
     def load(path):
-        return [{"name": i["name"], "slug": i["slug"]} for i in _items(_get(path))]
+        return [{"name": _str(i.get("name")), "slug": _str(i.get("slug"))} for i in _items(_get(path)) if isinstance(i, dict)]
     return {"genres": load("the-loai"), "countries": load("quoc-gia")}
 
 
 def movie(slug: str) -> MovieDetail:
     d = _get(f"phim/{urllib.parse.quote(slug)}")
     m = d.get("movie")
-    if not m:
+    if not isinstance(m, dict) or not m:
         raise VsmovError("Không tìm thấy phim trên vsmov")
     meta = MovieMeta(
-        slug=m.get("slug", slug), name=m.get("name", ""), origin_name=m.get("origin_name", ""),
-        year=m.get("year"), type=m.get("type", "single"), poster_url=m.get("poster_url", ""),
-        thumb_url=m.get("thumb_url", ""), time=m.get("time", ""), lang=m.get("lang", ""),
-        content=m.get("content", ""), actors=m.get("actor") or [], directors=m.get("director") or [],
-        categories=[c["name"] for c in m.get("category") or []],
-        countries=[c["name"] for c in m.get("country") or []])
-    servers = [Server(" ".join(s.get("server_name", "").split()),
-                      [Episode(name=e.get("name", ""), slug=e.get("slug", ""), embed=e.get("link_embed", ""))
-                       for e in s.get("server_data") or []])
-               for s in d.get("episodes") or []]
+        slug=_str(m.get("slug")) or slug, name=_str(m.get("name")), origin_name=_str(m.get("origin_name")),
+        year=_int(m.get("year")), type=_str(m.get("type")) or "single", poster_url=_str(m.get("poster_url")),
+        thumb_url=_str(m.get("thumb_url")), time=_str(m.get("time")), lang=_str(m.get("lang")),
+        content=_str(m.get("content")), actors=[_str(x) for x in m.get("actor") or [] if x],
+        directors=[_str(x) for x in m.get("director") or [] if x],
+        categories=_names(m.get("category")), countries=_names(m.get("country")))
+    servers = [Server(" ".join(_str(s.get("server_name")).split()),
+                      [Episode(name=_str(e.get("name")), slug=_str(e.get("slug")), embed=_str(e.get("link_embed")))
+                       for e in s.get("server_data") or [] if isinstance(e, dict)])
+               for s in d.get("episodes") or [] if isinstance(s, dict)]
     servers = [s for s in servers if s.episodes]
     default = next((s.name for s in servers if "4K" not in s.name), servers[0].name if servers else "")
     return MovieDetail(meta, servers, default)

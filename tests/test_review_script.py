@@ -125,7 +125,7 @@ def test_script_step_stops_for_review(review_rig):
     assert get_store().get_bytes("review/pace.json")
     n = len(review_rig.llm.prompts)
     job = review_rig.run(p.id, mode="auto")
-    assert job.state == "done" and len(review_rig.llm.prompts) == n           # script cached, later steps placeholders
+    assert job.state == "done" and len(review_rig.llm.prompts) == n           # script cached
 
 def test_script_step_errors_on_empty_transcript(tmp_path):
     rig = ReviewRig(tmp_path, subtitles="WEBVTT\n\n00:00:01.000 --> 00:00:03.000\ntryray.app\n")

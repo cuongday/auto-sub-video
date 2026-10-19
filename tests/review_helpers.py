@@ -1,10 +1,12 @@
 """A review project with one prepared-able film job and fake engines (shared by the review-phim tests)."""
 import shutil
 import pytest
-from autosub import media, pipeline, projects, store, workdir
-from autosub.models import FilmInfo, MovieMeta
+from autosub import config, media, pipeline, projects, store, workdir
+from autosub.models import FilmInfo, MovieMeta, ReviewSettings
 from autosub.projects import ReviewProject
-from autosub.storage import get_store
+from autosub.review import pace
+from autosub.storage import get_store, write_json
+from autosub.tts.base import cache_key
 from tests.fakes import FakeASR, FakeLLM, FakeTTS, fake_separate, review_llm_hook
 from tests.fixtures import make_video
 
@@ -36,7 +38,10 @@ class ReviewRig:
                                         llm=lambda p, m: self.llm, tts=lambda name: self.tts)
         movie = MovieMeta(name="Phim thử", origin_name="Test Film", actors=["Diễn viên A"])
         self.project = projects.create("Phim thử", "vsmov:phim-thu", kind="review",
-                                       review=ReviewProject(source="vsmov", movie=movie))
+                                       review=ReviewProject(source="vsmov", movie=movie,
+                                                            settings=ReviewSettings(minutes=1)))
+        # a pace of 20 syllables/min keeps the narration ~8 s, so rendering the video stays quick
+        write_json(get_store(), pace.PACE_KEY, {cache_key(self.tts.name, "", 1.0, "", pace.PACE_SAMPLE): 20})
         self.film = self.add_film()
 
     def add_film(self, episode_index: int = 0):
@@ -67,5 +72,6 @@ class ReviewRig:
         return next(j for j in jobs if j.part.index == index)
 
 @pytest.fixture
-def review_rig(tmp_path):
+def review_rig(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "FFMPEG_PRESET", "ultrafast")
     return ReviewRig(tmp_path)

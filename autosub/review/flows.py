@@ -3,13 +3,16 @@
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 import soundfile as sf
-from .. import config, media, pipeline, projects, store, workdir
+from .. import config, media, mix, pipeline, projects, store, workdir
+from ..storage import get_store
+from ..subtitles import _escape, build_srt, region_px
 from ..timing import trim_silence
 from ..tts.base import cached_synthesize
 from ..models import FILM_STEPS, REVIEW_STEPS, ChunkSummary, FilmCharacter, Job, MovieMeta, Script, Segment, Word
 from ..pipeline import Ctx, Flow, _h
-from . import film, narration, notebook, pace, parts, script, shots, templates, transcript
+from . import compose, film, narration, notebook, pace, parts, script, shots, templates, transcript
 
 SR = 44100
 NO_LINES ="Không có lời thoại: không viết được kịch bản review"
@@ -163,9 +166,6 @@ def _script(ctx: Ctx):
     job.segments_edited = False
     ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {script.estimate_seconds(s, spm) / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
 
-def _placeholder(ctx: Ctx):
-    """ponytail: assemble/render are filled in by later tasks; until then they do nothing."""
-
 def _scenes(ctx: Ctx):
     """Real scene cuts of the film over the part; the shots are planned by `assemble` once narration is timed."""
     job = ctx.job
@@ -226,8 +226,95 @@ def _tts(ctx: Ctx):
     store.save_json(job.id, "narration.json", [r for r, _ in results])
     ctx.log(f"Lời đọc: {len(results)} câu")
 
-REVIEW_RUNNERS = {"script": _script, "scenes": _scenes, "tts": _tts, "assemble": _placeholder,
-                  "render": _placeholder}
+def _title(job: Job) -> str:
+    """9:16 title: movie name, then the part (series: the episode and the part's rank inside it)."""
+    movie = parts.project_of(job).review.movie
+    if movie.type == "single":
+        return f"{_escape(movie.name)}\\NPHẦN {job.part.index}"
+    fj = store.load(job.part.film_job)
+    same = [j.id for j in parts.parts_of(job.project) if j.part.film_job == fj.id]
+    return f"{_escape(movie.name)}\\NTẬP {fj.film.episode_index + 1} · PHẦN {same.index(job.id) + 1}"
+
+def _music(job: Job) -> tuple[str, str] | None:
+    """(object key, etag) of the project's background music."""
+    key = parts.project_of(job).review.music
+    info = get_store().stat(key) if key else None
+    return (key, info.etag) if info else None
+
+def _has_ass(job: Job) -> bool:
+    """16:9 without subtitles burns nothing; 9:16 always has the title."""
+    return job.review.subtitles or job.review.aspect == "9:16"
+
+def _assemble(ctx: Ctx):
+    """Lay the narration out block after block, mix it with the music, plan the film shots, write the subtitles."""
+    job, rv = ctx.job, ctx.job.review
+    blocks = Script.model_validate(store.load_json(job.id, "script.json", default={})).blocks
+    nar = store.load_json(job.id, "narration.json", default=[])
+    ctx.work.fetch_dir("tts")
+    t, items, lines, needs = 0.0, [], [], []
+    for b in blocks:
+        sents = sorted((n for n in nar if n["block"] == b.id), key=lambda n: n["n"])
+        if not sents:
+            continue
+        start = t
+        for i, n in enumerate(sents):
+            t += narration.SENT_GAP if i else 0
+            items.append((t, ctx.work.local(n["file"])))
+            lines += narration.subtitle_lines(n["text"], t, n["dur"])
+            t += n["dur"]
+        t += narration.BLOCK_GAP
+        src = (b.source_start, b.source_end) if b.source_start is not None and b.source_end is not None else None
+        needs.append(shots.BlockNeed(b.id, t - start, [(s.start, s.end) for s in b.scenes], src))
+    if not needs:
+        raise RuntimeError("Không có lời đọc để dựng video")
+    sf.write(ctx.dir / "voice_raw.wav", mix.build_voice_track(items, t), mix.SR, subtype="PCM_16")
+    bed = None
+    if m := _music(job):
+        local = ctx.dir / ("music" + Path(m[0]).suffix)
+        get_store().get_file(m[0], local)
+        bed = compose.music_bed(local, ctx.dir / "music_bed.wav", t, ctx.cancel)
+    mix.mix(ctx.dir / "voice_raw.wav", bed, ctx.dir / "voice.wav", ctx.dir / "mix.m4a", rv.music_db, t,
+            cancel=ctx.cancel, duck_db=-10 if rv.music_duck else None)
+    plan = shots.plan_shots(needs, (job.part.start, job.part.end), store.load_json(job.id, "cuts.json", default=[]))
+    store.save_json(job.id, "shots.json", [{"block": s.block, "start": s.start, "end": s.end} for s in plan])
+    files = {"subs.ass": _has_ass(job) and compose.build_review_ass(
+                 lines if rv.subtitles else [], rv.aspect, job.settings.style,
+                 _title(job) if rv.aspect == "9:16" else None),
+             "subs.srt": rv.subtitles and build_srt(lines)}
+    for name, text in files.items():
+        if text:
+            (ctx.dir / name).write_text(text, encoding="utf-8")
+        elif store.exists(job.id, name):
+            ctx.work.drop(name)                  # subtitles turned off: no stale file left beside the video
+    ctx.log(f"Dựng: {t:.1f} giây lời đọc, {len(plan)} cảnh" + (", có nhạc nền" if bed else ""))
+
+def _render(ctx: Ctx):
+    """Encode each planned shot once (named by its content, reused across renders), then join them under the mix."""
+    job, rv = ctx.job, ctx.job.review
+    fj = store.load(job.part.film_job)
+    src = workdir.WorkDir(fj.id, ctx.work.store).fetch(fj.source)
+    if src is None:
+        raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
+    etag = ctx.work.store.stat(store.key(fj.id, fj.source)).etag
+    boxes = [region_px(r, fj.info.width, fj.info.height) for r in rv.cover_regions]
+    plan = store.load_json(job.id, "shots.json", default=[])
+    names: list[str] = []
+    for i, s in enumerate(plan):
+        ctx.check()
+        start, dur = round(s["start"], 3), round(s["end"] - s["start"], 3)
+        name = f"shots/{_h(etag, start, dur, rv.aspect, boxes, rv.cover)}.mp4"
+        if name not in names and ctx.work.fetch(name) is None:
+            compose.render_shot(src, start, dur, ctx.work.local(name), rv.aspect, fj.info, boxes, rv.cover, ctx.cancel)
+            ctx.work.push(name)
+        names.append(name)
+        ctx.progress("render", 0.9 * (i + 1) / len(plan))
+    for old in store.names(job.id, "shots/") - set(names):
+        ctx.work.drop(old)                       # shots of an older plan
+    compose.finalize([ctx.work.local(n) for n in names], ctx.dir / "mix.m4a",
+                     ctx.dir / "subs.ass" if _has_ass(job) else None, ctx.dir / "output.mp4",
+                     sum(s["end"] - s["start"] for s in plan), ctx.cancel)
+
+REVIEW_RUNNERS = {"script": _script, "scenes": _scenes, "tts": _tts, "assemble": _assemble, "render": _render}
 
 def review_step_hash(ctx: Ctx, step: str) -> str:
     j, st = ctx.job, ctx.job.settings
@@ -246,12 +333,33 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         blocks = Script.model_validate(store.load_json(j.id, "script.json", default={})).blocks
         return _h(j.steps["scenes"].hash, step, [(b.id, b.text) for b in blocks], st.tts_engine, st.tts_voice,
                   st.tts_rate, ref.etag if ref else "")
-    return _h(j.steps[REVIEW_STEPS[REVIEW_STEPS.index(step) - 1]].hash, step)
+    prev, rv = j.steps[REVIEW_STEPS[REVIEW_STEPS.index(step) - 1]].hash, j.review
+    if step == "assemble":
+        blocks = Script.model_validate(store.load_json(j.id, "script.json", default={})).blocks
+        m = _music(j)
+        return _h(prev, step, [(b.id, [s.model_dump() for s in b.scenes], b.source_start, b.source_end) for b in blocks],
+                  rv.subtitles, rv.aspect, st.style.model_dump(), m[1] if m else "", rv.music_db, rv.music_duck,
+                  _title(j) if rv.aspect == "9:16" else "")
+    if step == "render":
+        return _h(prev, step, rv.aspect, [r.model_dump() for r in rv.cover_regions], rv.cover)
+    raise KeyError(step)
 
 def _review_outputs(ctx: Ctx, step: str) -> list[str]:
-    return {"script": ["script.json"], "scenes": ["cuts.json"], "tts": ["narration.json"]}.get(step, [])
+    return {"script": ["script.json"], "scenes": ["cuts.json"], "tts": ["narration.json"],
+            "assemble": ["shots.json", "mix.m4a"], "render": ["output.mp4"]}[step]
+
+def _review_inputs(ctx: Ctx, step: str) -> list[str]:
+    if step != "render":
+        return []
+    return ["mix.m4a", "subs.ass"] if _has_ass(ctx.job) else ["mix.m4a"]
+
+def _review_pushes(ctx: Ctx, step: str) -> list[str]:
+    if step == "assemble":
+        return (["voice_raw.wav", "voice.wav", "mix.m4a"] + (["subs.ass"] if _has_ass(ctx.job) else [])
+                + (["subs.srt"] if ctx.job.review.subtitles else []))
+    return ["output.mp4"] if step == "render" else []
 
 REVIEW_FLOW = Flow(steps=REVIEW_STEPS, runners=REVIEW_RUNNERS, step_hash=review_step_hash,
-                   inputs=lambda ctx, step: [], pushes=lambda ctx, step: [], outputs=_review_outputs,
+                   inputs=_review_inputs, pushes=_review_pushes, outputs=_review_outputs,
                    review_stop="script", overwrites={"script"}, pins=lambda job: [job.part.film_job])
 pipeline.register("review", REVIEW_FLOW)

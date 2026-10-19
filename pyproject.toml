@@ -35,7 +35,9 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.setuptools]
-packages = ["autosub", "autosub.asr", "autosub.llm", "autosub.tts"]
+packages = ["autosub", "autosub.asr", "autosub.llm", "autosub.review", "autosub.tts"]
+[tool.setuptools.package-data]
+"autosub.review" = ["templates.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["slow: runs real models / network (make test-slow)", "minio: needs docker to start a MinIO (make test-minio)"]

@@ -1,0 +1,21 @@
+{
+  "styles": [
+    {"id": "kich_tinh", "label": "Kịch tính", "prompt": "Kể bằng giọng căng thẳng, dồn dập, nhấn vào xung đột và bước ngoặt. Câu ngắn, nhịp nhanh, tạo cảm giác hồi hộp."},
+    {"id": "hai_huoc", "label": "Hài hước", "prompt": "Kể bằng giọng dí dỏm, trêu đùa nhân vật và tình huống. Có thể thêm bình luận châm biếm nhưng không làm sai nội dung phim."},
+    {"id": "phan_tich", "label": "Nghiêm túc / phân tích", "prompt": "Kể bằng giọng điềm tĩnh, phân tích động cơ nhân vật và ý nghĩa các tình tiết. Nêu rõ nguyên nhân và hệ quả."},
+    {"id": "nhe_nhang", "label": "Kể chuyện nhẹ nhàng", "prompt": "Kể như đang trò chuyện với bạn bè, giọng ấm áp, chậm rãi, dễ nghe. Tránh từ ngữ gay gắt hay phóng đại."}
+  ],
+  "hooks": [
+    {"id": "cau_hoi", "label": "Câu hỏi gây tò mò", "prompt": "Mở đầu bằng một câu hỏi khiến người xem muốn biết câu trả lời, lấy từ diễn biến đáng chú ý trong phần phim này."},
+    {"id": "canh_soc", "label": "Cảnh gây sốc", "prompt": "Mở đầu bằng việc mô tả ngay cảnh gây sốc hoặc bất ngờ nhất của phần phim, rồi mới quay lại kể từ đầu."},
+    {"id": "loi_thoai", "label": "Lời thoại đắt giá", "prompt": "Mở đầu bằng một lời thoại ấn tượng của nhân vật trong phim, sau đó dẫn vào câu chuyện."},
+    {"id": "ban_co_biet", "label": "\"Bạn có biết…\"", "prompt": "Mở đầu bằng câu \"Bạn có biết…\" nêu một sự thật bất ngờ liên quan đến nội dung phần phim này."}
+  ],
+  "openings": [
+    {"id": "gioi_thieu", "label": "Giới thiệu phim", "prompt": "Giới thiệu ngắn gọn tên phim, thể loại, bối cảnh và nhân vật chính trước khi vào chuyện."},
+    {"id": "tom_tat_truoc", "label": "Tóm tắt phần trước", "prompt": "Nhắc lại ngắn gọn những gì đã xảy ra ở phần trước, đủ để người xem theo kịp phần này."},
+    {"id": "vao_thang", "label": "Vào thẳng truyện", "prompt": "Bỏ qua phần dẫn nhập, kể thẳng vào diễn biến chính của phần phim."}
+  ],
+  "ads": ["https?://", "www\\.", "\\b[\\w-]+\\.(com|net|org|app|io|vn|xyz|tv|me|co|cc|top|site)\\b"],
+  "edge_keywords": ["phụ đề", "vietsub", "subtitle", "sub by", "dịch bởi", "biên dịch", "translated by", "ngôn ngữ"]
+}

@@ -107,26 +107,6 @@ class StepState(BaseModel):
 # "approved": a finished video the user has checked; any re-run turns it back into "done"
 JobState = Literal["new", "queued", "running", "awaiting_review", "done", "approved", "error", "interrupted", "cancelled"]
 
-class Job(BaseModel):
-    id: str
-    name: str
-    created: float
-    source: str                           # absolute path of the video
-    uploaded: bool = False                # source lives inside the job dir
-    kind: JobKind = "sub"                 # which flow runs it (pipeline.flow_for)
-    info: VideoInfo | None = None
-    settings: JobSettings = Field(default_factory=JobSettings)
-    steps: dict[str, StepState] = Field(default_factory=lambda: {s: StepState() for s in STEPS})
-    state: JobState = "new"
-    mode: Literal["review", "auto"] = "review"
-    current_step: str | None = None
-    error: str | None = None
-    segments_edited: bool = False
-    warnings: list[str] = Field(default_factory=list)
-    pruned: list[str] = Field(default_factory=list)   # intermediates deleted to save space (rebuilt on demand)
-    project: str | None = None            # id of the project (e.g. one Douyin channel) this video belongs to
-
-
 class SubTrack(BaseModel):
     code: str
     url: str
@@ -153,3 +133,121 @@ class Episode(BaseModel):
     name: str
     slug: str
     embed: str
+
+
+class FilmInfo(BaseModel):
+    episode: Episode | None = None
+    episode_index: int = 0
+    subtitles: list[SubTrack] = Field(default_factory=list)
+    subtitle: str | None = None           # chosen code; None -> ASR
+
+
+class PartInfo(BaseModel):
+    film_job: str
+    index: int
+    start: float
+    end: float
+    notebook_rev: int = 0
+
+
+class ReviewSettings(BaseModel):
+    minutes: float = Field(5, ge=1, le=30)
+    aspect: Literal["16:9", "9:16"] = "9:16"
+    style: str = "kich_tinh"
+    hook: str = "cau_hoi"
+    opening: str = ""                     # "" -> gioi_thieu for part 1, tom_tat_truoc after
+    notes: str = ""
+    spoil_ending: bool = False
+    subtitles: bool = True
+    music_db: float = Field(-20, ge=-40, le=0)
+    music_duck: bool = True
+    cover_regions: list[Region] = Field(default_factory=list, max_length=5)
+    cover: Literal["blur", "blur_dim", "solid"] = "blur_dim"
+
+
+class TimeSpan(BaseModel):
+    start: float
+    end: float
+
+
+class ScriptBlock(BaseModel):
+    id: int
+    kind: Literal["hook", "mo_dau", "than", "ket"]
+    text: str
+    scenes: list[TimeSpan] = Field(default_factory=list)
+    source_start: float | None = None
+    source_end: float | None = None
+    template: str = ""
+    edited: bool = False
+
+
+class Script(BaseModel):
+    blocks: list[ScriptBlock] = Field(default_factory=list)
+
+
+class FilmCharacter(BaseModel):
+    name: str
+    aliases: list[str] = Field(default_factory=list)
+    role: str = ""
+
+
+class SceneNote(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class ChunkSummary(BaseModel):
+    start: float
+    end: float
+    summary: str
+    events: list[SceneNote] = Field(default_factory=list)
+    characters: list[str] = Field(default_factory=list)
+    highlights: list[SceneNote] = Field(default_factory=list)
+
+
+class NotebookCharacter(FilmCharacter):
+    relations: str = ""
+    arc: str = ""
+
+
+class NotebookEntry(BaseModel):
+    job: str
+    index: int
+    range_label: str
+    summary: str
+    ending: str = ""
+    open_threads: list[str] = Field(default_factory=list)
+    hooks: list[str] = Field(default_factory=list)
+    rev: int
+
+
+class Notebook(BaseModel):
+    entries: list[NotebookEntry] = Field(default_factory=list)
+    characters: list[NotebookCharacter] = Field(default_factory=list)
+    voice: str = ""
+    rev: int = 0
+    shared_rev: int = 0
+
+
+class Job(BaseModel):
+    id: str
+    name: str
+    created: float
+    source: str                           # absolute path of the video
+    uploaded: bool = False                # source lives inside the job dir
+    kind: JobKind = "sub"                 # which flow runs it (pipeline.flow_for)
+    info: VideoInfo | None = None
+    settings: JobSettings = Field(default_factory=JobSettings)
+    steps: dict[str, StepState] = Field(default_factory=lambda: {s: StepState() for s in STEPS})
+    state: JobState = "new"
+    mode: Literal["review", "auto"] = "review"
+    current_step: str | None = None
+    error: str | None = None
+    segments_edited: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    pruned: list[str] = Field(default_factory=list)   # intermediates deleted to save space (rebuilt on demand)
+    project: str | None = None            # id of the project (e.g. one Douyin channel) this video belongs to
+    film: FilmInfo | None = None          # kind "film": the movie being analyzed
+    part: PartInfo | None = None          # kind "review": which part of the film this video covers
+    review: ReviewSettings | None = None  # kind "review": settings of this video

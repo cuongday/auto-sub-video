@@ -9,7 +9,7 @@ from autosub.projects import ReviewProject
 from autosub.review import pace, parts
 from autosub.storage import get_store, write_json
 from autosub.tts.base import cache_key
-from tests.fakes import FakeASR, FakeLLM, FakeTTS, fake_separate, review_llm_hook
+from tests.fakes import FakeASR, FakeLLM, FakeTTS, fake_separate, review_llm_capped, review_llm_hook
 from tests.fixtures import make_video
 from tests.review_helpers import VTT_20S, ReviewRig
 
@@ -424,3 +424,20 @@ def test_retry_after_download_error(client, fake_vsmov):
     task = wait_for(lambda: (t := detail(client, p["id"])["tasks"]) and t[0]["state"] in ("done", "error") and t[0])
     assert task["state"] == "done" and len(detail(client, p["id"])["tasks"]) == 1   # the error row is replaced
     done(client, task["job"])
+
+def test_rewrite_after_raising_minutes_gives_a_longer_script(client, rig):
+    api.QUEUE.engines_factory = lambda: pipeline.Engines(
+        separate=fake_separate(), asr=lambda l, m, **kw: FakeASR(), llm=lambda p, m: FakeLLM(review_llm_capped(30)),
+        tts=lambda n: FakeTTS())
+    rig.film_done()
+    jid = parts.create_parts(store.load(rig.film.id), [])[0].id
+    client.post(f"/api/jobs/{jid}/run", json={"mode": "review"})
+    assert wait(client, jid, {"awaiting_review", "error"})["state"] == "awaiting_review"
+    short = client.get(f"/api/jobs/{jid}/script").json()
+    j = client.get(f"/api/jobs/{jid}").json()
+    assert client.put(f"/api/jobs/{jid}/review-settings", json={**j["review"], "minutes": 3}).status_code == 200
+    assert client.post(f"/api/jobs/{jid}/script/rewrite").status_code == 200
+    j = wait(client, jid, {"awaiting_review", "error"})
+    assert j["state"] == "awaiting_review" and j["review"]["minutes"] == 3 and j["warnings"] == []
+    long = client.get(f"/api/jobs/{jid}/script").json()
+    assert long["target"] == 180 and long["estimate"] >= 0.85 * 180 and long["estimate"] > 2.5 * short["estimate"]

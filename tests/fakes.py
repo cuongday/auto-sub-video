@@ -107,6 +107,26 @@ def review_llm_hook(prompt, schema):
         return {"characters": [{"name": "Tiểu Minh", "aliases": ["小明"], "role": "nhân vật chính"}]}
     return None
 
+def review_llm_capped(cap: int, extend: bool = True):
+    """Like review_llm_hook, but no script answer passes `cap` syllables (as real LLMs plateau on long targets);
+    an extension request gets body blocks inside the first UNCOVERED range, or nothing when `extend` is off."""
+    def hook(prompt, schema):
+        if "blocks" not in schema["properties"]:
+            return review_llm_hook(prompt, schema)
+        if "UNCOVERED" not in prompt:
+            n = int(re.search(r"TARGET (\d+)", prompt).group(1))
+            return review_llm_hook(re.sub(r"TARGET \d+", f"TARGET {min(n, cap)}", prompt), schema)
+        if not extend:
+            return {"blocks": []}
+        k, per = map(int, re.search(r"Viết thêm (\d+) khối than, mỗi khối khoảng (\d+) âm tiết", prompt).groups())
+        a, b = map(float, re.search(r"UNCOVERED \[(\S+)–(\S+)\]", prompt).groups())
+        per = min(per, cap // k)
+        step = (b - a) / k
+        return {"blocks": [{"kind": "than", "text": " ".join(["thêm"] * per),
+                            "scenes": [{"start": a + i * step, "end": a + (i + 1) * step}],
+                            "source_start": a + i * step, "source_end": a + (i + 1) * step} for i in range(k)]}
+    return hook
+
 def review_llm_arcs():
     """Like review_llm_hook, but every notebook update tells a new arc and voice (as a real LLM would)."""
     n = [0]

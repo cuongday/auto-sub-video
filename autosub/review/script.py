@@ -8,12 +8,16 @@ from ..llm.base import LLMProvider
 from ..models import ChunkSummary, FilmCharacter, MovieMeta, Notebook, PartInfo, ReviewSettings, Script, ScriptBlock, Segment, TimeSpan
 from . import notebook as nb_mod, templates
 from .film import _meta
+from .narration import BLOCK_GAP, SENT_GAP, sentences
 from .pace import syllables
 
 KINDS = ["hook", "mo_dau", "than", "ket"]
 MIN_SCENE = 0.5
 LENGTH_TOLERANCE = 0.15
-BLOCK_PAUSE = 0.35
+BODY_SYLLABLES = 220     # one body block: a long script gets more blocks, not longer ones
+MAX_BODY = 30
+SENTENCE_SYLLABLES = 15  # an average sentence before any is written, for the pauses between sentences
+EXTEND_ROUNDS = 3
 MAX_LINES = 1200    # dialogue lines in the prompt; a longer part keeps every k-th line
 
 _SPAN = {"type": "object", "properties": {"start": {"type": "number"}, "end": {"type": "number"}}, "required": ["start", "end"]}
@@ -43,8 +47,30 @@ RULES = ("Quy tắc:\n"
 def opening_for(settings: ReviewSettings, part: PartInfo) -> str:
     return settings.opening or ("gioi_thieu" if part.index == 1 else "tom_tat_truoc")
 
+def pause_seconds(text: str) -> float:
+    """The silence assemble lays around a block: one gap after it, one between two of its sentences."""
+    return BLOCK_GAP + SENT_GAP * max(0, len(sentences(text)) - 1)
+
 def estimate_seconds(script: Script, spm: float) -> float:
-    return sum(syllables(b.text) for b in script.blocks) / spm * 60 + BLOCK_PAUSE * len(script.blocks)
+    return sum(syllables(b.text) / spm * 60 + pause_seconds(b.text) for b in script.blocks)
+
+def _body_count(syl: float) -> int:
+    return min(MAX_BODY, max(3, round(syl / BODY_SYLLABLES)))
+
+def target_syllables(seconds: float, spm: float) -> int:
+    """Syllables that fill `seconds` of narration once the pauses between blocks and sentences are taken out."""
+    rough = seconds / 60 * spm
+    blocks = _body_count(rough) + 3
+    pauses = BLOCK_GAP * blocks + SENT_GAP * max(0, round(rough / SENTENCE_SYLLABLES) - blocks)
+    return max(1, round((seconds - pauses) / 60 * spm))
+
+def _budget(target: int) -> str:
+    n = _body_count(target)
+    frame = min(200, target // 3)                        # hook 1 : mo_dau 2 : ket 2
+    hook, side = max(1, frame // 5), max(1, 2 * frame // 5)
+    return (f"Cấu trúc: hook khoảng {hook} âm tiết, mo_dau khoảng {side}, {n} khối than mỗi khối khoảng "
+            f"{max(1, (target - frame) // n)} âm tiết, ket khoảng {side}. Kịch bản ngắn hơn TARGET là không đạt: "
+            "kể đủ từng diễn biến trong tóm tắt và lời thoại cho tới khi đủ độ dài.")
 
 def _clamp(a, b, part: PartInfo) -> TimeSpan | None:
     if a is None or b is None:
@@ -126,10 +152,26 @@ def _dump(blocks: list[ScriptBlock]) -> str:
     return json.dumps([b.model_dump(include={"kind", "text", "source_start", "source_end"}) for b in blocks],
                       ensure_ascii=False)
 
+def _uncovered(blocks: list[ScriptBlock], start: float, end: float) -> list[tuple[float, float]]:
+    """Stretches of [start, end] no body block tells; when the body spans it all, the three stretches it tells most
+    briefly (fewest syllables per second of film), whose details an extension can still add."""
+    body = sorted((b for b in blocks if b.kind == "than" and b.source_start is not None and b.source_end is not None),
+                  key=lambda b: b.source_start)
+    gaps, t, least = [], start, (end - start) / 20
+    for b in body:
+        if b.source_start - t > least:
+            gaps.append((t, b.source_start))
+        t = max(t, b.source_end)
+    if end - t > least:
+        gaps.append((t, end))
+    thin = sorted(body, key=lambda b: syllables(b.text) / max(b.source_end - b.source_start, 1.0))[:3]
+    return gaps or sorted((b.source_start, b.source_end) for b in thin)
+
 def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmCharacter], chunks: list[ChunkSummary],
                  part: PartInfo, total_parts: int, is_last: bool, settings: ReviewSettings, notebook: Notebook,
                  spm: float, locked: list[ScriptBlock] = (), lines: list[Segment] = ()) -> Script:
-    target = round(settings.minutes * spm)
+    goal = settings.minutes * 60
+    target = target_syllables(goal, spm)
     opening = opening_for(settings, part)
     known = {c.name for c in notebook.characters}
     cast = [*notebook.characters, *(c for c in characters if c.name not in known)]   # notebook wins on a name
@@ -155,18 +197,20 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
         rows.append(f"Yêu cầu thêm: {settings.notes.strip()}")
     if locked:
         rows.append(f"Các khối người dùng đã tự viết (giữ nguyên, không kể lặp lại): {_dump(list(locked))}")
-    rows += ["", f"TARGET {target}  (tổng số âm tiết của toàn bộ lời đọc)", f"RANGE {part.start} {part.end}"]
+    rows += ["", f"TARGET {target}  (tổng số âm tiết của toàn bộ lời đọc)", _budget(target),
+             f"RANGE {part.start} {part.end}"]
     prompt = "\n".join(rows)
 
+    keep_ending = is_last and not settings.spoil_ending
     fix, length_tries, hook_tries = "", 0, 0
     while True:
         raw = llm.generate_json(prompt + fix, SCRIPT_SCHEMA).get("blocks", [])
-        blocks = validate_blocks(raw, part, settings, locked, is_last and not settings.spoil_ending)
-        n = sum(syllables(b.text) for b in blocks)
+        blocks = validate_blocks(raw, part, settings, locked, keep_ending)
+        sec = estimate_seconds(Script(blocks=blocks), spm)
         draft = f"\n\nBản trước: {_dump(blocks)}"
-        if target and abs(n - target) / target > LENGTH_TOLERANCE and length_tries < 2:
+        if abs(sec - goal) / goal > LENGTH_TOLERANCE and length_tries < 2:
             length_tries += 1
-            fix = f"{draft}\nKịch bản đang {'ngắn' if n < target else 'dài'} hơn mục tiêu: viết lại cho khoảng {target} âm tiết."
+            fix = f"{draft}\nKịch bản đang {'ngắn' if sec < goal else 'dài'} hơn mục tiêu: viết lại cho khoảng {target} âm tiết."
             continue
         hook = next((b for b in blocks if b.kind == "hook" and not b.edited), None)
         if hook and _norm(hook.text) in {_norm(h) for h in used} and hook_tries < 1:
@@ -175,7 +219,24 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
             continue
         if not blocks:
             raise RuntimeError("LLM không trả về kịch bản")
-        return Script(blocks=blocks)
+        break
+    for _ in range(EXTEND_ROUNDS):      # still short (models stop near 1,500 syllables a call): add body blocks
+        if sec >= goal * (1 - LENGTH_TOLERANCE):
+            break
+        need = max(1, round((goal - sec) / 60 * spm))
+        k = min(MAX_BODY, max(1, round(need / BODY_SYLLABLES)))
+        spans = _uncovered(blocks, part.start, story_end(blocks, part, keep_ending))
+        ask = (f"\n\nBản nháp hiện tại: {_dump(blocks)}\nBản nháp còn thiếu khoảng {need} âm tiết. "
+               f"Viết thêm {k} khối than, mỗi khối khoảng {need // k} âm tiết, kể những diễn biến trong các khoảng phim "
+               "dưới đây mà bản nháp chưa kể hoặc mới kể sơ lược. Chỉ lấy từ tóm tắt và lời thoại của các khoảng đó, "
+               "không bịa thêm, không lặp lại bản nháp. Chỉ trả về các khối than mới.\n"
+               + "\n".join(f"UNCOVERED {_span(a, b)}" for a, b in spans))
+        more = [r for r in llm.generate_json(prompt + ask, SCRIPT_SCHEMA).get("blocks", []) if r.get("kind") == "than"]
+        longer = validate_blocks(raw + more, part, settings, locked, keep_ending)
+        if (n := estimate_seconds(Script(blocks=longer), spm)) <= sec:
+            break
+        raw, blocks, sec = raw + more, longer, n
+    return Script(blocks=blocks)
 
 def rewrite_block(llm: LLMProvider, script: Script, bid: int, instruction: str, *, meta: MovieMeta,
                   settings: ReviewSettings, part: PartInfo) -> ScriptBlock:

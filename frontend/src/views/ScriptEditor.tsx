@@ -7,18 +7,28 @@ import ReviewSettingsForm from "../components/ReviewSettingsForm";
 import { fmtClock, parseClock } from "../labels";
 import type { Job, PartInfo, ReviewSettings, ScriptBlock, ScriptData, Templates, TimeSpan } from "../types";
 
-const PAUSE = 0.35;        // autosub/review/script.py BLOCK_PAUSE: silence between blocks
+const BLOCK_GAP = 0.35, SENT_GAP = 0.15, MAX_SYLLABLES = 30;   // autosub/review/narration.py
 const TOLERANCE = 0.15;    // script.py LENGTH_TOLERANCE
 const NEW_SCENE = 4;
 /** Same count as autosub/review/pace.py: one Vietnamese syllable per word. */
 const syllables = (t: string) => t.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+/** narration.sentences: cut at sentence ends and newlines, a sentence over 30 syllables at its middle comma. */
+const splitLong = (s: string): string[] => {
+  const n = syllables(s), cuts = [...s.matchAll(/,\s/g)].map((m) => m.index! + m[0].length);
+  if (n <= MAX_SYLLABLES || !cuts.length) return [s];
+  const i = cuts.reduce((a, c) => Math.abs(syllables(s.slice(0, c)) - n / 2) < Math.abs(syllables(s.slice(0, a)) - n / 2) ? c : a);
+  return [...splitLong(s.slice(0, i).trim()), ...splitLong(s.slice(i).trim())];
+};
+const sentences = (t: string) => t.split(/(?<=[.!?…])(?=\s)|\n+/).map((p) => p.trim()).filter(Boolean).flatMap(splitLong);
+/** script.py pause_seconds: the gap after a block and between its sentences. */
+const pauseOf = (t: string) => BLOCK_GAP + SENT_GAP * Math.max(0, sentences(t).length - 1);
 const mss = (s: number) => { const r = Math.round(s); return `${Math.floor(r / 60)}:${String(r % 60).padStart(2, "0")}`; };
 /** The reading pace the server used for its estimate, so block durations update while typing. */
 const paceOf = (d: ScriptData) => {
-  const n = d.blocks.reduce((a, b) => a + syllables(b.text), 0), talk = d.estimate - PAUSE * d.blocks.length;
+  const n = d.blocks.reduce((a, b) => a + syllables(b.text), 0), talk = d.estimate - d.blocks.reduce((a, b) => a + pauseOf(b.text), 0);
   return n && talk > 0 ? n * 60 / talk : 190;
 };
-const blockSecs = (b: ScriptBlock, spm: number) => syllables(b.text) / spm * 60 + PAUSE;
+const blockSecs = (b: ScriptBlock, spm: number) => syllables(b.text) / spm * 60 + pauseOf(b.text);
 const KIND_LABEL = { hook: "HOOK", mo_dau: "MỞ ĐẦU", ket: "KẾT" } as const;
 const grow = (el: HTMLTextAreaElement | null) => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight + 2}px`; } };
 
@@ -144,6 +154,7 @@ export default function ScriptEditor({ job, film, templates, onJob, onRun }: {
           <button className="ghost small" disabled={!!act} onClick={rewriteAll}>Viết lại kịch bản</button>
         </div>
       )}
+      {written && !busy && job.warnings.map((w) => <p key={w} className="se-banner" role="status"><Icon name="alert" size={15} /> {w}</p>)}
       {written && job.stale_from === "script" && !busy && (
         <p className="se-banner" role="status"><Icon name="alert" size={15} /> Cài đặt kịch bản đã đổi. Bấm “Viết lại kịch bản” để áp dụng; duyệt ngay thì kịch bản cũng được viết lại trước khi dựng.</p>
       )}

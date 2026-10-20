@@ -6,7 +6,7 @@ from autosub.models import (ChunkSummary, FilmCharacter, MovieMeta, Notebook, No
                             ReviewSettings, SceneNote, ScriptBlock, Segment, TimeSpan)
 from autosub.review import notebook, pace, script, templates
 from autosub.storage import get_store
-from tests.fakes import FakeLLM, FakeTTS, review_llm_hook
+from tests.fakes import FakeLLM, FakeTTS, review_llm_capped, review_llm_hook
 from tests.review_helpers import ReviewRig, review_rig  # noqa: F401  (fixture)
 
 def test_syllables():
@@ -117,9 +117,55 @@ def test_length_retry():
             prompt = re.sub(r"TARGET (\d+)", lambda m: f"TARGET {int(m[1]) // 2}", prompt)
         return review_llm_hook(prompt, schema)
     s = _build(FakeLLM(hook))
-    assert len(calls) == 2 and "ngắn hơn mục tiêu" in calls[1] and "khoảng 950 âm tiết" in calls[1]
-    assert sum(pace.syllables(b.text) for b in s.blocks) == 950
-    assert script.estimate_seconds(s, 190) == pytest.approx(300 + 4 * 0.35)
+    n = script.target_syllables(300, 190)
+    assert len(calls) == 2 and "ngắn hơn mục tiêu" in calls[1] and f"khoảng {n} âm tiết" in calls[1]
+    assert sum(pace.syllables(b.text) for b in s.blocks) == n
+    assert script.estimate_seconds(s, 190) == pytest.approx(n / 190 * 60 + 4 * 0.35)
+
+def test_target_leaves_room_for_the_pauses():
+    n = script.target_syllables(900, 190)
+    assert 2650 < n < 900 / 60 * 190                     # 15 min: the pauses take ~30 s of the 2,850 syllables
+    s = script.Script(blocks=[ScriptBlock(id=1, kind="than", text="Một hai ba. Bốn năm!\nSáu bảy.")])
+    assert script.estimate_seconds(s, 60) == pytest.approx(7 + 0.35 + 2 * 0.15)
+
+def test_prompt_budgets_body_blocks():
+    llm = FakeLLM(review_llm_hook)
+    _build(llm, settings=ReviewSettings(minutes=15))
+    n = script.target_syllables(900, 190)
+    m = re.search(r"(\d+) khối than mỗi khối khoảng (\d+) âm tiết", llm.prompts[0])
+    assert m and int(m[1]) == round(n / 220) and int(m[1]) * int(m[2]) > 0.85 * n
+    assert "ngắn hơn TARGET là không đạt" in llm.prompts[0]
+
+def test_capped_llm_reaches_long_target_by_extending():
+    mine = ScriptBlock(id=3, kind="than", text="Câu tôi tự viết", scenes=[TimeSpan(start=150, end=155)],
+                       source_start=150, source_end=160, edited=True)
+    llm = FakeLLM(review_llm_capped(1600))
+    s15 = _build(llm, settings=ReviewSettings(minutes=15), locked=[mine])
+    ext = [p for p in llm.prompts if "UNCOVERED" in p]
+    assert ext and "Tiểu Minh rời nhà" in ext[0] and "không bịa" in ext[0] and "Bản nháp hiện tại" in ext[0]
+    assert script.estimate_seconds(s15, 190) >= 0.85 * 900
+    starts = [b.source_start for b in s15.blocks if b.kind == "than"]
+    assert starts == sorted(starts) and [b.kind for b in s15.blocks][:2] == ["hook", "mo_dau"]
+    assert s15.blocks[-1].kind == "ket" and [b.id for b in s15.blocks] == list(range(1, len(s15.blocks) + 1))
+    assert [(b.text, b.scenes) for b in s15.blocks if b.edited] == [(mine.text, mine.scenes)]
+    s10 = _build(FakeLLM(review_llm_capped(1600)), settings=ReviewSettings(minutes=10))
+    ratio = script.estimate_seconds(s15, 190) / script.estimate_seconds(s10, 190)
+    assert ratio == pytest.approx(1.5, rel=0.1)
+
+def test_extension_stops_without_progress():
+    llm = FakeLLM(review_llm_capped(1600, extend=False))
+    s = _build(llm, settings=ReviewSettings(minutes=15))
+    assert sum("UNCOVERED" in p for p in llm.prompts) == 1 and script.estimate_seconds(s, 190) < 0.85 * 900
+
+def test_short_script_warns(review_rig):
+    review_rig.film_done()
+    p = review_rig.part()
+    review_rig.llm.hook = review_llm_capped(10, extend=False)
+    job = review_rig.run(p.id, mode="review")
+    assert job.warnings == ["Kịch bản ngắn hơn mục tiêu: 0.5/1 phút"]
+    assert "Kịch bản ngắn hơn mục tiêu" in get_store().get_bytes(store.key(p.id, "log.txt")).decode()
+    review_rig.llm.hook = review_llm_hook
+    assert review_rig.run(p.id, mode="review", from_step="script").warnings == []
 
 def test_prompt_rules():
     llm = FakeLLM(review_llm_hook)
@@ -133,7 +179,7 @@ def test_prompt_rules():
     for text in ["Tiểu Minh rời làng ra đi.", "Đứng trước cổng thành", "Ai gửi lá thư?", "xưng mình",
                  "Hook đã dùng: Ai đã giết Tiểu Minh?", templates.prompt("styles", "kich_tinh"),
                  templates.prompt("hooks", "cau_hoi"), templates.prompt("openings", "tom_tat_truoc"), "Nhắc tên đạo diễn",
-                 "Tiểu Minh rời nhà", "Phim thử", "Tiểu Minh", "RANGE 100.0 400.0", "TARGET 950",
+                 "Tiểu Minh rời nhà", "Phim thử", "Tiểu Minh", "RANGE 100.0 400.0", f"TARGET {script.target_syllables(300, 190)}",
                  "Chỉ kể những gì có trong tóm tắt, không thêm tình tiết", "kể ở ngôi thứ ba, bằng tiếng Việt",
                  "theo đúng thứ tự lời đọc kể", "hook, mo_dau và ket cũng phải có cảnh"]:
         assert text in p, text
@@ -147,7 +193,7 @@ def test_prompt_rules():
 def test_duplicate_hook_retried_once():
     def hook(prompt, schema):
         r = review_llm_hook(prompt, schema)
-        r["blocks"][0]["text"] = "ai đã giết tiểu minh"                  # 5 syllables = TARGET 20 / 4
+        r["blocks"][0]["text"] = "ai đã giết tiểu minh"                  # 5 syllables, about TARGET 19 / 4
         return r
     llm = FakeLLM(hook)
     nb = Notebook(entries=[NotebookEntry(job="a", index=1, range_label="", summary="", hooks=["Ai đã giết Tiểu Minh?"], rev=1)])
@@ -162,7 +208,7 @@ def test_script_step_stops_for_review(review_rig):
     blocks = store.load_json(p.id, "script.json")["blocks"]
     assert [b["kind"] for b in blocks] == ["hook", "mo_dau", "than", "ket"]
     assert "Không được tiết lộ cái kết" in review_rig.llm.prompts[-1]          # the only part is the last
-    assert "TARGET 20 " in review_rig.llm.prompts[-1]                          # minutes 1 x seeded pace 20/min
+    assert "TARGET 19 " in review_rig.llm.prompts[-1]                          # minutes 1 x seeded pace 20/min, less pauses
     n = len(review_rig.llm.prompts)
     job = review_rig.run(p.id, mode="auto")
     assert job.state == "done" and len(review_rig.llm.prompts) == n           # script cached

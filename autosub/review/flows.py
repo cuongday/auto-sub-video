@@ -176,7 +176,12 @@ def _script(ctx: Ctx):
     store.save_json(job.id, "script.json", s.model_dump(mode="json"))
     job.part.notebook_rev = notebook.rev_before(nb, job.part.index)
     job.segments_edited = False
-    ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {script.estimate_seconds(s, spm) / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
+    sec, goal = script.estimate_seconds(s, spm), job.review.minutes * 60
+    ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {sec / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
+    short = sec < goal * (1 - script.LENGTH_TOLERANCE)
+    job.warnings = [f"Kịch bản ngắn hơn mục tiêu: {sec / 60:.1f}/{job.review.minutes:g} phút"] if short else []
+    if short:
+        ctx.log(f"Cảnh báo: {job.warnings[0]}. Viết lại kịch bản hoặc thêm khối để đủ độ dài.")
 
 def _film_source(ctx: Ctx) -> tuple[Job, Path]:
     """The film job of this part and its source video in local scratch."""

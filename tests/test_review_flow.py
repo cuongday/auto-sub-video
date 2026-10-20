@@ -128,6 +128,24 @@ def test_series_position_counts_every_episode(review_rig):
     projects.save(proj)
     assert flows._title(store.load(first.id)) == "Phim thử\\NPHẦN 1"
 
+def test_kept_ending_shows_no_footage_past_the_story(review_rig):
+    from autosub.pipeline import make_ctx
+    from autosub.review import flows
+    review_rig.film_done()
+    p = review_rig.part()                                     # the only part is the last; spoil_ending is off
+    review_rig.run(p.id, mode="review")
+    sc = store.load_json(p.id, "script.json")
+    for b in sc["blocks"]:
+        b["source_end"] = 8.0 if b["kind"] == "than" else b["source_end"]     # the body stops telling at 8 s
+    store.save_json(p.id, "script.json", sc)
+    assert review_rig.run(p.id, mode="auto").state == "done"
+    plan = store.load_json(p.id, "shots.json")
+    assert plan and all(s["end"] <= 8.0 + 1e-6 for s in plan), plan    # hook/ket/fill never show the climax
+    job = store.load(p.id)
+    h = flows.review_step_hash(make_ctx(job), "assemble")
+    job.review.spoil_ending = True
+    assert flows.review_step_hash(make_ctx(job), "assemble") != h
+
 def test_part_outside_every_summary_fails_clearly(review_rig):
     review_rig.film_done()
     p = review_rig.part()

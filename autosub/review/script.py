@@ -49,10 +49,27 @@ def _clamp(a, b, part: PartInfo) -> TimeSpan | None:
 def _order(b: ScriptBlock, part: PartInfo):
     return KINDS.index(b.kind), (b.source_start if b.source_start is not None else part.start) if b.kind == "than" else 0
 
+def story_end(blocks: list[ScriptBlock], part: PartInfo, keep_ending: bool) -> float:
+    """Where the footage stops: the end of the part, or, with the ending kept, the end of what the body tells."""
+    ends = [b.source_end for b in blocks if b.kind == "than" and b.source_end is not None]
+    return min(part.end, max(ends)) if keep_ending and ends else part.end
+
 def validate_blocks(raw: list[dict], part: PartInfo, settings: ReviewSettings,
-                    locked: list[ScriptBlock] = ()) -> list[ScriptBlock]:
-    """Clean the LLM's blocks: scenes inside the part, canonical order, ids from 1; the user's locked blocks
-    keep their text and scenes and take the place of the model's block of the same kind (body: by source_start)."""
+                    locked: list[ScriptBlock] = (), keep_ending: bool = False) -> list[ScriptBlock]:
+    """Clean the LLM's blocks: scenes inside the part (ending kept: never past the body), canonical order, ids from 1;
+    the user's locked blocks keep their text and scenes and take the place of the model's block of the same kind
+    (body: by source_start)."""
+    out = _clean(raw, part)
+    if (end := story_end([*out, *locked], part, keep_ending)) < part.end:
+        out = _clean(raw, part.model_copy(update={"end": end}))
+    mine = {b.kind for b in locked if b.kind != "than"}
+    out = [b for b in out if b.kind not in mine] + [b.model_copy(update={"edited": True}) for b in locked]
+    out.sort(key=lambda b: _order(b, part))
+    tpl = {"hook": settings.hook, "mo_dau": opening_for(settings, part)}
+    return [b.model_copy(update={"id": i, "template": tpl.get(b.kind, "")})
+            for i, b in enumerate(out, 1)]
+
+def _clean(raw: list[dict], part: PartInfo) -> list[ScriptBlock]:
     out = []
     for r in raw:
         text = str(r.get("text", "")).strip()
@@ -66,12 +83,7 @@ def validate_blocks(raw: list[dict], part: PartInfo, settings: ReviewSettings,
             scenes = [src]
         out.append(ScriptBlock(id=0, kind=r["kind"], text=text, scenes=scenes,
                                source_start=src.start if src else None, source_end=src.end if src else None))
-    mine = {b.kind for b in locked if b.kind != "than"}
-    out = [b for b in out if b.kind not in mine] + [b.model_copy(update={"edited": True}) for b in locked]
-    out.sort(key=lambda b: _order(b, part))
-    tpl = {"hook": settings.hook, "mo_dau": opening_for(settings, part)}
-    return [b.model_copy(update={"id": i, "template": tpl.get(b.kind, "")})
-            for i, b in enumerate(out, 1)]
+    return out
 
 def _span(a: float, b: float) -> str:
     return f"[{a:.1f}–{b:.1f}]"
@@ -82,7 +94,9 @@ def _chunks(chunks: list[ChunkSummary], part: PartInfo) -> str:
     for c in chunks:
         if not inside(c):
             continue
-        rows.append(f"{_span(c.start, c.end)} {c.summary}")
+        whole = part.start <= c.start and c.end <= part.end    # across the boundary: its summary tells another part
+        rows.append(f"{_span(c.start, c.end)} {c.summary}" if whole
+                    else _span(max(c.start, part.start), min(c.end, part.end)))
         rows += [f"  - Sự kiện {_span(e.start, e.end)} {e.text}" for e in c.events if inside(e)]
         rows += [f"  - Cảnh nổi bật {_span(h.start, h.end)} {h.text}" for h in c.highlights if inside(h)]
     return "\n".join(rows) or "(không có)"
@@ -135,7 +149,7 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
     fix, length_tries, hook_tries = "", 0, 0
     while True:
         raw = llm.generate_json(prompt + fix, SCRIPT_SCHEMA).get("blocks", [])
-        blocks = validate_blocks(raw, part, settings, locked)
+        blocks = validate_blocks(raw, part, settings, locked, is_last and not settings.spoil_ending)
         n = sum(syllables(b.text) for b in blocks)
         draft = f"\n\nBản trước: {_dump(blocks)}"
         if target and abs(n - target) / target > LENGTH_TOLERANCE and length_tries < 2:

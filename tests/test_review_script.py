@@ -49,6 +49,18 @@ def test_validate_clamps_and_orders():
     assert (out[0].template, out[1].template, out[2].template) == ("cau_hoi", "gioi_thieu", "")
     assert script.validate_blocks(raw, PART.model_copy(update={"index": 2}), ReviewSettings())[1].template == "tom_tat_truoc"
 
+def test_kept_ending_clamps_footage_to_the_end_of_the_story():
+    sc = lambda a, b: {"start": a, "end": b}  # noqa: E731
+    raw = [{"kind": "hook", "text": "Hook?", "scenes": [sc(380, 395), sc(120, 125)], "source_start": 380, "source_end": 395},
+           {"kind": "than", "text": "Thân một.", "scenes": [], "source_start": 150, "source_end": 200},
+           {"kind": "than", "text": "Thân hai.", "scenes": [], "source_start": 200, "source_end": 250},
+           {"kind": "ket", "text": "Kết.", "scenes": [sc(240, 300)], "source_start": 240, "source_end": 400}]
+    out = script.validate_blocks(raw, PART, ReviewSettings(), keep_ending=True)
+    assert out[0].scenes == [TimeSpan(start=120, end=125)] and out[0].source_start is None   # climax footage gone
+    assert out[3].scenes == [TimeSpan(start=240, end=250)] and out[3].source_end == 250
+    assert script.story_end(out, PART, True) == 250 and script.story_end(out, PART, False) == 400
+    assert script.validate_blocks(raw, PART, ReviewSettings())[0].scenes[0] == TimeSpan(start=380, end=395)
+
 def test_locked_block_survives_rewrite():
     mine = ScriptBlock(id=3, kind="than", text="Câu tôi tự viết", scenes=[TimeSpan(start=90, end=95)],
                        source_start=200, source_end=220, edited=True)
@@ -68,6 +80,22 @@ def _build(llm, **kw):
                         ChunkSummary(start=1200, end=1800, summary="Đoạn không thuộc phần này.")],
                 part=PART, total_parts=1, is_last=False, settings=ReviewSettings(), notebook=Notebook(), spm=190)
     return script.build_script(llm, **{**args, **kw})
+
+def test_straddling_chunk_tells_only_its_part():
+    llm = FakeLLM(review_llm_hook)
+    chunks = [ChunkSummary(start=0, end=300, summary="Tóm tắt kể cả phần trước.",
+                           events=[SceneNote(start=50, end=60, text="Sự kiện phần trước"),
+                                   SceneNote(start=150, end=160, text="Sự kiện trong phần")],
+                           highlights=[SceneNote(start=200, end=210, text="Cảnh nổi bật trong phần")]),
+              ChunkSummary(start=300, end=350, summary="Đoạn nằm trọn trong phần."),
+              ChunkSummary(start=350, end=900, summary="Tóm tắt lộ phần sau.",
+                           events=[SceneNote(start=360, end=380, text="Sự kiện cuối phần")])]
+    _build(llm, chunks=chunks)
+    p = llm.prompts[-1]
+    for text in ["Sự kiện trong phần", "Cảnh nổi bật trong phần", "Đoạn nằm trọn trong phần.", "Sự kiện cuối phần"]:
+        assert text in p, text
+    for text in ["Tóm tắt kể cả phần trước.", "Tóm tắt lộ phần sau.", "Sự kiện phần trước"]:
+        assert text not in p, text
 
 def test_length_retry():
     calls = []

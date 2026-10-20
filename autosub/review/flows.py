@@ -259,6 +259,11 @@ def _music(job: Job) -> tuple[str, str] | None:
     info = get_store().stat(key) if key else None
     return (key, info.etag) if info else None
 
+def _story_end(job: Job, blocks) -> float:
+    """The last part with the ending kept shows no footage past what its body tells (the climax stays unseen)."""
+    _, last = _position(job, store.load(job.part.film_job))
+    return script.story_end(blocks, job.part, last and not job.review.spoil_ending)
+
 def _has_ass(job: Job) -> bool:
     """16:9 without subtitles burns nothing; 9:16 always has the title."""
     return job.review.subtitles or job.review.aspect == "9:16"
@@ -293,7 +298,8 @@ def _assemble(ctx: Ctx):
         bed = compose.music_bed(local, ctx.dir / "music_bed.wav", t, ctx.cancel)
     mix.mix(ctx.dir / "voice_raw.wav", bed, ctx.dir / "voice.wav", ctx.dir / "mix.m4a", rv.music_db, t,
             cancel=ctx.cancel, duck_db=-10 if rv.music_duck else None)
-    plan = shots.plan_shots(needs, (job.part.start, job.part.end), store.load_json(job.id, "cuts.json", default=[]))
+    plan = shots.plan_shots(needs, (job.part.start, _story_end(job, blocks)),
+                            store.load_json(job.id, "cuts.json", default=[]))
     store.save_json(job.id, "shots.json", [{"block": s.block, "start": s.start, "end": s.end} for s in plan])
     files = {"subs.ass": _has_ass(job) and compose.build_review_ass(
                  lines if rv.subtitles else [], rv.aspect, job.settings.style,
@@ -356,7 +362,7 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         m = _music(j)
         return _h(prev, step, [(b.id, [s.model_dump() for s in b.scenes], b.source_start, b.source_end) for b in blocks],
                   rv.subtitles, rv.aspect, st.style.model_dump(), m[1] if m else "", rv.music_db, rv.music_duck,
-                  _title(j) if rv.aspect == "9:16" else "")
+                  _title(j) if rv.aspect == "9:16" else "", _story_end(j, blocks))
     if step == "render":
         return _h(prev, step, rv.aspect, [r.model_dump() for r in rv.cover_regions], rv.cover)
     raise KeyError(step)

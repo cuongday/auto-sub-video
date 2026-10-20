@@ -152,3 +152,19 @@ def test_part_outside_every_summary_fails_clearly(review_rig):
     store.save_json(review_rig.film.id, "summary.json", {"chunks": [{"start": 100, "end": 200, "summary": "Sau này."}]})
     with pytest.raises(RuntimeError, match="Không có tóm tắt cho đoạn phim này"):
         review_rig.run(p.id, mode="review")
+
+def test_hook_and_ending_without_scenes_show_no_footage_before_the_dialogue(review_rig):
+    review_rig.film_done()
+    p = review_rig.part()
+    review_rig.run(p.id, mode="review")
+    lines = store.load_json(review_rig.film.id, "transcript.json")
+    store.save_json(review_rig.film.id, "transcript.json", [l for l in lines if l["start"] >= 6])   # first line at 12 s
+    sc = store.load_json(p.id, "script.json")
+    for b in sc["blocks"]:
+        if b["kind"] in ("hook", "ket"):
+            b["scenes"], b["source_start"], b["source_end"] = [], None, None
+    store.save_json(p.id, "script.json", sc)
+    assert review_rig.run(p.id, mode="auto").state == "done"
+    ids = {b["id"] for b in sc["blocks"] if b["kind"] in ("hook", "ket")}
+    plan = [s for s in store.load_json(p.id, "shots.json") if s["block"] in ids]
+    assert plan and all(s["start"] >= 10 - 1e-6 for s in plan), plan       # no studio logo under the hook

@@ -172,7 +172,7 @@ def _script(ctx: Ctx):
     spm = pace.measure_spm(ctx.engines.tts(st.tts_engine), st.tts_voice, st.tts_rate, ctx.ref_audio())
     s = script.build_script(pipeline._llm(ctx), meta=p.review.movie, characters=chars, chunks=chunks, part=job.part,
                             total_parts=total, is_last=last, settings=job.review, notebook=nb, spm=spm,
-                            locked=[b for b in old.blocks if b.edited])
+                            locked=[b for b in old.blocks if b.edited], lines=_lines(fj))
     store.save_json(job.id, "script.json", s.model_dump(mode="json"))
     job.part.notebook_rev = notebook.rev_before(nb, job.part.index)
     job.segments_edited = False
@@ -264,6 +264,15 @@ def _story_end(job: Job, blocks) -> float:
     _, last = _position(job, store.load(job.part.film_job))
     return script.story_end(blocks, job.part, last and not job.review.spoil_ending)
 
+def _window(job: Job, blocks) -> tuple[float, float]:
+    """Footage for fills: the part (up to the story's end) within 2 s of the film's dialogue, so neither the studio
+    logos before the first line nor the credits after the last one show up unless a scene points there."""
+    lines = _lines(store.load(job.part.film_job))
+    end = _story_end(job, blocks)
+    if not lines:
+        return job.part.start, end
+    return max(job.part.start, lines[0].start - 2), min(end, lines[-1].end + 2)
+
 def _has_ass(job: Job) -> bool:
     """16:9 without subtitles burns nothing; 9:16 always has the title."""
     return job.review.subtitles or job.review.aspect == "9:16"
@@ -287,7 +296,8 @@ def _assemble(ctx: Ctx):
             t += n["dur"]
         t += narration.BLOCK_GAP
         src = (b.source_start, b.source_end) if b.source_start is not None and b.source_end is not None else None
-        needs.append(shots.BlockNeed(b.id, t - start, [(s.start, s.end) for s in b.scenes], src))
+        needs.append(shots.BlockNeed(b.id, t - start, [(s.start, s.end) for s in b.scenes], src,
+                                     [n["dur"] for n in sents]))
     if not needs:
         raise RuntimeError("Không có lời đọc để dựng video")
     sf.write(ctx.dir / "voice_raw.wav", mix.build_voice_track(items, t), mix.SR, subtype="PCM_16")
@@ -299,7 +309,7 @@ def _assemble(ctx: Ctx):
     mix.mix(ctx.dir / "voice_raw.wav", bed, ctx.dir / "voice.wav", ctx.dir / "mix.m4a", rv.music_db, t,
             cancel=ctx.cancel, duck_db=-10 if rv.music_duck else None)
     plan = shots.plan_shots(needs, (job.part.start, _story_end(job, blocks)),
-                            store.load_json(job.id, "cuts.json", default=[]))
+                            store.load_json(job.id, "cuts.json", default=[]), _window(job, blocks))
     store.save_json(job.id, "shots.json", [{"block": s.block, "start": s.start, "end": s.end} for s in plan])
     files = {"subs.ass": _has_ass(job) and compose.build_review_ass(
                  lines if rv.subtitles else [], rv.aspect, job.settings.style,
@@ -362,7 +372,7 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         m = _music(j)
         return _h(prev, step, [(b.id, [s.model_dump() for s in b.scenes], b.source_start, b.source_end) for b in blocks],
                   rv.subtitles, rv.aspect, st.style.model_dump(), m[1] if m else "", rv.music_db, rv.music_duck,
-                  _title(j) if rv.aspect == "9:16" else "", _story_end(j, blocks))
+                  _title(j) if rv.aspect == "9:16" else "", _story_end(j, blocks), _window(j, blocks))
     if step == "render":
         return _h(prev, step, rv.aspect, [r.model_dump() for r in rv.cover_regions], rv.cover)
     raise KeyError(step)

@@ -1,5 +1,6 @@
 """Film shots for a review video: real scene cuts (ffmpeg `scene` score) and a deterministic plan that fills each
 script block's narration with 2-6 s straight-cut shots of the film (no slow motion)."""
+import bisect
 import re
 import threading
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ class BlockNeed:
     duration: float                          # narration seconds to cover
     scenes: list[tuple[float, float]]
     source: tuple[float, float] | None
+    weights: list[float] | None = None       # sentence times: one per scene splits the block by them
 
 @dataclass(frozen=True)
 class Shot:
@@ -36,97 +38,140 @@ def detect_cuts(src: Path, start: float, end: float, cancel: threading.Event | N
              on_line=on_line, cancel=cancel)
     return sorted(cuts)
 
-def _plan_block(b: BlockNeed, part: tuple[float, float], cuts: list[float]) -> list[Shot]:
+def _snap(a: float, cuts: list[float], lo: float, hi: float) -> float:
+    """a moved to the nearest real cut within 1 s, kept inside [lo, hi]."""
+    i = bisect.bisect_left(cuts, a - 1)
+    near = [c for c in cuts[i:i + 64] if abs(c - a) <= 1]
+    return min(max(min(near, key=lambda c: abs(c - a)) if near else a, lo), hi)
+
+def _pieces(start: float, length: float, cuts: list[float], lo: float, hi: float) -> list[list[float]]:
+    """Footage [start, start + length] cut into 2-6 s shots, at real cuts where they fit; each keeps its region."""
+    out, x, end = [], start, start + length
+    while end - x > MAX_SHOT:
+        i = bisect.bisect_left(cuts, x + MIN_SHOT)
+        top = min(x + MAX_SHOT, end - MIN_SHOT)
+        y = cuts[i] if i < len(cuts) and cuts[i] <= top else x + min(MAX_SHOT, end - x - MIN_SHOT)
+        out.append([x, y, lo, hi])
+        x = y
+    return out + [[x, end, lo, hi]]
+
+def _plan_block(b: BlockNeed, part: tuple[float, float], window: tuple[float, float], stretch: tuple[float, float],
+                cuts: list[float]) -> list[Shot]:
     p0, p1 = part
+    w0, w1 = window
     if b.duration <= 0:
         return []
     if p1 - p0 < MIN_SHOT:
         raise RuntimeError("Phần phim quá ngắn để cắt cảnh")
-    shots: list[list[float]] = []
-    total = lambda: sum(e - s for s, e in shots)  # noqa: E731
     need = b.duration - 1e-6                     # float noise never adds a shot
     same = lambda x, y: abs(x[0] - y[0]) < SAME  # noqa: E731
 
-    # 1. the block's scenes in order, snapped to a real cut within 1 s
-    for a, e in b.scenes:
-        a = min(max(a, p0), p1 - MIN_SHOT)
-        near = [c for c in cuts if abs(c - a) <= 1]
-        s = min(max(min(near, key=lambda c: abs(c - a)) if near else a, p0), p1 - MIN_SHOT)
-        sh = [s, min(p1, s + max(MIN_SHOT, min(MAX_SHOT, e - s)))]
-        if any(same(sh, o) for o in shots):          # clustered scenes: same start or snapped to the same cut
-            continue
-        inside = next((o for o in shots if o[0] < s < o[1]), None)
-        if inside and s - inside[0] < MIN_SHOT:      # starts inside an earlier shot too early to trim it
-            continue
-        if inside:
-            inside[1] = s
-        shots.append(sh)
-    # 2. widen each up to MAX_SHOT, never into another shot of the block
-    for sh in shots:
-        if total() >= need:
-            break
-        room = min([sh[0] + MAX_SHOT, p1] + [o[0] for o in shots if o is not sh and o[0] >= sh[0]])
-        sh[1] = max(sh[1], min(room, sh[1] + b.duration - total()))
-    # 3. new shots at unused cuts: inside the source range first (in order), then nearest to it
-    ref = b.source or ((shots[0][0],) * 2 if shots else (p0, p0))
-
-    def add_from(starts: list[float]):
-        for c in sorted(starts, key=lambda c: (max(ref[0] - c, 0, c - ref[1]), c)):
-            if total() >= need:
-                return
-            if any(s <= c < e for s, e in shots):
+    # 1. scenes in narration order (never re-sorted), snapped to a real cut within 1 s, each with its share of the
+    # narration: its sentence's time when there is one sentence per scene, else equal shares. A scene under MIN_SHOT
+    # from a kept one, or with under MIN_SHOT to tell, gives its share to the scene before
+    ws = b.weights if b.weights and len(b.weights) == len(b.scenes) and sum(b.weights) > 0 else [1.0] * len(b.scenes)
+    kept: list[list[float]] = []             # [start, share, scene end]
+    for (a, e), w in zip(b.scenes, ws):
+        s = _snap(min(max(a, p0), p1 - MIN_SHOT), cuts, p0, p1 - MIN_SHOT)
+        d = b.duration * w / sum(ws)
+        if kept and (d < MIN_SHOT - 1e-9 or any(abs(s - k[0]) < MIN_SHOT for k in kept)):
+            kept[-1][1] += d
+        else:
+            kept.append([s, d, min(max(e, p0), p1)])
+    if len(kept) > 1 and kept[0][1] < MIN_SHOT - 1e-9:   # a too-short first scene gives its share to the next
+        first = kept.pop(0)
+        kept[0][1] += first[1]
+    # 2. each scene's footage runs forward from it, up to the next scene ahead in film time or the end of the window;
+    # what does not fit carries to the next scene, the last one slides back (never into the footage before it)
+    runs, carry = [], 0.0                    # [start, length, region lo, region hi]
+    for i, (s, d, e) in enumerate(kept):
+        lo, hi = min(w0, s), min(p1, max(w1, e, s + MIN_SHOT))
+        top = min([hi] + [k[0] for k in kept if k[0] > s])
+        todo = d + carry
+        if i < len(kept) - 1:
+            runs.append([s, min(todo, top - s), lo, hi])
+        else:
+            lo = max([lo] + [r[0] + r[1] for r in runs if r[0] < s])
+            start = max(lo, min(s, top - todo))
+            runs.append([start, min(todo, top - start), lo, hi])
+        carry = todo - runs[-1][1]
+    # 3. no scenes: shots spread evenly over the block's stretch of film
+    if not kept:
+        a, z = stretch
+        lens = [e - s for s, e, *_ in _pieces(0, b.duration, [], 0, 0)]
+        if z - a < b.duration - 1e-6:        # stretch shorter than the block: all of it, then reuse
+            runs, carry = [[a, z - a, a, z]], b.duration - (z - a)
+        else:
+            step = (z - a - lens[-1]) / (len(lens) - 1) if len(lens) > 1 else 0
+            t0 = a if len(lens) > 1 else a + (z - a - lens[0]) / 2
+            runs = [[_snap(t0 + j * step, cuts, a, z - n), n, a, z] for j, n in enumerate(lens)]
+    shots = [sh for r in runs for sh in _pieces(r[0], r[1], cuts, r[2], r[3])]
+    # 4. the window has no footage left to tell: reuse shots, never the same one twice in a row
+    if carry > 1e-6:
+        if len(shots) == 1:                  # one shot fills the window: alternate it with another framing of it
+            alts = [[w0, min(w1, w0 + MAX_SHOT)], [max(w0, w1 - MAX_SHOT), w1], [w1 - MIN_SHOT, w1]]
+            shots.append(next((x for x in alts if not same(x, shots[0])), alts[0]) + [w0, w1])
+        pool, i = list(shots), 0
+        # ponytail: a window under MIN_SHOT + SAME has no second framing and repeats back to back (parts are >= 60 s)
+        alternate = any(not same(x, pool[0]) for x in pool)
+        while sum(e - s for s, e, *_ in shots) < need:
+            sh = pool[i % len(pool)]
+            i += 1
+            if alternate and same(sh, shots[-1]):
                 continue
-            end = min([c + MAX_SHOT, p1] + [x for x in starts if x >= c + MIN_SHOT] + [s for s, _ in shots if s > c])
-            if end - c >= MIN_SHOT:
-                shots.append([c, end])
-
-    add_from([c for c in cuts if p0 <= c < p1])
-    # cuts used up: unused footage between the shots, in MAX_SHOT steps (films with few detected cuts)
-    grid, t = [], p0
-    for s, e in sorted(shots) + [[p1, p1]]:
-        x = t
-        while x <= s - MIN_SHOT:
-            grid.append(x)
-            x += MAX_SHOT
-        t = max(t, e)
-    add_from(grid)
-    # 4. the part has no unused footage left: reuse shots, never the same one twice in a row
-    if len(shots) == 1:                      # one shot fills the part: alternate it with another framing of the part
-        alts = [[p0, min(p1, p0 + MAX_SHOT)], [max(p0, p1 - MAX_SHOT), p1], [p1 - MIN_SHOT, p1]]
-        shots.append(next((a for a in alts if not same(a, shots[0])), alts[0]))
-    pool, i = list(shots), 0
-    # ponytail: a part under MIN_SHOT + SAME has no second framing and repeats back to back (parts are >= 60 s)
-    alternate = any(not same(x, pool[0]) for x in pool)
-    while total() < need:
-        sh = pool[i % len(pool)]
-        i += 1
-        if alternate and same(sh, shots[-1]):
-            continue
-        shots.append(list(sh))
+            shots.append(list(sh))
     # 5. cut the last shot to the exact duration; a too-short last shot borrows from the one before
     # (a block shorter than MIN_LAST gets one shot of its own length: accepted)
     out, acc = [], 0.0
-    for s, e in shots:
+    for s, e, lo, hi in shots:
         if acc + e - s >= need:
-            out.append([s, s + b.duration - acc])
+            out.append([s, s + b.duration - acc, lo, hi])
             break
-        out.append([s, e])
+        out.append([s, e, lo, hi])
         acc += e - s
     if len(out) > 1 and (d := MIN_LAST - (out[-1][1] - out[-1][0])) > 0:
         prev, last = out[-2], out[-1]
         if prev[1] - prev[0] - d >= MIN_SHOT:
             prev[1] -= d
             last[1] += d
-            if last[1] > p1:
-                last[0], last[1] = last[0] - (last[1] - p1), p1
+            if last[1] > last[3]:
+                last[0], last[1] = last[0] - (last[1] - last[3]), last[3]
         else:                                # prev is under MIN_SHOT + MIN_LAST: it absorbs the last shot
             n = prev[1] - prev[0] + last[1] - last[0]
-            start = min(prev[0], p1 - n)
-            if start >= p0:                  # else the part is too short to merge: keep the short last shot
+            start = min(prev[0], prev[3] - n)
+            if start >= min(prev[2], w0):    # else the window is too short to merge: keep the short last shot
                 out.pop()
                 prev[0], prev[1] = start, start + n
-    return [Shot(b.id, s, e) for s, e in out]
+    return [Shot(b.id, s, e) for s, e, *_ in out]
 
-def plan_shots(blocks: list[BlockNeed], part: tuple[float, float], cuts: list[float]) -> list[Shot]:
-    """Shots covering each block's narration, in block order. Pure: same input, same plan."""
-    return [sh for b in blocks for sh in _plan_block(b, part, sorted(cuts))]
+def _span(b: BlockNeed, part: tuple[float, float]) -> tuple[float, float] | None:
+    """The film the block tells: its source range, else its scenes, inside the part."""
+    p0, p1 = part
+    a, z = b.source or (min((s for s, _ in b.scenes), default=p1), max((e for _, e in b.scenes), default=p0))
+    a, z = max(a, p0), min(z, p1)
+    return (a, z) if z > a else None
+
+def plan_shots(blocks: list[BlockNeed], part: tuple[float, float], cuts: list[float],
+               window: tuple[float, float] | None = None) -> list[Shot]:
+    """Shots covering each block's narration, in block order. Scenes keep their times inside the part; all other
+    footage comes from the window (the part's dialogue). Pure: same input, same plan."""
+    cuts = sorted(cuts)
+    w0, w1 = window or part
+    w0, w1 = max(w0, part[0]), min(w1, part[1])
+    if w1 - w0 < MIN_SHOT:
+        w0, w1 = part
+    spans = [_span(b, part) for b in blocks]
+    out = []
+    for i, b in enumerate(blocks):
+        if b.source and spans[i]:            # its own range inside the window, grown to its duration
+            a, z = max(spans[i][0], w0), min(spans[i][1], w1)
+            if z - a < b.duration:
+                z = min(w1, max(a, w0) + b.duration)
+                a = max(w0, z - b.duration)
+        else:                                # the film between the blocks around it, else the whole window
+            a = max(w0, next((s[1] for s in reversed(spans[:i]) if s), w0))
+            z = min(w1, next((s[0] for s in spans[i + 1:] if s), w1))
+            if z - a < b.duration:
+                a, z = w0, w1
+        out += _plan_block(b, part, (w0, w1), (a, z), cuts)
+    return out

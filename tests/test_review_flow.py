@@ -197,3 +197,25 @@ def test_layout_change_reruns_assemble_and_render_only(review_rig):
         [True, True, True, False, False]
     ass = get_store().get_bytes(store.key(p.id, "subs.ass")).decode()
     assert "\\pos(540,1056)" in ass and "PHẦN 1" not in ass
+
+def test_old_parts_keep_their_assemble_hash_and_bare_9x16_burns_nothing(review_rig, monkeypatch):
+    from autosub.pipeline import make_ctx
+    from autosub.review import flows
+    review_rig.film_done()
+    p = review_rig.part()
+    review_rig.run(p.id, mode="review")
+    job = store.load(p.id)
+    args, real = [], flows._h
+    monkeypatch.setattr(flows, "_h", lambda *a: args.append(a) or real(*a))
+    flows.review_step_hash(make_ctx(job), "assemble")
+    assert len(args[-1]) == 12               # default layout: the same 12 inputs as before, old parts stay fresh
+    job.review.show_title = False
+    flows.review_step_hash(make_ctx(job), "assemble")
+    assert args[-1][-1] == {"show_title": False}
+    job.review.subtitles = False
+    store.save(job)
+    assert review_rig.run(p.id, mode="auto").state == "done"
+    assert not store.exists(p.id, "subs.ass")                                    # nothing to burn
+    with pytest.raises(RuntimeError, match="Dựng video trước"):
+        store.save_json(p.id, "shots.json", [])
+        flows.preview(store.load(p.id), 1.0)

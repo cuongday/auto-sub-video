@@ -366,6 +366,28 @@ def test_render_settings_reach_scripted_parts(client, rig):
     assert client.put(f"{base}/settings", json={"settings": rs, "job_settings": js}).status_code == 200
     assert client.get(f"/api/jobs/{p1.id}").json()["state"] == "approved"       # nothing changed: stays approved
 
+def test_project_save_keeps_a_parts_own_layout(client, rig):
+    rig.film_done()
+    jid = parts.create_parts(store.load(rig.film.id), [])[0].id
+    client.post(f"/api/jobs/{jid}/run", json={"mode": "auto"})
+    j = done(client, jid)
+    own = {**j["review"], "sub_region": {"x": 0.1, "y": 0.5, "w": 0.8, "h": 0.1}, "show_title": False,
+           "cover_regions": [{"x": 0, "y": 0.7, "w": 1, "h": 0.2}], "cover": "solid"}
+    client.put(f"/api/jobs/{jid}/review-settings", json=own)
+    base = f"/api/review/projects/{rig.project.id}"
+    rs = {**projects.get(rig.project.id).review.settings.model_dump(mode="json"), "music_db": -10}
+    assert client.put(f"{base}/settings", json={"settings": rs}).status_code == 200
+    rv = client.get(f"/api/jobs/{jid}").json()["review"]
+    assert rv["music_db"] == -10                                                   # the changed field reaches it
+    assert rv["sub_region"]["y"] == 0.5 and rv["show_title"] is False             # its own layout and cover stay
+    assert rv["cover_regions"] == own["cover_regions"] and rv["cover"] == "solid"
+
+def test_review_preview_refused_while_running(client, rig, monkeypatch):
+    jid = parts.create_parts(store.load(rig.film.id), [])[0].id
+    monkeypatch.setattr(api.QUEUE, "is_active", lambda j: j == jid)
+    r = client.post(f"/api/jobs/{jid}/review-preview", json={"t": 0})
+    assert r.status_code == 409 and r.json()["detail"] == "Job đang chạy hoặc đang chờ trong hàng đợi"
+
 def test_deleting_a_part_does_not_block_the_next(client, rig):
     rig.film_done()
     p1, p2 = parts.create_parts(store.load(rig.film.id), [62.0])

@@ -279,8 +279,8 @@ def _window(job: Job, blocks) -> tuple[float, float]:
     return max(job.part.start, lines[0].start - 2), min(end, lines[-1].end + 2)
 
 def _has_ass(job: Job) -> bool:
-    """16:9 without subtitles burns nothing; 9:16 always has the title."""
-    return job.review.subtitles or job.review.aspect == "9:16"
+    """Burn an ASS only when it carries something: the narration subtitles or the 9:16 title."""
+    return job.review.subtitles or (job.review.aspect == "9:16" and job.review.show_title)
 
 def _timeline(blocks, nar: list[dict]) -> tuple[float, list[tuple[float, str]], list[Segment], list[shots.BlockNeed]]:
     """The narration laid out block after block: (length, (start, tts file) of each sentence, subtitle lines,
@@ -370,7 +370,9 @@ def preview(job: Job, t: float) -> float:
         if src is None:
             raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
         w = workdir.WorkDir(job.id)
-        t, at, plan = max(0.0, t), 0.0, store.load_json(job.id, "shots.json")
+        t, at, plan = max(0.0, t), 0.0, store.load_json(job.id, "shots.json", default=[])
+        if not plan:
+            raise RuntimeError("Dựng video trước rồi mới chỉnh")
         for s in plan:
             if t < at + s["end"] - s["start"]:
                 break
@@ -417,7 +419,8 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         return _h(prev, step, [(b.id, [s.model_dump() for s in b.scenes], b.source_start, b.source_end) for b in blocks],
                   rv.subtitles, rv.aspect, st.style.model_dump(), m[1] if m else "", rv.music_db, rv.music_duck,
                   _title(j) if rv.aspect == "9:16" else "", _story_end(j, blocks), _window(j, blocks),
-                  rv.model_dump(mode="json", include={"sub_region", "title_region", "show_title"}))
+                  *([lay] if (lay := rv.model_dump(mode="json", include={"sub_region", "title_region", "show_title"},
+                                                   exclude_defaults=True)) else []))   # default: old hashes hold
     if step == "render":
         return _h(prev, step, rv.aspect, [r.model_dump() for r in rv.cover_regions], rv.cover)
     raise KeyError(step)

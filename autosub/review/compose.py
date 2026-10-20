@@ -61,7 +61,8 @@ def preview_frame(src: Path, t: float, out: Path, aspect: str, info: VideoInfo, 
     graph = frame_filter(aspect, info, cover_boxes, cover)
     if ass:
         render._link_fonts(work)
-        graph = graph[:-3] + f"[fr];[fr]ass={Path(ass).name}:fontsdir=fonts[v]"
+        assert graph.endswith("[v]")
+        graph = graph.removesuffix("[v]") + f"[fr];[fr]ass={Path(ass).name}:fontsdir=fonts[v]"
     tmp = work / (out.stem + ".tmp.jpg")
     proc.run_ffmpeg(["-ss", f"{max(0.0, t):.3f}", "-i", str(Path(src).resolve()), "-frames:v", "1",
                      "-filter_complex", graph, "-map", "[v]", "-q:v", "3", tmp.name], cwd=work)

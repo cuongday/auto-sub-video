@@ -283,8 +283,14 @@ RENDER_JOB_FIELDS = {"tts_engine", "tts_voice", "tts_rate", "style"}
 @router.put("/api/review/projects/{pid}/settings")
 def put_project_settings(pid: str, body: ProjectSettingsIn):
     """Shared settings: all of them go to parts whose script is not written yet; the voice, subtitle style and
-    render fields also go to parts already scripted (not running), which then only redo voice/assembly/render."""
+    render fields also go to parts already scripted (not running), which then only redo voice/assembly/render.
+    Scripted parts get only the fields this save changed, so a part's own layout/cover survives other edits."""
     p = _review(pid)
+    old_rv = p.review.settings
+    old_js = JobSettings.model_validate(p.review.job_settings) if p.review.job_settings else None
+    rv_changed = {f for f in RENDER_FIELDS if getattr(old_rv, f) != getattr(body.settings, f)}
+    js_changed = set() if body.job_settings is None else {
+        f for f in RENDER_JOB_FIELDS if old_js is None or getattr(old_js, f) != getattr(body.job_settings, f)}
     p.review.settings = body.settings
     if body.job_settings is not None:
         p.review.job_settings = body.job_settings.model_copy(update={"ref_audio": None}).model_dump(mode="json")
@@ -300,11 +306,11 @@ def put_project_settings(pid: str, body: ProjectSettingsIn):
             if body.job_settings is not None:     # a part keeps its own uploaded voice sample
                 j.settings = body.job_settings.model_copy(update={"ref_audio": j.settings.ref_audio}, deep=True)
         else:
-            j.review = ReviewSettings.model_validate({**j.review.model_dump(),
-                                                     **body.settings.model_dump(include=RENDER_FIELDS)})
-            if body.job_settings is not None:
+            new = body.settings.model_dump()
+            j.review = ReviewSettings.model_validate({**j.review.model_dump(), **{f: new[f] for f in rv_changed}})
+            if js_changed:
                 j.settings = JobSettings.model_validate({**j.settings.model_dump(),
-                                                         **body.job_settings.model_dump(include=RENDER_JOB_FIELDS)})
+                                                         **body.job_settings.model_dump(include=js_changed)})
         if (j.review, j.settings) != before:
             api._unapprove(j)
             store.save(j)
@@ -512,7 +518,8 @@ class PreviewIn(BaseModel):
 async def review_preview(jid: str, body: PreviewIn):
     """One frame of the part's video at narration time t with its current cover / subtitle / title settings."""
     job = _part(jid)
-    if job.steps["assemble"].status != "done" or not store.exists(jid, "shots.json"):
+    api._idle(job)
+    if job.steps["assemble"].status != "done" or not store.load_json(jid, "shots.json", default=[]):
         raise HTTPException(409, "Dựng video trước rồi mới chỉnh")
     if not math.isfinite(body.t):
         raise HTTPException(400, "Thời điểm không hợp lệ")

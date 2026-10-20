@@ -12,6 +12,15 @@ const DEFAULT: Record<ReviewSettings["aspect"], { subs: Region; title: Region | 
   "16:9": { subs: { x: 0.05, y: 0.8, w: 0.9, h: 0.14 }, title: null },
 };
 const OUT = { "9:16": { width: 1080, height: 1920 }, "16:9": { width: 1920, height: 1080 } };
+const FRAMES = 6;   // setup frames grabbed per film (autosub/media.py grab_frames): f<i> at duration * (i + .5) / 6
+
+/** A setup frame of the film inside the part's span, else f0. */
+function filmFrame(job: Job): string {
+  const { part, info } = job;
+  const i = Array.from({ length: FRAMES }, (_, k) => k)
+    .find((k) => { const t = info!.duration * (k + 0.5) / FRAMES; return t >= part!.start && t <= part!.end; }) ?? 0;
+  return api.file(part!.film_job, `frames/f${i}.jpg`);
+}
 
 /** The look of a rendered part: subtitle/title boxes on the output frame, cover over the film, subtitle style;
  *  a real frame (ffmpeg) to check, then save and re-render (only assembly/render rerun). */
@@ -31,6 +40,8 @@ export default function ReviewLayout({ job, options, onJob, onRun }: {
   const timer = useRef<number>();
   const slide = useRef<number>();
   const at = useRef(0);
+  const seq = useRef(0);      // only the newest preview request may set the image
+  const [coverSrc, setCoverSrc] = useState("");
   const busy = job.state === "running" || job.state === "queued";
   const ready = job.steps.assemble?.status === "done";
   const aspect = rv.aspect;
@@ -59,13 +70,21 @@ export default function ReviewLayout({ job, options, onJob, onRun }: {
     setAct(key); setErr("");
     try { await fn(); } catch (e) { setErr((e as Error).message); } finally { setAct(""); }
   };
-  const preview = (at: number) => run("preview", async () => {
+  const preview = (t: number) => run("preview", async () => {
+    const n = ++seq.current;
     await flush();
-    const r = await api.reviewPreview(job.id, at);
-    setImg(r.url); setLength(r.duration);
+    const r = await api.reviewPreview(job.id, t);
+    if (n === seq.current) { setImg(r.url); setLength(r.duration); }
   });
 
   useEffect(() => { if (ready && !busy) preview(0); }, [job.id, ready]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {   // the frame inside the part, else (frames not grabbed) a scene thumbnail of the part
+    if (!film || !job.part) return;
+    const src = filmFrame(job), probe = new Image();
+    probe.onload = () => setCoverSrc(src);
+    probe.onerror = () => setCoverSrc(api.thumbUrl(job.id, job.part!.start));
+    probe.src = src;
+  }, [job.id]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { window.clearTimeout(slide.current); flush().catch(() => {}); }, [job.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ready) return (
@@ -121,7 +140,7 @@ export default function ReviewLayout({ job, options, onJob, onRun }: {
               <label className="inline check rl-check"><input type="checkbox" checked={rv.show_title}
                 onChange={(e) => setReview({ show_title: e.target.checked })} /> Hiện tiêu đề (tên phim, phần)</label>
             )}
-            {!rv.subtitles && <p className="muted small">Phụ đề lời đọc đang tắt (tab Kịch bản), chỉ còn tiêu đề.</p>}
+            {!rv.subtitles && <p className="muted small">Phụ đề lời đọc đang tắt (tab Kịch bản){aspect === "9:16" && rv.show_title ? ", chỉ còn tiêu đề." : "."}</p>}
             <CoverControls s={s} set={set} textOnly autoFont={autoFontSize(sub, { ...out, duration: 0, fps: 30, has_audio: true })} fonts={options.fonts} />
           </section>
 
@@ -135,8 +154,8 @@ export default function ReviewLayout({ job, options, onJob, onRun }: {
                 onClick={() => { setReview({ cover_regions: [...regions, { x: 0.1, y: 0.8, w: 0.8, h: 0.12 }] }); setCover(regions.length); }}>
                 + Thêm vùng che</button>
             </header>
-            {film && job.part && (
-              <RegionPicker coverOnly src={api.file(job.part.film_job, "frames/f2.jpg")} aspect={film.width / film.height}
+            {film && coverSrc && (
+              <RegionPicker coverOnly src={coverSrc} aspect={film.width / film.height}
                 regions={regions} active={Math.min(cover, Math.max(0, regions.length - 1))} onActive={setCover}
                 onChange={(i, r) => setReview({ cover_regions: i < regions.length ? regions.map((x, k) => k === i ? r : x) : [...regions, r] })}
                 onRemove={(i) => { setReview({ cover_regions: regions.filter((_, k) => k !== i) }); setCover(0); }} />

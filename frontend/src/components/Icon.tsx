@@ -11,6 +11,7 @@ const PATHS = {
   clapper: "M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z M4 10l-.6-3.4 15.8-2.8.5 3.4z M8.5 6l2.2 3.2 M13.3 5.2l2.2 3.2",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M20 20l-4-4",
   upload: "M12 20V9 M7 14l5-5 5 5 M5 4h14",
+  book: "M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z M5 17a3 3 0 0 1 3-3h11 M9 8h6",
 } as const;
 
 export type IconName = keyof typeof PATHS;

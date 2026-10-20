@@ -323,7 +323,10 @@ def test_music_upload_rejects_other_types(client, monkeypatch):
     key = projects.music_key(p.id, ".mp3")
     assert r.status_code == 200 and r.json()["review"]["music"] == key
     assert get_store().get_bytes(key) == b"ID3fake"
+    got = client.get(url)
+    assert got.status_code == 200 and got.content == b"ID3fake" and got.headers["content-type"] == "audio/mpeg"
     assert client.delete(url).json()["review"]["music"] is None and get_store().get_bytes(key) is None
+    assert client.get(url).status_code == 404
     monkeypatch.setattr(review_api, "MUSIC_MAX", 4)
     assert client.post(url, files={"file": ("nhac.mp3", b"ID3fake", "audio/mpeg")}).status_code == 413
 

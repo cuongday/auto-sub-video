@@ -16,7 +16,7 @@ from .models import (ChunkSummary, FilmCharacter, FilmInfo, Job, JobSettings, La
                      Script, ScriptBlock, Segment, SubTrack)
 from .projects import Project, ReviewProject
 from .review import notebook, pace, parts, script as script_mod, split, templates
-from .storage import get_store
+from .storage import content_type, get_store
 
 router = APIRouter()
 
@@ -321,6 +321,15 @@ async def upload_music(pid: str, file: UploadFile):
     p.review.music = key
     projects.save(p)
     return api._project_view(p)
+
+@router.get("/api/review/projects/{pid}/music")
+def get_music(pid: str):
+    """The background music, for the player on the project page (small file: no Range needed)."""
+    key = _review(pid).review.music
+    data = get_store().get_bytes(key) if key else None
+    if data is None:
+        raise HTTPException(404, "Chưa có nhạc nền")
+    return Response(data, media_type=content_type(key), headers={"Cache-Control": "no-cache"})
 
 @router.delete("/api/review/projects/{pid}/music")
 def delete_music(pid: str):

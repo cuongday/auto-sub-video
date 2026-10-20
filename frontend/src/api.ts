@@ -139,6 +139,7 @@ export const api = {
     const fd = new FormData(); fd.append("file", file);
     return j<Project>(fetch(`/api/review/projects/${pid}/music`, { method: "POST", body: fd }));
   },
+  musicUrl: (pid: string, bust: string | number) => `/api/review/projects/${pid}/music?v=${encodeURIComponent(bust)}`,
   deleteMusic: (pid: string) => j<Project>(fetch(`/api/review/projects/${pid}/music`, { method: "DELETE" })),
   notebook: (pid: string) => j<Notebook>(fetch(`/api/review/projects/${pid}/notebook`)),
   saveNotebook: (pid: string, nb: Notebook) => j<Notebook>(put(`/api/review/projects/${pid}/notebook`, nb)),

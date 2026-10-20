@@ -23,4 +23,15 @@ export const parseTime = (v: string): number | null => {
   const m = v.trim().match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/);
   return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : null;
 };
+/** h:mm:ss, for points in a whole film. */
+export const fmtClock = (t: number) => {
+  const s = Math.round(t);
+  return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+};
+/** "h:mm:ss", "m:ss" or seconds -> seconds; null when malformed. */
+export const parseClock = (v: string): number | null => {
+  const parts = v.trim().split(":");
+  if (parts.length > 3 || !parts.every((p) => /^\d+(\.\d+)?$/.test(p))) return null;
+  return parts.reduce((acc, p) => acc * 60 + Number(p), 0);
+};
 export const fmtDur = (s: number) => s < 60 ? `${Math.round(s)} giây` : `${Math.floor(s / 60)} phút ${Math.round(s % 60)} giây`;

@@ -8,7 +8,7 @@ const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "Trung" }, { id
 // vsmov descriptions are HTML: keep the text only (DOMParser never runs scripts)
 const plain = (html: string) => new DOMParser().parseFromString(html, "text/html").body.textContent?.trim() ?? "";
 
-function Poster({ src, alt = "" }: { src: string; alt?: string }) {
+export function Poster({ src, alt = "" }: { src: string; alt?: string }) {
   const [bad, setBad] = useState(false);
   return src && !bad ? <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setBad(true)} />
     : <span className="noimg" aria-hidden><Icon name="clapper" size={28} /></span>;

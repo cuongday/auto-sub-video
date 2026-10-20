@@ -11,6 +11,7 @@ import Login from "./views/Login";
 import NewJob from "./views/NewJob";
 import Progress from "./views/Progress";
 import ProjectView from "./views/ProjectView";
+import ReviewProjectView from "./views/ReviewProjectView";
 import Result from "./views/Result";
 import Review from "./views/Review";
 import ReviewSource from "./views/ReviewSource";
@@ -176,7 +177,9 @@ export default function App() {
             <ReviewSource onCreated={async (p) => { await Promise.all([refresh(), refreshProjects()]); openProject(p.id); }} />
           </div>
         )}
-        {section !== "subs" ? null : project && !job ? (
+        {section !== "subs" ? null : project && !job && project.kind === "review" ? (
+          <ReviewProjectView key={project.id} project={project} options={options} onOpenJob={(id) => select(id)} onChanged={putProject} />
+        ) : project && !job ? (
           <ProjectView key={project.id} project={project} jobs={jobs} onOpenJob={(id) => select(id)} onChanged={putProject}
             onAddVideos={() => openDouyin(project.id)}
             onDeleted={() => { setSelProject(null); history.replaceState(null, "", location.pathname); refresh(); refreshProjects(); }} />

@@ -31,8 +31,8 @@ function Swatches({ label, value, colors, onChange }: {
   );
 }
 
-export default function CoverControls({ s, set, autoFont, fonts }: {
-  s: Settings; set: (p: Partial<Settings>) => void; autoFont: number; fonts: FontOption[];
+export default function CoverControls({ s, set, autoFont, fonts, textOnly = false }: {
+  s: Settings; set: (p: Partial<Settings>) => void; autoFont: number | null; fonts: FontOption[]; textOnly?: boolean;
 }) {
   const st = s.style;
   const style = (p: Partial<Settings["style"]>) => set({ style: { ...st, ...p } });
@@ -40,14 +40,14 @@ export default function CoverControls({ s, set, autoFont, fonts }: {
   const current = fonts.find((f) => f.id === st.font) ?? fonts[0];
   return (
     <div className="cover-controls">
-      <div className="row">
+      {!textOnly && <div className="row">
         <div className="seg" role="radiogroup" aria-label="Kiểu che">
           {([["blur", "Làm mờ"], ["blur_dim", "Mờ + nền tối"], ["solid", "Dải màu"]] as const).map(([v, label]) => (
             <button key={v} role="radio" aria-checked={s.cover === v} className={s.cover === v ? "on" : ""} onClick={() => set({ cover: v })}>{label}</button>
           ))}
         </div>
         {s.cover === "solid" && <label className="inline">Màu dải <input type="color" value={s.cover_color} onChange={(e) => set({ cover_color: e.target.value })} /></label>}
-      </div>
+      </div>}
       <div className="text-style">
         <label className="font-pick">Font chữ
           <select value={current?.id} onChange={(e) => style({ font: e.target.value })}
@@ -58,7 +58,7 @@ export default function CoverControls({ s, set, autoFont, fonts }: {
           </select>
         </label>
         <label className="inline">Cỡ chữ
-          <input type="number" min={10} max={200} value={st.font_size ?? ""} placeholder={`tự động (${autoFont})`}
+          <input type="number" min={10} max={200} value={st.font_size ?? ""} placeholder={autoFont ? `tự động (${autoFont})` : "tự động"}
             onChange={(e) => style({ font_size: e.target.value ? +e.target.value : null })} />
         </label>
       </div>

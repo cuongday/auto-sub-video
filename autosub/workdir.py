@@ -1,6 +1,7 @@
 """Local scratch copy of a job's objects. Every file here also exists in object storage
 (push after writing, fetch before reading); the dir can be wiped at any time."""
 import json
+import os
 import shutil
 import threading
 import time
@@ -11,6 +12,9 @@ from .storage import Store, get_store
 _LOCK = threading.Lock()
 _PINNED: dict[str, int] = {}          # job ids in use: never evicted
 _MANIFEST = ".etags.json"             # key -> etag of the local copy
+_MLOCK = threading.Lock()             # manifest read-modify-write
+# ponytail: one small lock per object key ever fetched, never freed; refcount them if keys grow without bound
+_FETCHING: dict[str, threading.Lock] = {}   # object key -> lock: one download at a time per key
 
 def job_prefix(jid: str) -> str:
     return f"jobs/{jid}/"
@@ -33,12 +37,19 @@ class WorkDir:
             return {}
 
     def _remember(self, name: str, etag: str | None) -> None:
-        m = self._manifest()
-        if etag is None:
-            m.pop(name, None)
-        else:
-            m[name] = etag
-        (self.path / _MANIFEST).write_text(json.dumps(m))
+        self._update({name: etag})
+
+    def _update(self, etags: dict) -> None:
+        with _MLOCK:                          # parallel fetches of a job never drop each other's entries
+            m = self._manifest()
+            for name, etag in etags.items():
+                if etag is None:
+                    m.pop(name, None)
+                else:
+                    m[name] = etag
+            tmp = self.path / f"{_MANIFEST}.tmp"
+            tmp.write_text(json.dumps(m))
+            os.replace(tmp, self.path / _MANIFEST)   # a reader never sees a half-written manifest
 
     def key(self, name: str) -> str:
         return job_prefix(self.jid) + name
@@ -53,23 +64,25 @@ class WorkDir:
         info = self.store.stat(self.key(name))
         if info is None:
             return None
-        if p.exists() and self._manifest().get(name) == info.etag:
-            return p
-        self.store.get_file(self.key(name), p)
-        self._remember(name, info.etag)
+        with _LOCK:
+            lock = _FETCHING.setdefault(self.key(name), threading.Lock())
+        with lock:                            # parallel callers wait for the first download, then reuse it
+            if not (p.exists() and self._manifest().get(name) == info.etag):
+                self.store.get_file(self.key(name), p)
+                self._remember(name, info.etag)
         return p
 
     def fetch_dir(self, name: str) -> Path:
         """Download every object under jobs/<id>/<name>/ (e.g. tts/)."""
         prefix = self.key(name.rstrip("/") + "/")
-        m = self._manifest()
+        m, got = self._manifest(), {}
         for o in self.store.list(prefix):
             rel = o.key[len(job_prefix(self.jid)):]
             p = self.local(rel)
             if not (p.exists() and m.get(rel) == o.etag):
                 self.store.get_file(o.key, p)
-                m[rel] = o.etag
-        (self.path / _MANIFEST).write_text(json.dumps(m))
+                got[rel] = o.etag
+        self._update(got)
         d = self.local(name); d.mkdir(parents=True, exist_ok=True)
         return d
 

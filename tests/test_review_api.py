@@ -27,6 +27,8 @@ def client(monkeypatch):
     monkeypatch.setattr(config, "FFMPEG_PRESET", "ultrafast")
     # 20 syllables/min for FakeTTS keeps narration short, so renders stay quick
     write_json(get_store(), pace.PACE_KEY, {cache_key("fake", "", 1.0, "", pace.PACE_SAMPLE): 20})
+    with review_api._VS_LOCK:
+        review_api._VS_TASKS.clear()                 # module-global: rows of an earlier test's downloads leak in
     with TestClient(api.app) as c:
         yield c
 

@@ -461,6 +461,7 @@ def test_review_preview_needs_assemble_then_returns_a_frame(client, rig, tmp_pat
     assert client.put(f"/api/jobs/{jid}/review-settings", json=rv).json()["review"]["sub_region"]["y"] == 0.5
     r = client.post(f"/api/jobs/{jid}/review-preview", json={"t": 2.5})
     assert r.status_code == 200 and r.json()["url"].startswith(f"/api/jobs/{jid}/files/preview.jpg")
+    assert r.json()["duration"] > 2.5
     img = client.get(r.json()["url"])
     assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg"
     (tmp_path / "p.jpg").write_bytes(img.content)

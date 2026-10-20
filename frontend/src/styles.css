@@ -643,3 +643,25 @@ label.inline.split-n input[type="number"] { width: 90px; }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2s; } .se-track i { transition: none; } }
 @media (max-width: 1000px) { .se-grid { grid-template-columns: 1fr; } .se-side { position: static; } }
 @media (max-width: 760px) { .se-track { width: 110px; } .se-rw { margin-left: 0; } }
+
+/* ---------- review part layout (Bố cục) ---------- */
+.rl-grid { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 16px; align-items: start; }
+.rl-stage { position: sticky; top: 12px; }
+.rl-frame { margin: 0 auto; }
+.rl-frame.tall { width: min(100%, calc((100vh - 400px) * 9 / 16)); }
+.rl-frame.wide { width: 100%; }
+.rl-wait { display: flex; align-items: center; justify-content: center; gap: 8px; background: #000; border-radius: 8px; color: var(--muted); }
+.rl-time { display: flex; align-items: flex-end; gap: 12px; margin-top: 14px; }
+.rl-slider { flex: 1; min-width: 0; }
+.rl-slider input { width: 100%; accent-color: var(--amber); }
+.rl-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.rl-side h3 { margin: 0 0 12px; font-size: .95rem; font-weight: 600; }
+.rl-side .card-head h3 { margin: 0; }
+.rl-check { margin-bottom: 12px; }
+.rl-cover-mode { margin-top: 10px; }
+.rl-empty h2 { margin-bottom: 6px; }
+@media (max-width: 1100px) {
+  .rl-grid { grid-template-columns: 1fr; }
+  .rl-stage { position: static; }
+  .rl-frame.tall { width: min(100%, calc(70vh * 9 / 16)); }
+}

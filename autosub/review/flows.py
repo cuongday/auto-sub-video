@@ -361,17 +361,17 @@ def _render(ctx: Ctx):
                      sum(s["end"] - s["start"] for s in plan), lambda p: ctx.progress("render", 0.9 + 0.1 * p),
                      ctx.cancel)
 
-def preview(job: Job, t: float) -> None:
+def preview(job: Job, t: float) -> float:
     """preview.jpg: the frame of the video at narration time t with the part's current cover, subtitle and title
-    settings (no re-render). Needs the assembled shot plan."""
+    settings (no re-render). Needs the assembled shot plan; returns the video's length."""
     rv, fj = job.review, store.load(job.part.film_job)
     with workdir.pinned(job.id), workdir.pinned(fj.id):
         src = workdir.WorkDir(fj.id).fetch(fj.source)
         if src is None:
             raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
         w = workdir.WorkDir(job.id)
-        t, at = max(0.0, t), 0.0
-        for s in store.load_json(job.id, "shots.json"):
+        t, at, plan = max(0.0, t), 0.0, store.load_json(job.id, "shots.json")
+        for s in plan:
             if t < at + s["end"] - s["start"]:
                 break
             at += s["end"] - s["start"]
@@ -389,6 +389,7 @@ def preview(job: Job, t: float) -> None:
         boxes = [region_px(r, fj.info.width, fj.info.height) for r in rv.cover_regions]
         compose.preview_frame(src, max(0.0, at), w.local("preview.jpg"), rv.aspect, fj.info, boxes, rv.cover, ass)
         w.push("preview.jpg")
+    return sum(s["end"] - s["start"] for s in plan)
 
 REVIEW_RUNNERS = {"script": _script, "scenes": _scenes, "tts": _tts, "assemble": _assemble, "render": _render}
 

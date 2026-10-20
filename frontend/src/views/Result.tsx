@@ -48,7 +48,10 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
       <header className="card-head">
         <h2>Thành phẩm</h2>
         <div className="row">
-          {review ? <button className="ghost" onClick={onEdit}>Sửa kịch bản</button> : <>
+          {review ? <>
+            <button className="ghost" onClick={onEdit}>Sửa kịch bản</button>
+            <button className="ghost" onClick={onSetup}>Chỉnh bố cục</button>
+          </> : <>
             <button className="ghost" onClick={onEdit}>Quay lại sửa phụ đề</button>
             <button className="ghost" onClick={onSetup}>Đổi vùng che / tuỳ chọn</button>
           </>}

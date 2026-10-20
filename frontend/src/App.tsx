@@ -11,6 +11,7 @@ import Login from "./views/Login";
 import NewJob from "./views/NewJob";
 import Progress from "./views/Progress";
 import ProjectView from "./views/ProjectView";
+import ReviewLayout from "./views/ReviewLayout";
 import ReviewProjectView from "./views/ReviewProjectView";
 import Result from "./views/Result";
 import Review from "./views/Review";
@@ -18,7 +19,7 @@ import ReviewSource from "./views/ReviewSource";
 import ScriptEditor from "./views/ScriptEditor";
 import Setup from "./views/Setup";
 
-type View = "setup" | "progress" | "review" | "result" | "script";
+type View = "setup" | "progress" | "review" | "result" | "script" | "layout";
 type Section = "subs" | "douyin" | "review";
 
 const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
@@ -105,7 +106,7 @@ export default function App() {
   const onDyActive = useCallback((n: number) => setDyActive(n), []);
   const busyJobs = jobs.filter((j) => j.state === "running" || j.state === "queued").length;
   useEffect(() => {
-    if (job && ((view === "setup" && defaultView(job) !== "setup") || (view === "script" && job.kind !== "review"))) setView(defaultView(job));
+    if (job && ((view === "setup" && defaultView(job) !== "setup") || ((view === "script" || view === "layout") && job.kind !== "review"))) setView(defaultView(job));
   }, [sel, jobs.length]);  // eslint-disable-line react-hooks/exhaustive-deps
   const isReview = job?.kind === "review";
   useEffect(() => { if (isReview && !templates) api.reviewTemplates().then(setTemplates).catch(() => {}); }, [isReview, templates]);
@@ -226,6 +227,8 @@ export default function App() {
                 {isReview
                   ? <button className={view === "script" ? "on" : ""} onClick={() => setView("script")}>Kịch bản</button>
                   : <button className={view === "setup" ? "on" : ""} onClick={() => setView("setup")}>Thiết lập</button>}
+                {isReview && <button className={view === "layout" ? "on" : ""} disabled={job.steps.assemble?.status !== "done"}
+                  title={job.steps.assemble?.status !== "done" ? "Dựng video trước rồi mới chỉnh" : undefined} onClick={() => setView("layout")}>Bố cục</button>}
                 <button className={view === "progress" ? "on" : ""} onClick={() => setView("progress")}>Tiến độ</button>
                 {!isReview && <button className={view === "review" ? "on" : ""} disabled={job.steps.translate?.status !== "done"} onClick={() => setView("review")}>Rà soát</button>}
                 <button className={view === "result" ? "on" : ""} disabled={!job.files["output.mp4"]} onClick={() => setView("result")}>Kết quả</button>
@@ -235,15 +238,16 @@ export default function App() {
             </header>
             {view === "setup" && !isReview && <Setup job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
             {view === "script" && isReview && <ScriptEditor key={job.id} job={job} film={projects.find((p) => p.id === job.project)?.review?.movie.name} templates={templates} onJob={replace} onRun={(m) => run(m)} />}
+            {view === "layout" && isReview && <ReviewLayout key={job.id} job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
             {view === "progress" && (
               <Progress job={job} pct={pct[job.id] ?? {}} logs={logs[job.id] ?? []}
                 onCancel={() => api.cancel(job.id)} onRetry={(step) => run(job.mode, step || job.stale_from)} />
             )}
             {view === "review" && !isReview && <Review key={job.id} job={job} fonts={options.fonts} onJob={replace} onRender={() => run("review", "tts")} />}
-            {view === "result" && <Result job={job} onEdit={() => setView(isReview ? "script" : "review")} onSetup={() => setView("setup")}
+            {view === "result" && <Result job={job} onEdit={() => setView(isReview ? "script" : "review")} onSetup={() => setView(isReview ? "layout" : "setup")}
               project={projects.find((p) => p.id === job.project) ?? null} onJob={replace} onProject={putProject}
               onRefresh={() => api.job(job.id).then(replace)} />}
-            {view !== "progress" && (job.state === "done" || job.state === "approved") && job.stale_from && view !== "review" && view !== "script" && (
+            {view !== "progress" && (job.state === "done" || job.state === "approved") && job.stale_from && view !== "review" && view !== "script" && view !== "layout" && (
               <div className="actions sticky stale">
                 <span>Tuỳ chọn đã đổi từ bước “{STEP_LABEL[job.stale_from]}”.</span>
                 <button className="primary" onClick={() => run(job.mode, null)}>Cập nhật video</button>

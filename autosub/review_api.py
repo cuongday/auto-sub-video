@@ -517,12 +517,12 @@ async def review_preview(jid: str, body: PreviewIn):
     if not math.isfinite(body.t):
         raise HTTPException(400, "Thời điểm không hợp lệ")
     try:
-        await asyncio.to_thread(flows.preview, job, body.t)
+        duration = await asyncio.to_thread(flows.preview, job, body.t)
     except StorageError as e:
         raise HTTPException(503, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, str(e))
-    return {"url": f"/api/jobs/{jid}/files/preview.jpg?v={uuid.uuid4().hex[:8]}"}
+    return {"url": f"/api/jobs/{jid}/files/preview.jpg?v={uuid.uuid4().hex[:8]}", "duration": round(duration, 2)}
 
 @router.get("/api/jobs/{jid}/thumb")
 def thumb(jid: str, t: float = 0.0):

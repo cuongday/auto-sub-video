@@ -7,12 +7,13 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const MIN = 0.02;
 
 /** Regions on the frame: index 0 is the subtitle region (amber), the rest are extra covered regions
- *  (with coverOnly every region is a covered one). Drag on empty image to redraw the active region
+ *  (with coverOnly every region is a covered one; with `tags` every region is a fixed, named box that can't be
+ *  removed). Drag on empty image to redraw the active region
  *  (with no region yet it draws region 0); drag a region to move it; drag a corner to resize. */
-export default function RegionPicker({ src, aspect, regions, active, onActive, onChange, onRemove, children, coverOnly = false }: {
+export default function RegionPicker({ src, aspect, regions, active, onActive, onChange, onRemove, children, coverOnly = false, tags }: {
   src: string; aspect: number; regions: Region[]; active: number;
   onActive: (i: number) => void; onChange: (i: number, r: Region) => void; onRemove: (i: number) => void;
-  children?: ReactNode; coverOnly?: boolean;
+  children?: ReactNode; coverOnly?: boolean; tags?: string[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -56,10 +57,10 @@ export default function RegionPicker({ src, aspect, regions, active, onActive, o
         const sub = i === 0 && !coverOnly, n = coverOnly ? i + 1 : i;
         return (
         <div key={i} className={`picker-box ${sub ? "sub-box" : "extra"} ${i === active ? "active" : ""}`}
-          onPointerDown={down("move", i)} title={sub ? "Vùng phụ đề (che + chèn sub mới)" : `Vùng che ${n}`}
+          onPointerDown={down("move", i)} title={tags?.[i] ?? (sub ? "Vùng phụ đề (che + chèn sub mới)" : `Vùng che ${n}`)}
           style={{ left: `${rg.x * 100}%`, top: `${rg.y * 100}%`, width: `${rg.w * 100}%`, height: `${rg.h * 100}%` }}>
-          <span className="tag">{sub ? "Phụ đề" : `Che ${n}`}</span>
-          {!sub && (
+          <span className="tag">{tags?.[i] ?? (sub ? "Phụ đề" : `Che ${n}`)}</span>
+          {!sub && !tags && (
             <button type="button" className="remove" aria-label={`Xoá vùng che ${n}`}
               onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemove(i); }}>×</button>
           )}

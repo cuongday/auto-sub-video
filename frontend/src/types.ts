@@ -24,6 +24,7 @@ export type PartInfo = { film_job: string; index: number; start: number; end: nu
 export type ReviewSettings = {
   minutes: number; aspect: "16:9" | "9:16"; style: string; hook: string; use_hook: boolean; opening: string; notes: string; spoil_ending: boolean;
   subtitles: boolean; music_db: number; music_duck: boolean; cover_regions: Region[]; cover: Cover;
+  sub_region: Region | null; title_region: Region | null; show_title: boolean;   // output-frame boxes; null: default
 };
 export type TimeSpan = { start: number; end: number };
 export type ScriptBlock = {

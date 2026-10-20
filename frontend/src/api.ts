@@ -149,5 +149,6 @@ export const api = {
   rewriteScript: (jid: string) => j<Job>(post(`/api/jobs/${jid}/script/rewrite`)),
   rewriteBlock: (jid: string, bid: number, instruction = "") => j<ScriptBlock>(post(`/api/jobs/${jid}/script/blocks/${bid}/rewrite`, { instruction })),
   saveJobReviewSettings: (jid: string, s: ReviewSettings) => j<Job>(put(`/api/jobs/${jid}/review-settings`, s)),
+  reviewPreview: (jid: string, t: number) => j<{ url: string; duration: number }>(post(`/api/jobs/${jid}/review-preview`, { t })),
   thumbUrl: (jid: string, t: number) => `/api/jobs/${jid}/thumb?t=${t.toFixed(1)}`,
 };

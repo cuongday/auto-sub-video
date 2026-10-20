@@ -25,7 +25,7 @@ export default function ReviewSettingsForm({ value, templates, onChange }: {
     <div className="rv-form">
       {templates ? <>
         <Chips label="Phong cách" items={templates.styles} value={v.style} onPick={(style) => onChange({ style })} />
-        <Chips label="Hook" items={templates.hooks} value={v.hook} onPick={(hook) => onChange({ hook })} />
+        {v.use_hook && <Chips label="Hook" items={templates.hooks} value={v.hook} onPick={(hook) => onChange({ hook })} />}
         <Chips label="Mở đầu" items={[AUTO_OPENING, ...templates.openings]} value={v.opening} onPick={(opening) => onChange({ opening })} />
       </> : <p className="muted small">Đang tải mẫu kịch bản…</p>}
       <label>Yêu cầu thêm
@@ -48,6 +48,8 @@ export default function ReviewSettingsForm({ value, templates, onChange }: {
       <div className="rv-row">
         <label className="inline check"><input type="checkbox" checked={v.spoil_ending} onChange={(e) => onChange({ spoil_ending: e.target.checked })} />
           Kể cả cái kết</label>
+        <label className="inline check"><input type="checkbox" checked={v.use_hook} onChange={(e) => onChange({ use_hook: e.target.checked })} />
+          Có hook</label>
         <label className="inline check"><input type="checkbox" checked={v.subtitles} onChange={(e) => onChange({ subtitles: e.target.checked })} />
           Phụ đề lời đọc</label>
       </div>

@@ -22,7 +22,7 @@ export type Episode = { name: string; slug: string; embed: string };
 export type FilmInfo = { episode: Episode | null; episode_index: number; subtitles: SubTrack[]; subtitle: string | null };
 export type PartInfo = { film_job: string; index: number; start: number; end: number; notebook_rev: number };
 export type ReviewSettings = {
-  minutes: number; aspect: "16:9" | "9:16"; style: string; hook: string; opening: string; notes: string; spoil_ending: boolean;
+  minutes: number; aspect: "16:9" | "9:16"; style: string; hook: string; use_hook: boolean; opening: string; notes: string; spoil_ending: boolean;
   subtitles: boolean; music_db: number; music_duck: boolean; cover_regions: Region[]; cover: Cover;
 };
 export type TimeSpan = { start: number; end: number };

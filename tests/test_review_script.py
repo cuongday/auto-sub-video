@@ -164,7 +164,7 @@ def _than(a, b, word="thêm", n=200):
 def test_extension_retelling_the_story_is_not_merged():
     def hook(prompt, schema):
         if "UNCOVERED" in prompt:                      # the whole story again, hook to ket
-            return {"blocks": [{**_than(100, 400, "lặp"), "kind": k} for k in ["hook", "mo_dau", "than", "ket"]]}
+            return {"blocks": [{**_than(100, 400, "lặp"), "kind": k} for k in ["hook", "mo_dau", "ket"]] + [_than(0, 90, "lặp")]}
         return review_llm_capped(1600)(prompt, schema)
     llm = FakeLLM(hook)
     s = _build(llm, settings=ReviewSettings(minutes=15))
@@ -185,9 +185,9 @@ def test_extension_retelling_the_story_is_not_merged():
 def test_extension_never_reaches_into_the_kept_ending():
     def hook(prompt, schema):
         if "UNCOVERED" in prompt:
-            return {"blocks": [_than(200, 262, "cuối"), _than(120, 150, "giữa")]}
-        return {"blocks": [{**_than(100, 110, "mở", 5), "kind": "hook"}, _than(150, 250, "thân", 100),
-                           {**_than(240, 250, "kết", 5), "kind": "ket"}]}
+            return {"blocks": [_than(205, 252, "cuối"), _than(120, 150, "giữa")]}   # cuối: 74% in a span, ends past 250
+        return {"blocks": [{**_than(100, 110, "mở", 5), "kind": "hook"}, _than(150, 200, "thân", 100),
+                           _than(240, 250, "thân", 100), {**_than(240, 250, "kết", 5), "kind": "ket"}]}
     llm = FakeLLM(hook)
     s = _build(llm, is_last=True, settings=ReviewSettings(minutes=15))
     ext = [p for p in llm.prompts if "UNCOVERED" in p]
@@ -211,7 +211,7 @@ def test_short_script_warns(review_rig):
     capped = review_llm_capped(10)
     def retell(prompt, schema):                       # extensions tell the whole story again: nothing merged
         if "UNCOVERED" in prompt:
-            return {"blocks": [{**_than(0, 20, "lặp", 50), "kind": k} for k in ["hook", "mo_dau", "than", "ket"]]}
+            return {"blocks": [{**_than(0, 20, "lặp", 50), "kind": k} for k in ["hook", "mo_dau", "ket"]] + [_than(-50, -10, "lặp")]}
         return capped(prompt, schema)
     review_rig.llm.hook = retell
     job = review_rig.run(p.id, mode="review")
@@ -309,7 +309,7 @@ def test_own_previous_hook_is_not_a_duplicate():
     llm = FakeLLM(hook)
     nb = Notebook(entries=[NotebookEntry(job="a", index=1, range_label="", summary="", hooks=["Ai đã giết Tiểu Minh?"], rev=1)])
     _build(llm, notebook=nb, spm=20, settings=ReviewSettings(minutes=1))      # PART is index 1: its own entry
-    assert len(llm.prompts) == 1
+    assert not any("Hook bị trùng" in q for q in llm.prompts)
 
 def test_rewrite_unknown_block():
     with pytest.raises(ValueError, match="Không tìm thấy khối 9"):
@@ -342,3 +342,27 @@ def test_unknown_template_falls_back_to_first():
     first = templates.load()["styles"][0]
     assert templates.prompt("styles", "khong_con") == first["prompt"]
     assert templates.label("styles", "khong_con") == first["label"]
+
+def test_extension_keeps_than_blocks_beside_a_stray_hook():
+    spans = [(100.0, 150.0)]
+    raw = [{**_than(100, 400, "lạc"), "kind": "hook"}, _than(110, 140, "giữa"), {**_than(120, 130, "lạc"), "kind": "ket"}]
+    assert [r["text"][:4] for r in script._extension(raw, spans, None)] == ["giữa"]
+
+def test_hook_off_leaves_no_hook():
+    llm = FakeLLM(lambda p, s: {"blocks": []} if "UNCOVERED" in p else review_llm_hook(p, s))
+    nb = Notebook(entries=[NotebookEntry(job="a", index=1, range_label="", summary="x", hooks=["Ai đã giết Tiểu Minh?"], rev=1)])
+    locked = [ScriptBlock(id=1, kind="hook", text="Hook của tôi", edited=True)]
+    s = _build(llm, settings=ReviewSettings(use_hook=False, minutes=1), notebook=nb, part=PART.model_copy(update={"index": 2}),
+               locked=locked, spm=20)
+    p = llm.prompts[0]
+    assert "Hook:" not in p and "Hook đã dùng" not in p and "Cấu trúc: hook" not in p and "hook," not in p.split("Quy tắc:")[1].split("Phong cách")[0]
+    assert "thứ tự: mo_dau, các khối than (theo diễn biến), ket" in p and "Cấu trúc: mo_dau" in p
+    assert [b.kind for b in s.blocks][0] == "mo_dau" and all(b.kind != "hook" for b in s.blocks)   # fake sent a hook anyway
+    assert not any("Hook bị trùng" in q for q in llm.prompts)
+    assert [b.kind for b in _build(FakeLLM(review_llm_hook)).blocks][0] == "hook"
+
+def test_hook_off_validate_drops_hooks():
+    raw = [{"kind": "hook", "text": "x", "scenes": [], "source_start": 100, "source_end": 150}]
+    locked = [ScriptBlock(id=1, kind="hook", text="mine", edited=True)]
+    assert script.validate_blocks(raw, PART, ReviewSettings(use_hook=False), locked) == []
+    assert len(script.validate_blocks(raw, PART, ReviewSettings(), locked)) == 1

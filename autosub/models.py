@@ -155,6 +155,7 @@ class ReviewSettings(BaseModel):
     aspect: Literal["16:9", "9:16"] = "9:16"
     style: str = "kich_tinh"
     hook: str = "cau_hoi"
+    use_hook: bool = True                 # False: the video opens with mo_dau, no hook block
     opening: str = ""                     # "" -> gioi_thieu for part 1, tom_tat_truoc after
     notes: str = ""
     spoil_ending: bool = False

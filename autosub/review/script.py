@@ -36,15 +36,20 @@ SCRIPT_SCHEMA = {
 
 TEXT_SCHEMA = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}
 
-RULES = ("Quy tắc:\n"
-         "- Chỉ kể những gì có trong tóm tắt, không thêm tình tiết. Được phân tích nhân vật và nêu cảm nhận.\n"
-         "- Lời đọc kể ở ngôi thứ ba, bằng tiếng Việt, câu ngắn dễ đọc thành tiếng.\n"
-         "- Các khối theo thứ tự: hook, mo_dau, các khối than (theo diễn biến), ket. "
-         "source_start/source_end là khoảng phim mà khối đang kể.\n"
-         "- Mỗi khối kèm các cảnh minh hoạ (giây, nằm trong RANGE) liệt kê theo đúng thứ tự lời đọc kể: khoảng một cảnh "
-         "cho mỗi câu, mỗi cảnh dài 2–8 giây, đặt đúng lúc trong lời thoại hoặc sự kiện mà câu đó nói tới.\n"
-         "- hook, mo_dau và ket cũng phải có cảnh: hook là khoảnh khắc nó gợi tò mò, mo_dau là những cảnh mở ra bối cảnh "
-         "của phần, ket là khoảnh khắc cuối cùng mà các khối than đã kể.")
+def _rules(use_hook: bool) -> str:
+    order = "hook, mo_dau, các khối than (theo diễn biến), ket" if use_hook else "mo_dau, các khối than (theo diễn biến), ket"
+    cover = ("- hook, mo_dau và ket cũng phải có cảnh: hook là khoảnh khắc nó gợi tò mò, mo_dau là những cảnh mở ra bối cảnh "
+             "của phần, ket là khoảnh khắc cuối cùng mà các khối than đã kể." if use_hook else
+             "- mo_dau và ket cũng phải có cảnh: mo_dau là những cảnh mở ra bối cảnh của phần, "
+             "ket là khoảnh khắc cuối cùng mà các khối than đã kể.")
+    return ("Quy tắc:\n"
+            "- Chỉ kể những gì có trong tóm tắt, không thêm tình tiết. Được phân tích nhân vật và nêu cảm nhận.\n"
+            "- Lời đọc kể ở ngôi thứ ba, bằng tiếng Việt, câu ngắn dễ đọc thành tiếng.\n"
+            f"- Các khối theo thứ tự: {order}. "
+            "source_start/source_end là khoảng phim mà khối đang kể.\n"
+            "- Mỗi khối kèm các cảnh minh hoạ (giây, nằm trong RANGE) liệt kê theo đúng thứ tự lời đọc kể: khoảng một cảnh "
+            "cho mỗi câu, mỗi cảnh dài 2–8 giây, đặt đúng lúc trong lời thoại hoặc sự kiện mà câu đó nói tới.\n"
+            + cover)
 
 def opening_for(settings: ReviewSettings, part: PartInfo) -> str:
     return settings.opening or ("gioi_thieu" if part.index == 1 else "tom_tat_truoc")
@@ -66,12 +71,15 @@ def target_syllables(seconds: float, spm: float) -> int:
     pauses = BLOCK_GAP * blocks + SENT_GAP * max(0, round(rough / SENTENCE_SYLLABLES) - blocks)
     return max(1, round((seconds - pauses) / 60 * spm))
 
-def _budget(target: int) -> str:
+def _budget(target: int, use_hook: bool = True) -> str:
     n = _body_count(target)
     frame = min(200, target // 3)                        # hook 1 : mo_dau 2 : ket 2
     hook, side = max(1, frame // 5), max(1, 2 * frame // 5)
-    return (f"Cấu trúc: hook khoảng {hook} âm tiết, mo_dau khoảng {side}, {n} khối than mỗi khối khoảng "
-            f"{max(1, (target - frame) // n)} âm tiết, ket khoảng {side}. Kịch bản ngắn hơn TARGET là không đạt: "
+    if not use_hook:
+        hook = 0                                         # its share goes to the body
+    return ("Cấu trúc: " + (f"hook khoảng {hook} âm tiết, " if hook else "") +
+            f"mo_dau khoảng {side}, {n} khối than mỗi khối khoảng {max(1, (target - hook - 2 * side) // n)} âm tiết, "
+            f"ket khoảng {side}. Kịch bản ngắn hơn TARGET là không đạt: "
             "kể đủ từng diễn biến trong tóm tắt và lời thoại cho tới khi đủ độ dài.")
 
 def _clamp(a, b, part: PartInfo) -> TimeSpan | None:
@@ -96,6 +104,8 @@ def validate_blocks(raw: list[dict], part: PartInfo, settings: ReviewSettings,
     out = _clean(raw, part)
     if (end := story_end([*out, *locked], part, keep_ending)) < part.end:
         out = _clean(raw, part.model_copy(update={"end": end}))
+    if not settings.use_hook:
+        out, locked = [b for b in out if b.kind != "hook"], [b for b in locked if b.kind != "hook"]
     mine = {b.kind for b in locked if b.kind != "than"}
     out = [b for b in out if b.kind not in mine] + [b.model_copy(update={"edited": True}) for b in locked]
     out.sort(key=lambda b: _order(b, part))
@@ -179,11 +189,11 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
     cast = [*notebook.characters, *(c for c in characters if c.name not in known)]   # notebook wins on a name
     used = nb_mod.used_hooks(notebook.model_copy(update={"entries": [e for e in notebook.entries if e.index != part.index]}))
     rows = [f"Bạn là người viết kịch bản video review phim. Viết lời đọc cho phần {part.index}/{total_parts} của video review.",
-            RULES, "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
+            _rules(settings.use_hook), "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
             "Tóm tắt các đoạn phim trong phần này:", _chunks(chunks, part), "",
             "Lời thoại trong phần này ([giây] câu thoại gốc), để đặt cảnh đúng lúc:", _dialogue(lines, part), "",
             f"Phong cách: {templates.prompt('styles', settings.style)}",
-            f"Hook: {templates.prompt('hooks', settings.hook)}",
+            *([f"Hook: {templates.prompt('hooks', settings.hook)}"] if settings.use_hook else []),
             f"Mở đầu: {templates.prompt('openings', opening)}"]
     if part.index > 1:
         earlier = [e for e in notebook.entries if e.index < part.index]
@@ -192,14 +202,15 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
                  + (f" Tình tiết còn lửng: {'; '.join(e.open_threads)}." if e.open_threads else "") for e in earlier]
         if notebook.voice:
             rows.append(f"Giọng kể đã dùng, giữ cho thống nhất: {notebook.voice}")
-        rows.append(f"Hook đã dùng: {'; '.join(used) or '(chưa có)'}")
+        if settings.use_hook:
+            rows.append(f"Hook đã dùng: {'; '.join(used) or '(chưa có)'}")
     if is_last and not settings.spoil_ending:
         rows.append("Không được tiết lộ cái kết của phim: dừng trước cao trào và để lửng.")
     if settings.notes.strip():
         rows.append(f"Yêu cầu thêm: {settings.notes.strip()}")
     if locked:
         rows.append(f"Các khối người dùng đã tự viết (giữ nguyên, không kể lặp lại): {_dump(list(locked))}")
-    rows += ["", f"TARGET {target}  (tổng số âm tiết của toàn bộ lời đọc)", _budget(target),
+    rows += ["", f"TARGET {target}  (tổng số âm tiết của toàn bộ lời đọc)", _budget(target, settings.use_hook),
              f"RANGE {part.start} {part.end}"]
     prompt = "\n".join(rows)
 
@@ -222,7 +233,7 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
         raise RuntimeError("LLM không trả về kịch bản")
     raw, blocks, sec = best
     hook = next((b for b in blocks if b.kind == "hook" and not b.edited), None)
-    if hook and _norm(hook.text) in {_norm(h) for h in used}:
+    if settings.use_hook and hook and _norm(hook.text) in {_norm(h) for h in used}:
         got = check(llm.generate_json(f"{prompt}\n\nBản trước: {_dump(blocks)}\nHook bị trùng với phần trước: viết hook khác.",
                                       SCRIPT_SCHEMA).get("blocks", []))
         if got[1]:
@@ -251,7 +262,7 @@ def _extend_prompt(*, meta: MovieMeta, cast, chunks: list[ChunkSummary], lines: 
     k = min(MAX_BODY, max(1, round(need / BODY_SYLLABLES)))
     rows = [f"Bạn là người viết kịch bản video review phim. Bản nháp lời đọc phần {part.index} còn ngắn: viết thêm "
             "các khối than cho những khoảng phim nó chưa kể hoặc mới kể sơ lược.",
-            RULES, "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
+            _rules(settings.use_hook), "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
             "Tóm tắt các đoạn phim của những khoảng đó:", _chunks([c for c in chunks if inside(c.start, c.end)], part), "",
             "Lời thoại của những khoảng đó ([giây] câu thoại gốc):",
             _dialogue([s for s in lines if inside(s.start, s.start + 0.01)], part), "",
@@ -268,13 +279,11 @@ def _extend_prompt(*, meta: MovieMeta, cast, chunks: list[ChunkSummary], lines: 
     return "\n".join(rows)
 
 def _extension(raw: list[dict], spans: list[tuple[float, float]], ending: float | None) -> list[dict]:
-    """The new body blocks worth merging: an answer with a hook, opening or ending tells the story again (nothing
-    merged); a block counts only when most of it lies in one asked-for span and, with the ending kept, it stops
-    before `ending` (its text would tell what the part holds back)."""
-    if any(r.get("kind") != "than" for r in raw):
-        return []
+    """The new body blocks worth merging: only `than` blocks (a stray hook, opening or ending is ignored); a block
+    counts only when most of it lies in one asked-for span and, with the ending kept, it stops before `ending`
+    (its text would tell what the part holds back)."""
     out = []
-    for r in raw:
+    for r in (r for r in raw if r.get("kind") == "than"):
         try:
             a, b = float(r["source_start"]), float(r["source_end"])
         except (KeyError, TypeError, ValueError):

@@ -168,3 +168,14 @@ def test_hook_and_ending_without_scenes_show_no_footage_before_the_dialogue(revi
     ids = {b["id"] for b in sc["blocks"] if b["kind"] in ("hook", "ket")}
     plan = [s for s in store.load_json(p.id, "shots.json") if s["block"] in ids]
     assert plan and all(s["start"] >= 10 - 1e-6 for s in plan), plan       # no studio logo under the hook
+
+def test_hook_toggle_changes_the_script_hash(review_rig):
+    from autosub.pipeline import make_ctx
+    from autosub.review import flows
+    review_rig.film_done()
+    p = review_rig.part()
+    review_rig.run(p.id, mode="review")
+    job = store.load(p.id)
+    h = flows.review_step_hash(make_ctx(job), "script")
+    job.review.use_hook = False
+    assert flows.review_step_hash(make_ctx(job), "script") != h

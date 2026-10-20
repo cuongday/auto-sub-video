@@ -358,7 +358,7 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
     j, st = ctx.job, ctx.job.settings
     if step == "script":
         fj = store.load(j.part.film_job)
-        rv = j.review.model_dump(include={"minutes", "style", "hook", "opening", "notes", "spoil_ending"})
+        rv = j.review.model_dump(include={"minutes", "style", "hook", "use_hook", "opening", "notes", "spoil_ending"})
         # the notebook version, is_last and the voice (its pace sets the length) stay out: a changed notebook only
         # warns (notebook_rev) and a new voice only re-reads the script; the user rewrites when they want
         return _h(fj.steps["summarize"].hash, rv, j.part.start, j.part.end, st.llm_provider, st.llm_model)

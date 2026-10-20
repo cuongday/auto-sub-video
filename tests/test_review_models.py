@@ -26,3 +26,7 @@ def test_templates_have_spec_labels():
 
 def test_unknown_template_id_falls_back_to_first():
     assert templates.prompt("hooks", "nope") == templates.load()["hooks"][0]["prompt"]
+
+def test_old_review_settings_have_the_hook_on():
+    from autosub.models import ReviewSettings
+    assert ReviewSettings.model_validate({"minutes": 5}).use_hook is True

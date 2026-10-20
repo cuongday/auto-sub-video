@@ -77,3 +77,9 @@ def test_range_label():
     assert range_label(PartInfo(film_job="f", index=1, start=0, end=1350), f) == "Tập 3 · 00:00–22:30"
     f = FilmInfo(episode=Episode(name="Full", slug="s", embed="e"), episode_index=4)
     assert range_label(PartInfo(film_job="f", index=1, start=0, end=60), f).startswith("Tập 5 · ")
+
+def test_record_part_without_a_hook_block_records_no_hooks():
+    from autosub.models import Script, ScriptBlock
+    sc = Script(blocks=[ScriptBlock(id=1, kind="mo_dau", text="Mở đầu"), ScriptBlock(id=2, kind="ket", text="Kết")])
+    nb = record_part(FakeLLM(review_llm_hook), Notebook(), job_id="a", index=1, range_label="r", script=sc, film_characters=[])
+    assert nb.entries[0].hooks == [] and used_hooks(nb) == []

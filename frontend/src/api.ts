@@ -129,6 +129,7 @@ export const api = {
     return send<Project>("/api/review/projects/upload", fd, onProgress);
   },
   reviewProject: (pid: string) => j<ReviewProjectData>(fetch(`/api/review/projects/${pid}`)),
+  deleteReview: (pid: string) => j<{ ok: boolean }>(fetch(`/api/review/projects/${pid}`, { method: "DELETE" })),
   prepareEpisode: (pid: string, slug: string) => j<VsTask>(post(`/api/review/projects/${pid}/episodes/${encodeURIComponent(slug)}/prepare`)),
   saveReviewSettings: (pid: string, settings: ReviewSettings, job_settings: Settings | null = null, parts_per_episode: 1 | 2 | null = null) =>
     j<Project>(put(`/api/review/projects/${pid}/settings`, { settings, job_settings, parts_per_episode })),

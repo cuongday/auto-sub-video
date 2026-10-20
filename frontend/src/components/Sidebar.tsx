@@ -57,7 +57,9 @@ export default function Sidebar({
               {groups.map((g) => {
                 const open = expanded.has(g.id);
                 const waiting = g.jobs.filter((j) => j.state === "done").length;
-                const running = g.jobs.filter((j) => j.state === "running" || j.state === "queued").length;
+                // a review project's films are hidden here but their preparation still counts as running
+                const running = (g.review ? jobs.filter((j) => j.project === g.id) : g.jobs)
+                  .filter((j) => j.state === "running" || j.state === "queued").length;
                 return (
                   <li key={g.id}>
                     <div className={`srow proj ${g.real ? "" : "loose"} ${inSubs && selProject === g.id && !sel ? "on" : ""}`}>

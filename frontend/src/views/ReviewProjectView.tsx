@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { useDialog } from "../components/Dialog";
 import Icon from "../components/Icon";
 import NotebookDialog from "../components/NotebookDialog";
 import OptionsForm from "../components/OptionsForm";
@@ -17,13 +18,15 @@ const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "Tiếng Trung"
 const busy = (j: Job) => j.state === "running" || j.state === "queued";
 const ready = (j: Job) => j.state === "done" || j.state === "approved";
 const filmName = (j: Job) => j.film?.episode?.name ?? j.name;
+const stopped = (j: Job) => j.state === "error" || j.state === "interrupted" || j.state === "cancelled";
 
 /** A review project: the film(s) being prepared, how they are split into parts, the parts, and the settings every
  *  part starts from (templates, voice, music, covered regions), plus the project notebook. */
-export default function ReviewProjectView({ project, options, onOpenJob, onChanged }: {
-  project: Project; options: Options; onOpenJob: (id: string) => void; onChanged: (p?: Project) => void;
+export default function ReviewProjectView({ project, options, onOpenJob, onChanged, onDeleted }: {
+  project: Project; options: Options; onOpenJob: (id: string) => void; onChanged: (p?: Project) => void; onDeleted: () => void;
 }) {
   const pid = project.id;
+  const dialog = useDialog();
   const [data, setData] = useState<ReviewProjectData | null>(null);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
@@ -79,7 +82,7 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
 
   const rv = data.project.review!;
   const movie = rv.movie;
-  const series = movie.type !== "single";
+  const series = movie.type !== "single" && rv.episodes.length > 1;   // a one-episode series is a single movie
   const films = data.films;
   const prepared = new Set(films.map((f) => f.film?.episode?.slug).filter(Boolean));
   const tasks = data.tasks.filter((t) => t.state !== "done");
@@ -95,6 +98,15 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
   const first = films.find((f) => f.info && f.frames.length);
   const regions = s.cover_regions;
   const voice = js ?? options.defaults;
+  const live = (slug?: string) => tasks.some((t) => t.episode === slug && t.state !== "error");
+  const remove = async () => {
+    const ok = await dialog.confirm({
+      title: "Xoá dự án review?", danger: true, confirmLabel: "Xoá dự án",
+      message: <><p><strong>{movie.name}</strong></p><p className="muted">Xoá hẳn {data.parts.length} phần review (kịch bản, lời đọc, video),
+        {" "}{films.length} phim đã tải về{rv.music ? ", nhạc nền" : ""} và sổ tay dự án. Không khôi phục được.</p></>,
+    });
+    if (ok) run("delete", async () => { await api.deleteReview(pid); onDeleted(); });
+  };
 
   return (
     <div className="rp">
@@ -106,7 +118,10 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
             rv.source === "upload" ? "File tải lên" : ""].filter(Boolean).join(" · ")}</p>
           {movie.categories.length > 0 && <ul className="rp-tags" aria-label="Thể loại">{movie.categories.map((c) => <li key={c}>{c}</li>)}</ul>}
         </div>
-        <button className="ghost rp-nb" onClick={() => setNotebook(true)}><Icon name="book" size={15} /> Sổ tay dự án</button>
+        <div className="rp-nb row">
+          <button className="ghost" onClick={() => setNotebook(true)}><Icon name="book" size={15} /> Sổ tay dự án</button>
+          <button className="ghost danger" disabled={!!act} onClick={remove}>{act === "delete" ? "Đang xoá…" : "Xoá dự án"}</button>
+        </div>
       </section>
       {notebook && <NotebookDialog pid={pid} onClose={() => setNotebook(false)} />}
       {msg && <p className="error" role="alert">{msg}</p>}
@@ -127,6 +142,10 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
                 <span className="dy-bar rp-bar" role="progressbar" aria-label={`Tải ${t.name}`} aria-valuemin={0} aria-valuemax={100}
                   aria-valuenow={Math.round(t.pct * 100)}><span style={{ width: `${Math.round(t.pct * 100)}%` }} /></span>
               </>}
+              {t.state === "error" && (
+                <button className="ghost small" disabled={!!act} onClick={() => run(`retry-${t.id}`, async () => { await api.prepareEpisode(pid, t.episode); await load(); })}>
+                  {act === `retry-${t.id}` ? "Đang bắt đầu…" : "Thử lại"}</button>
+              )}
               {t.error && <p className="error small rp-film-note">{t.error}</p>}
             </li>
           ))}
@@ -153,6 +172,15 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
                       await api.run(f.id, "auto", "asr", true); await load();
                     })}>{act === `asr-${f.id}` ? "Đang gửi…" : "Nhận dạng lại"}</button>
                   </span>
+                )}
+                {stopped(f) && f.info && (
+                  <button className="ghost small" disabled={!!act} onClick={() => run(`rerun-${f.id}`, async () => { await api.run(f.id, "auto", null, true); await load(); })}>
+                    {act === `rerun-${f.id}` ? "Đang gửi…" : "Chạy lại"}</button>
+                )}
+                {f.state === "new" && !f.info && f.film?.episode && !live(f.film.episode.slug) && (
+                  <button className="ghost small" disabled={!!act} title="Lần tải trước bị ngắt giữa chừng"
+                    onClick={() => run(`ep-${f.id}`, async () => { await api.prepareEpisode(pid, f.film!.episode!.slug); await load(); })}>
+                    {act === `ep-${f.id}` ? "Đang bắt đầu…" : "Tải lại"}</button>
                 )}
                 {(f.error || f.warnings.length > 0) && (
                   <p className={`small rp-film-note ${f.error ? "error" : "warn"}`}>{f.error ?? f.warnings.join(" · ")}</p>

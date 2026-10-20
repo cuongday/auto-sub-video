@@ -189,7 +189,8 @@ export default function App() {
           </div>
         )}
         {section !== "subs" ? null : project && !job && project.kind === "review" ? (
-          <ReviewProjectView key={project.id} project={project} options={options} onOpenJob={(id) => select(id)} onChanged={putProject} />
+          <ReviewProjectView key={project.id} project={project} options={options} onOpenJob={(id) => select(id)} onChanged={putProject}
+            onDeleted={() => { setSelProject(null); history.replaceState(null, "", location.pathname); refresh(); refreshProjects(); }} />
         ) : project && !job ? (
           <ProjectView key={project.id} project={project} jobs={jobs} onOpenJob={(id) => select(id)} onChanged={putProject}
             onAddVideos={() => openDouyin(project.id)}

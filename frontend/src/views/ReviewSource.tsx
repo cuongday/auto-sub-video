@@ -150,8 +150,8 @@ function MovieDetail({ slug, onBack, onCreated }: { slug: string; onBack: () => 
     try { onCreated(await api.createReview(slug, server)); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   const meta = m?.meta;
-  const single = meta?.type === "single";
   const eps = m?.servers.find((s) => s.name === server)?.episodes ?? [];
+  const single = meta?.type === "single" || eps.length === 1;      // a one-episode series is a single movie
   const facts: [string, string][] = meta ? ([
     ["Thể loại", meta.categories.join(", ")], ["Quốc gia", meta.countries.join(", ")], ["Thời lượng", meta.time],
     ["Ngôn ngữ", meta.lang], ["Đạo diễn", meta.directors.slice(0, 4).join(", ")], ["Diễn viên", meta.actors.slice(0, 8).join(", ")],

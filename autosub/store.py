@@ -1,4 +1,5 @@
 """Job documents in object storage: jobs/<id>/job.json, segments.json, context.json; presets.json."""
+import threading
 import time
 import uuid
 from .models import STEPS, STEPS_BY_KIND, Job, JobKind, StepState, Segment, TranslationContext
@@ -7,6 +8,9 @@ from .workdir import job_prefix
 
 PRESETS = "presets.json"
 APP_SETTINGS = "settings.json"
+LIST_TTL = 2.0                  # seconds a listing is reused (views and step hashes list the jobs many times per request)
+_memo_lock = threading.Lock()
+_memo: dict = {"gen": 0, "store": None, "at": 0.0, "jobs": None}
 
 def key(jid: str, name: str) -> str:
     return job_prefix(jid) + name
@@ -27,9 +31,21 @@ def load(jid: str) -> Job:
 
 def save(job: Job) -> None:
     write_json(get_store(), key(job.id, "job.json"), job.model_dump(mode="json"))
+    _changed()
+
+def _changed() -> None:
+    with _memo_lock:
+        _memo["gen"] += 1
+        _memo["jobs"] = None
 
 def list_jobs() -> list[Job]:
+    """Every job, newest first. Reused for LIST_TTL seconds; save() and delete() drop it, so this process always
+    sees its own changes (fresh objects each call: callers may change them)."""
     st = get_store()
+    with _memo_lock:
+        gen, memo = _memo["gen"], _memo["jobs"]
+        if memo is not None and _memo["store"] is st and time.monotonic() - _memo["at"] < LIST_TTL:
+            return [j.model_copy(deep=True) for j in memo]
     jobs = []
     for o in st.list("jobs/"):
         parts = o.key.split("/")
@@ -38,7 +54,11 @@ def list_jobs() -> list[Job]:
                 jobs.append(load(parts[1]))
             except (KeyError, ValueError):
                 continue
-    return sorted(jobs, key=lambda j: j.created, reverse=True)
+    jobs.sort(key=lambda j: j.created, reverse=True)
+    with _memo_lock:
+        if _memo["gen"] == gen:             # nothing saved while listing: safe to reuse
+            _memo.update(store=st, at=time.monotonic(), jobs=[j.model_copy(deep=True) for j in jobs])
+    return jobs
 
 def exists(jid: str, name: str) -> bool:
     return get_store().stat(key(jid, name)) is not None
@@ -55,6 +75,7 @@ def object_sizes(jid: str) -> dict[str, int]:
 def delete(jid: str) -> None:
     from . import workdir
     get_store().delete_prefix(job_prefix(jid))
+    _changed()
     workdir.remove(jid)
 
 def load_json(jid: str, name: str, default=None):

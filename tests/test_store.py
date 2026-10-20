@@ -43,3 +43,22 @@ def test_delete(_memory_store):
         store.load(j.id); raise AssertionError("still there")
     except KeyError:
         pass
+
+def test_list_jobs_memo_sees_own_changes(_memory_store, monkeypatch):
+    a = store.create("a")
+    calls = []
+    real = _memory_store.list
+    monkeypatch.setattr(_memory_store, "list", lambda prefix: calls.append(prefix) or real(prefix))
+    assert [j.id for j in store.list_jobs()] == [a.id] and [j.id for j in store.list_jobs()] == [a.id]
+    assert len(calls) == 1                                   # second call reuses the listing
+    store.list_jobs()[0].name = "changed by a caller"
+    assert store.list_jobs()[0].name == "a"                  # callers get their own copies
+    a.name = "renamed"; store.save(a)
+    assert store.list_jobs()[0].name == "renamed"            # save drops the memo
+    b = store.create("b")
+    assert {j.id for j in store.list_jobs()} == {a.id, b.id}
+    store.delete(a.id)
+    assert [j.id for j in store.list_jobs()] == [b.id]       # delete drops it too
+    monkeypatch.setattr(store, "LIST_TTL", 0)
+    n = len(calls); store.list_jobs(); store.list_jobs()
+    assert len(calls) == n + 2                               # expired: listed again

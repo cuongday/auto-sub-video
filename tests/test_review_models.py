@@ -1,4 +1,3 @@
-import pytest
 from autosub import projects, store
 from autosub.models import PartInfo, MovieMeta
 from autosub.projects import ReviewProject
@@ -25,5 +24,5 @@ def test_templates_have_spec_labels():
     assert templates.ad_patterns()[0].search("xem tai http://x.com")
     assert "vietsub" in templates.edge_keywords()
 
-def test_unknown_template_id_raises():
-    with pytest.raises(KeyError): templates.prompt("hooks", "nope")
+def test_unknown_template_id_falls_back_to_first():
+    assert templates.prompt("hooks", "nope") == templates.load()["hooks"][0]["prompt"]

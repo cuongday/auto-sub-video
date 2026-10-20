@@ -1,6 +1,6 @@
 import pytest
 from autosub import projects, store
-from autosub.models import ChunkSummary, JobSettings, SceneNote, Segment
+from autosub.models import ChunkSummary, Episode, JobSettings, SceneNote, Segment
 from autosub.review import parts
 from autosub.review.split import propose_cuts
 from tests.review_helpers import review_rig  # noqa: F401  (fixture)
@@ -60,11 +60,15 @@ def test_create_parts_and_resplit_guard(review_rig):
         parts.create_parts(film, [50.0])
     assert len(parts.parts_of(review_rig.project.id)) == 2
 
+def _series(p):
+    p.review.movie.type = "series"
+    p.review.episodes = [Episode(name=f"Tập {i}", slug=f"tap-{i}", embed="e") for i in (1, 2)]
+    projects.save(p)
+
 def test_series_two_parts_per_episode(review_rig):
     p = projects.get(review_rig.project.id)
     p.review.parts_per_episode = 2
-    p.review.movie.type = "series"
-    projects.save(p)
+    _series(p)
     f2 = review_rig.add_film(1)
     for f in (f2, review_rig.film):
         f = store.load(f.id); f.info.duration = 300; store.save(f)
@@ -79,6 +83,9 @@ def test_ensure_default_parts_idempotent_and_single_noop(review_rig):
     assert parts.parts_of(review_rig.project.id) == []
     p = projects.get(review_rig.project.id)
     p.review.movie.type = "series"; projects.save(p)
+    parts.ensure_default_parts(film)                 # a "series" of one episode: still a single movie
+    assert parts.parts_of(p.id) == []
+    _series(p)
     parts.ensure_default_parts(film)
     first = [j.id for j in parts.parts_of(p.id)]
     assert len(first) == 1

@@ -1,6 +1,7 @@
 """Routes of the review feature: vsmov search, review projects (prepare episodes, split, music, notebook) and
 the script of a part. Shares the job helpers and the queue of api.py (always read as api.X: tests swap QUEUE)."""
 import asyncio
+import math
 import re
 import threading
 import uuid
@@ -20,6 +21,8 @@ from .storage import get_store
 router = APIRouter()
 
 MUSIC_EXT = {".mp3", ".m4a", ".aac", ".wav", ".ogg"}
+MUSIC_MAX = 50 << 20
+_NB_LOCK = threading.Lock()                # notebook read -> LLM -> save, one at a time (approvals and user edits)
 _SUB_CODE = re.compile(r"[A-Za-z0-9_-]{1,16}")
 _VS_TASKS: dict[str, dict] = {}            # episode downloads: id -> {project, episode, name, state, pct, job, error}
 _VS_LOCK = threading.Lock()
@@ -104,7 +107,7 @@ def part_view(job: Job, all_jobs: list[Job] | None = None) -> dict:
 
 def check_run(job: Job) -> None:
     """A part's script is written the first time only once its film is ready and the part before is approved."""
-    if job.steps["script"].status == "done":
+    if store.exists(job.id, "script.json"):
         return
     v = part_view(job)
     if v["film_state"] not in ("done", "approved"):
@@ -145,6 +148,7 @@ def _prepare(tid: str, pid: str, index: int) -> None:
         job.settings = JobSettings.model_validate(p.review.job_settings) if p.review.job_settings else JobSettings()
         job.settings.separate, job.settings.lang = False, guess_lang(movie.countries)
         job.film = FilmInfo(episode=ep, episode_index=index)
+        job.project = pid                   # shows in the project (and blocks a second prepare) while downloading
         store.save(job)
         with workdir.pinned(job.id):
             w = workdir.WorkDir(job.id)
@@ -157,13 +161,14 @@ def _prepare(tid: str, pid: str, index: int) -> None:
             job.film.subtitles = _fetch_subs(w, embed.subtitles, ep.embed)
             job.film.subtitle = pick_subtitle(job.film.subtitles)
             job = api._init_job(job, w.local("source.mp4"))
-        job.project = pid
-        store.save(job)
         api.QUEUE.submit(job.id, "auto")
         row.update(state="done", pct=1, job=job.id)
     except Exception as e:  # noqa: BLE001
         if job is not None:
-            store.delete(job.id)
+            try:
+                store.delete(job.id)
+            except Exception:  # noqa: BLE001  (storage down: the row still reports the real error)
+                pass
         row.update(state="error", error=str(getattr(e, "detail", e)))
     _emit(tid)
 
@@ -267,10 +272,12 @@ def put_project_settings(pid: str, body: ProjectSettingsIn):
 class SplitIn(BaseModel):
     film_job: str
     parts: int | None = Field(None, ge=1, le=100)
-    minutes: float | None = Field(None, gt=0)
+    minutes: float | None = None
 
 @router.post("/api/review/projects/{pid}/split")
 def propose_split(pid: str, body: SplitIn):
+    if body.minutes is not None and not 0 < body.minutes <= 600:    # also NaN/inf (a pydantic 422 would echo them)
+        raise HTTPException(422, "Số phút mỗi phần không hợp lệ")
     fj = _film_of(_review(pid), body.film_job)
     if fj.state not in ("done", "approved"):
         raise HTTPException(409, "Phim chưa chuẩn bị xong")
@@ -288,6 +295,8 @@ def put_parts(pid: str, body: PartsIn):
     fj = _film_of(p, body.film_job)
     if fj.info is None:
         raise HTTPException(409, "Phim chưa chuẩn bị xong")
+    if not all(map(math.isfinite, body.cuts)):   # checked here: pydantic's 422 would echo NaN and fail to encode
+        raise HTTPException(422, "Điểm cắt không hợp lệ")
     if any(api.QUEUE.is_active(j.id) for j in parts.parts_of(pid) if j.part.film_job == fj.id):
         raise HTTPException(409, "Có phần đang chạy, hãy chờ hoặc huỷ trước khi chia lại")
     try:
@@ -302,8 +311,11 @@ async def upload_music(pid: str, file: UploadFile):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in MUSIC_EXT:
         raise HTTPException(400, "Định dạng nhạc không hỗ trợ (mp3, m4a, aac, wav, ogg)")
+    data = await file.read(MUSIC_MAX + 1)
+    if len(data) > MUSIC_MAX:
+        raise HTTPException(413, f"File nhạc quá lớn (tối đa {MUSIC_MAX >> 20} MB)")
     key = projects.music_key(pid, ext)
-    await asyncio.to_thread(get_store().put_bytes, key, await file.read())
+    await asyncio.to_thread(get_store().put_bytes, key, data)
     if p.review.music and p.review.music != key:
         get_store().delete(p.review.music)
     p.review.music = key
@@ -326,14 +338,18 @@ def get_notebook(pid: str):
 @router.put("/api/review/projects/{pid}/notebook")
 def put_notebook(pid: str, body: Notebook):
     """The user's edit of the notebook; renamed characters are renamed in the films' character lists too."""
-    p = _review(pid)
-    old = p.review.notebook
-    p.review.notebook = notebook.apply_user_edit(old, body)
-    projects.save(p)
-    # ponytail: a rename is a name changed at the same position (lists of equal length); add character ids if
-    # users reorder/delete and rename in one save
+    with _NB_LOCK:
+        p = _review(pid)
+        old = p.review.notebook
+        if body.rev != old.rev:
+            raise HTTPException(409, "Sổ tay đã thay đổi, tải lại rồi sửa tiếp")
+        p.review.notebook = notebook.apply_user_edit(old, body)
+        projects.save(p)
+    # ponytail: a rename is a name changed at the same position (lists of equal length) where neither name is in
+    # the other list, so reorders never rename. Add character ids if users delete+add and rename in one save
+    before, after = {c.name for c in old.characters}, {c.name for c in body.characters}
     renames = {o.name: n.name for o, n in zip(old.characters, body.characters)
-               if len(old.characters) == len(body.characters) and o.name != n.name}
+               if len(old.characters) == len(body.characters) and o.name not in after and n.name not in before}
     if renames:
         for fj in _films(pid, store.list_jobs()):
             chars = store.load_json(fj.id, "characters.json")
@@ -369,7 +385,9 @@ def put_script(jid: str, blocks: list[ScriptBlock]):
     api._idle(job)
     if len({b.id for b in blocks}) != len(blocks):
         raise HTTPException(422, "Trùng id khối")
-    if any(s.end <= s.start for b in blocks for s in b.scenes):
+    times = [x for b in blocks for x in (b.source_start, b.source_end, *(v for c in b.scenes for v in (c.start, c.end)))
+             if x is not None]
+    if not all(map(math.isfinite, times)) or any(c.end <= c.start for b in blocks for c in b.scenes):
         raise HTTPException(422, "Cảnh có thời gian không hợp lệ")
     old = {b.id: b for b in _load_script(jid).blocks}
     changed = lambda b: b.id not in old or (old[b.id].text, old[b.id].scenes) != (b.text, b.scenes)  # noqa: E731
@@ -394,6 +412,8 @@ async def rewrite_block(jid: str, bid: int, body: BlockRewriteIn):
     job = _part(jid)
     api._idle(job)
     s, st = _load_script(jid), job.settings
+    if not any(x.id == bid for x in s.blocks):
+        raise HTTPException(404, f"Không tìm thấy khối {bid}")
     llm = api._engines().llm(st.llm_provider, st.llm_model)
     try:
         movie = parts.project_of(job).review.movie
@@ -402,10 +422,13 @@ async def rewrite_block(jid: str, bid: int, body: BlockRewriteIn):
     try:
         b = await asyncio.to_thread(script_mod.rewrite_block, llm, s, bid, body.instruction, meta=movie,
                                     settings=job.review, part=job.part)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, str(e))
+    job = api._get(jid)                      # the job or its script may have changed during the LLM call
+    api._idle(job)
+    s = _load_script(jid)
+    if not any(x.id == bid for x in s.blocks):
+        raise HTTPException(409, "Kịch bản vừa thay đổi, hãy thử lại")
     s.blocks = [b if x.id == bid else x for x in s.blocks]
     store.save_json(jid, "script.json", s.model_dump(mode="json"))
     _edited(job)
@@ -423,6 +446,8 @@ def put_review_settings(jid: str, body: ReviewSettings):
 @router.get("/api/jobs/{jid}/thumb")
 def thumb(jid: str, t: float = 0.0):
     """A 160 px wide frame of the film at t seconds (for the scene strip), cached in the film job."""
+    if not math.isfinite(t):
+        raise HTTPException(400, "Thời điểm không hợp lệ")
     job = api._get(jid)
     fj = api._get(job.part.film_job) if job.kind == "review" and job.part else job
     if fj.info:
@@ -449,24 +474,41 @@ def thumb(jid: str, t: float = 0.0):
 
 # ------------------------------------------------------------------ approval (called by api.approve_job)
 
-def on_approve(job: Job) -> None:
-    """Fold the approved part into the project notebook (LLM), then start the next episode when this part ends one."""
-    try:
-        p = parts.project_of(job)
-    except KeyError:
-        return
-    fj = store.load(job.part.film_job)
-    chars = [FilmCharacter.model_validate(c) for c in store.load_json(fj.id, "characters.json", default=[])]
-    st = job.settings
-    try:
-        nb = notebook.record_part(api._engines().llm(st.llm_provider, st.llm_model), p.review.notebook, job_id=job.id,
-                                  index=job.part.index, range_label=notebook.range_label(job.part, fj.film),
-                                  script=_load_script(job.id), film_characters=chars)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"Không cập nhật được sổ tay dự án: {e}")
-    p = parts.project_of(job)
-    p.review.notebook = nb
-    projects.save(p)
+def approve_part(job: Job) -> Job:
+    """Fold the finished part into the project notebook (LLM), then mark it approved; returns the saved job.
+    The part is re-read after the LLM call: edited, re-run or queued meanwhile -> 409 and the notebook is kept."""
+    with _NB_LOCK:
+        try:
+            p = parts.project_of(job)
+        except KeyError:                    # project gone: nothing to record
+            p = None
+        if p is not None:
+            fj = store.load(job.part.film_job)
+            chars = [FilmCharacter.model_validate(c) for c in store.load_json(fj.id, "characters.json", default=[])]
+            script, st = _load_script(job.id), job.settings
+            try:
+                nb = notebook.record_part(api._engines().llm(st.llm_provider, st.llm_model), p.review.notebook,
+                                          job_id=job.id, index=job.part.index,
+                                          range_label=notebook.range_label(job.part, fj.film), script=script,
+                                          film_characters=chars)
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(502, f"Không cập nhật được sổ tay dự án: {e}")
+        job = api._get(job.id)
+        api._idle(job)
+        if job.state != "done" or (p is not None and _load_script(job.id) != script):
+            raise HTTPException(409, "Phần này vừa được sửa hoặc chạy lại, hãy duyệt lại")
+        if p is not None:
+            p = parts.project_of(job)       # keep other project changes made during the call
+            p.review.notebook = nb
+            projects.save(p)
+        job.state = "approved"
+        store.save(job)
+    if p is not None:
+        _next_episode(job, p, fj)
+    return job
+
+def _next_episode(job: Job, p: Project, fj: Job) -> None:
+    """Series: approving the last part of an episode starts downloading the next one."""
     if p.review.movie.type == "single" or not fj.film:
         return
     same = [j.part.index for j in parts.parts_of(p.id) if j.part.film_job == fj.id]

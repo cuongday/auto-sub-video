@@ -1011,7 +1011,7 @@ async def approve_job(jid: str, body: ApproveIn):
         if job.state != "done":
             raise HTTPException(409, "Chỉ duyệt được video đã xong")
         if job.kind == "review" and job.part:
-            await asyncio.to_thread(review_api.on_approve, job)
+            job = await asyncio.to_thread(review_api.approve_part, job)
         job.state = "approved"
     elif job.state == "approved":
         job.state = "done"

@@ -149,6 +149,10 @@ def _script(ctx: Ctx):
     fj = store.load(job.part.film_job)
     if fj.state not in ("done", "approved"):
         raise RuntimeError("Phim chưa chuẩn bị xong")
+    if job.part.index > 1 and not store.exists(job.id, "script.json"):      # first script: one part after another
+        prev = next((j for j in parts.parts_of(job.project) if j.part.index == job.part.index - 1), None)
+        if prev is None or prev.state != "approved":
+            raise RuntimeError(f"Phần {job.part.index - 1} chưa được duyệt")
     if not _lines(fj):
         raise RuntimeError("Không có lời thoại để viết kịch bản")
     p = parts.project_of(job)

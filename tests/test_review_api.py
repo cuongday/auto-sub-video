@@ -3,7 +3,7 @@ import shutil
 import time
 import pytest
 from fastapi.testclient import TestClient
-from autosub import api, config, jobs, media, pipeline, projects, store, vsmov
+from autosub import api, config, jobs, media, pipeline, projects, review_api, store, vsmov
 from autosub.models import Episode, MovieMeta, Notebook, NotebookCharacter, SubTrack
 from autosub.projects import ReviewProject
 from autosub.review import pace, parts
@@ -175,9 +175,56 @@ def test_reapprove_part1_marks_part2_stale(client, rig):
     blocks[2]["text"] += " Thêm một câu."
     client.put(f"/api/jobs/{p1.id}/script", json=blocks)
     assert client.get(f"/api/jobs/{p1.id}").json()["state"] == "done"
+    # part 2 already has a script: it renders while part 1 is unapproved
+    assert client.post(f"/api/jobs/{p2.id}/run", json={"mode": "auto"}).status_code == 200
+    done(client, p2.id)
     assert client.post(f"/api/jobs/{p1.id}/approve", json={}).json()["state"] == "approved"
     assert client.get(f"/api/jobs/{p2.id}").json()["notebook_stale"] is True
     assert store.load_json(p2.id, "script.json") == before
+
+def test_project_run_cannot_skip_the_order(client, rig):
+    rig.film_done()
+    p1, p2 = parts.create_parts(store.load(rig.film.id), [62.0])
+    r = client.post(f"/api/projects/{rig.project.id}/run", json={"states": ["new"], "apply_preset": False}).json()
+    assert set(r["queued"]) == {p1.id, p2.id}
+    j2 = wait(client, p2.id, {"error", "done", "awaiting_review"})
+    assert j2["state"] == "error" and "Phần 1 chưa được duyệt" in j2["error"]
+    assert not store.exists(p2.id, "script.json")
+    done(client, p1.id)
+
+class EditingLLM(FakeLLM):
+    """Answers like the fake, but the user edits the part's script while the notebook is being updated."""
+    def __init__(self, jid):
+        super().__init__(review_llm_hook)
+        self.jid = jid
+
+    def generate_json(self, prompt, schema, temperature=0.3):
+        if "entry" in schema["properties"]:
+            s = store.load_json(self.jid, "script.json")
+            s["blocks"][0]["text"] = "Sửa trong lúc duyệt"
+            store.save_json(self.jid, "script.json", s)
+        return super().generate_json(prompt, schema, temperature)
+
+def test_approve_rejects_part_changed_during_notebook_update(client, rig):
+    rig.film_done()
+    jid = parts.create_parts(store.load(rig.film.id), [])[0].id
+    client.post(f"/api/jobs/{jid}/run", json={"mode": "auto"})
+    done(client, jid)
+    api.QUEUE.engines_factory = lambda: pipeline.Engines(llm=lambda p, m: EditingLLM(jid))
+    r = client.post(f"/api/jobs/{jid}/approve", json={})
+    assert r.status_code == 409
+    assert client.get(f"/api/jobs/{jid}").json()["state"] == "done"
+    assert client.get(f"/api/review/projects/{rig.project.id}/notebook").json()["entries"] == []
+
+def test_bad_numbers_rejected(client, rig):
+    rig.film_done()
+    jid = parts.create_parts(store.load(rig.film.id), [])[0].id
+    base = f"/api/review/projects/{rig.project.id}"
+    body = '{"film_job": "%s", "cuts": [NaN]}' % rig.film.id
+    assert client.put(f"{base}/parts", content=body, headers={"content-type": "application/json"}).status_code == 422
+    body = '{"film_job": "%s", "minutes": Infinity}' % rig.film.id
+    assert client.post(f"{base}/split", content=body, headers={"content-type": "application/json"}).status_code == 422
+    assert client.get(f"/api/jobs/{jid}/thumb", params={"t": "nan"}).status_code == 400
 
 def test_notebook_rename_updates_film_characters(client, rig):
     rig.film_done()
@@ -190,6 +237,25 @@ def test_notebook_rename_updates_film_characters(client, rig):
     out = client.put(url, json=nb).json()
     assert out["rev"] == 2 and out["shared_rev"] == 2 and out["characters"][0]["name"] == "Minh Nhỏ"
     assert [c["name"] for c in store.load_json(rig.film.id, "characters.json")] == ["Minh Nhỏ"]
+    assert client.put(url, json=nb).status_code == 409                     # stale copy (rev 1)
+    assert client.put(url, json=nb).json()["detail"] == "Sổ tay đã thay đổi, tải lại rồi sửa tiếp"
+
+def test_notebook_reorder_is_not_a_rename(client, rig):
+    rig.film_done()
+    store.save_json(rig.film.id, "characters.json", [{"name": n, "aliases": [], "role": ""} for n in ("An", "Bình", "Chi")])
+    p = projects.get(rig.project.id)
+    p.review.notebook = Notebook(characters=[NotebookCharacter(name=n) for n in ("An", "Bình", "Chi")], rev=1)
+    projects.save(p)
+    url = f"/api/review/projects/{p.id}/notebook"
+    nb = client.get(url).json()
+    nb["characters"] = [nb["characters"][i] for i in (1, 0, 2)]           # Bình, An, Chi: reorder only
+    nb = client.put(url, json=nb).json()
+    names = lambda: [c["name"] for c in store.load_json(rig.film.id, "characters.json")]  # noqa: E731
+    assert names() == ["An", "Bình", "Chi"]
+    nb["characters"] = [nb["characters"][i] for i in (1, 0, 2)]           # back to An, Bình, Chi ...
+    nb["characters"][2]["name"] = "Chi Pu"                                # ... and Chi renamed
+    client.put(url, json=nb)
+    assert names() == ["An", "Bình", "Chi Pu"]
 
 def test_vsmov_project_one_per_slug_and_prepare(client, fake_vsmov):
     m = client.get("/api/vsmov/movie/phim-a").json()
@@ -249,7 +315,7 @@ def test_vsmov_search_routes(client, monkeypatch):
     r = client.get("/api/vsmov/home")
     assert r.status_code == 502 and "vsmov" in r.json()["detail"]
 
-def test_music_upload_rejects_other_types(client):
+def test_music_upload_rejects_other_types(client, monkeypatch):
     p = projects.create("Phim", kind="review", review=ReviewProject(source="upload", movie=MovieMeta(name="Phim")))
     url = f"/api/review/projects/{p.id}/music"
     assert client.post(url, files={"file": ("virus.exe", b"MZ", "application/octet-stream")}).status_code == 400
@@ -258,6 +324,8 @@ def test_music_upload_rejects_other_types(client):
     assert r.status_code == 200 and r.json()["review"]["music"] == key
     assert get_store().get_bytes(key) == b"ID3fake"
     assert client.delete(url).json()["review"]["music"] is None and get_store().get_bytes(key) is None
+    monkeypatch.setattr(review_api, "MUSIC_MAX", 4)
+    assert client.post(url, files={"file": ("nhac.mp3", b"ID3fake", "audio/mpeg")}).status_code == 413
 
 def test_thumb_returns_jpeg(client, rig, tmp_path):
     jid = parts.create_parts(store.load(rig.film.id), [])[0].id

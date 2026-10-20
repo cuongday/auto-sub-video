@@ -436,6 +436,7 @@ def get_script(jid: str):
 
 def _edited(job: Job) -> None:
     job.segments_edited = True               # a re-run of `script` needs confirming; edited blocks are kept
+    job.warnings = [w for w in job.warnings if not w.startswith(script_mod.SHORT_WARNING)]   # the user set the length
     api._unapprove(job)
     store.save(job)
 

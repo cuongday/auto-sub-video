@@ -157,11 +157,65 @@ def test_extension_stops_without_progress():
     s = _build(llm, settings=ReviewSettings(minutes=15))
     assert sum("UNCOVERED" in p for p in llm.prompts) == 1 and script.estimate_seconds(s, 190) < 0.85 * 900
 
+def _than(a, b, word="thêm", n=200):
+    return {"kind": "than", "text": " ".join([word] * n), "scenes": [{"start": a, "end": min(b, a + 3)}],
+            "source_start": a, "source_end": b}
+
+def test_extension_retelling_the_story_is_not_merged():
+    def hook(prompt, schema):
+        if "UNCOVERED" in prompt:                      # the whole story again, hook to ket
+            return {"blocks": [{**_than(100, 400, "lặp"), "kind": k} for k in ["hook", "mo_dau", "than", "ket"]]}
+        return review_llm_capped(1600)(prompt, schema)
+    llm = FakeLLM(hook)
+    s = _build(llm, settings=ReviewSettings(minutes=15))
+    assert sum("UNCOVERED" in p for p in llm.prompts) == 1 and not any("lặp" in b.text for b in s.blocks)
+    def body_again(prompt, schema):                   # only body blocks, but over the whole part, not the gaps asked
+        if "UNCOVERED" in prompt:
+            return {"blocks": [_than(100, 400, "lặp"), _than(150, 390, "lặp")]}
+        r = review_llm_capped(1600)(prompt, schema)
+        r["blocks"][2].update(source_start=110, source_end=380)
+        return r
+    llm = FakeLLM(body_again)
+    s = _build(llm, settings=ReviewSettings(minutes=15))
+    ext = [p for p in llm.prompts if "UNCOVERED" in p]
+    assert len(ext) == 1 and not any("lặp" in b.text for b in s.blocks)
+    assert "TARGET" not in ext[0] and "Cấu trúc" not in ext[0] 
+    assert "Đoạn không thuộc phần này." not in ext[0] and "Bản nháp còn thiếu khoảng" in ext[0]
+
+def test_extension_never_reaches_into_the_kept_ending():
+    def hook(prompt, schema):
+        if "UNCOVERED" in prompt:
+            return {"blocks": [_than(200, 262, "cuối"), _than(120, 150, "giữa")]}
+        return {"blocks": [{**_than(100, 110, "mở", 5), "kind": "hook"}, _than(150, 250, "thân", 100),
+                           {**_than(240, 250, "kết", 5), "kind": "ket"}]}
+    llm = FakeLLM(hook)
+    s = _build(llm, is_last=True, settings=ReviewSettings(minutes=15))
+    ext = [p for p in llm.prompts if "UNCOVERED" in p]
+    assert "UNCOVERED [100.0–150.0]" in ext[0] and "Không được tiết lộ cái kết" in ext[0]
+    assert any("giữa" in b.text for b in s.blocks) and not any("cuối" in b.text for b in s.blocks)
+    assert script.story_end(s.blocks, PART, True) == 250
+
+def test_longest_retry_answer_is_kept():
+    calls = []
+    def hook(prompt, schema):
+        if "UNCOVERED" in prompt:
+            return {"blocks": []}
+        calls.append(1)
+        return review_llm_hook(re.sub(r"TARGET (\d+)", lambda m: f"TARGET {int(m[1]) // 2 ** len(calls)}", prompt), schema)
+    s = _build(FakeLLM(hook))
+    assert len(calls) == 3 and sum(pace.syllables(b.text) for b in s.blocks) == script.target_syllables(300, 190) // 2
+
 def test_short_script_warns(review_rig):
     review_rig.film_done()
     p = review_rig.part()
-    review_rig.llm.hook = review_llm_capped(10, extend=False)
+    capped = review_llm_capped(10)
+    def retell(prompt, schema):                       # extensions tell the whole story again: nothing merged
+        if "UNCOVERED" in prompt:
+            return {"blocks": [{**_than(0, 20, "lặp", 50), "kind": k} for k in ["hook", "mo_dau", "than", "ket"]]}
+        return capped(prompt, schema)
+    review_rig.llm.hook = retell
     job = review_rig.run(p.id, mode="review")
+    assert not any("lặp" in b["text"] for b in store.load_json(p.id, "script.json")["blocks"])
     assert job.warnings == ["Kịch bản ngắn hơn mục tiêu: 0.5/1 phút"]
     assert "Kịch bản ngắn hơn mục tiêu" in get_store().get_bytes(store.key(p.id, "log.txt")).decode()
     review_rig.llm.hook = review_llm_hook

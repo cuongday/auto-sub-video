@@ -9,6 +9,7 @@ import type { Job, PartInfo, ReviewSettings, ScriptBlock, ScriptData, Templates,
 
 const BLOCK_GAP = 0.35, SENT_GAP = 0.15, MAX_SYLLABLES = 30;   // autosub/review/narration.py
 const TOLERANCE = 0.15;    // script.py LENGTH_TOLERANCE
+const SHORT_WARNING = "Kịch bản ngắn hơn mục tiêu";   // script.py SHORT_WARNING: hidden once the estimate is in range
 const NEW_SCENE = 4;
 /** Same count as autosub/review/pace.py: one Vietnamese syllable per word. */
 const syllables = (t: string) => t.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
@@ -154,7 +155,8 @@ export default function ScriptEditor({ job, film, templates, onJob, onRun }: {
           <button className="ghost small" disabled={!!act} onClick={rewriteAll}>Viết lại kịch bản</button>
         </div>
       )}
-      {written && !busy && job.warnings.map((w) => <p key={w} className="se-banner" role="status"><Icon name="alert" size={15} /> {w}</p>)}
+      {written && !busy && job.warnings.filter((w) => off || !w.startsWith(SHORT_WARNING)).map((w) =>
+        <p key={w} className="se-banner" role="status"><Icon name="alert" size={15} /> {w}</p>)}
       {written && job.stale_from === "script" && !busy && (
         <p className="se-banner" role="status"><Icon name="alert" size={15} /> Cài đặt kịch bản đã đổi. Bấm “Viết lại kịch bản” để áp dụng; duyệt ngay thì kịch bản cũng được viết lại trước khi dựng.</p>
       )}

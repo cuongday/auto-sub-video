@@ -426,15 +426,20 @@ def test_retry_after_download_error(client, fake_vsmov):
     done(client, task["job"])
 
 def test_rewrite_after_raising_minutes_gives_a_longer_script(client, rig):
+    cap = [5]
     api.QUEUE.engines_factory = lambda: pipeline.Engines(
-        separate=fake_separate(), asr=lambda l, m, **kw: FakeASR(), llm=lambda p, m: FakeLLM(review_llm_capped(30)),
+        separate=fake_separate(), asr=lambda l, m, **kw: FakeASR(), llm=lambda p, m: FakeLLM(review_llm_capped(cap[0], cap[0] > 5)),
         tts=lambda n: FakeTTS())
     rig.film_done()
     jid = parts.create_parts(store.load(rig.film.id), [])[0].id
     client.post(f"/api/jobs/{jid}/run", json={"mode": "review"})
-    assert wait(client, jid, {"awaiting_review", "error"})["state"] == "awaiting_review"
+    j = wait(client, jid, {"awaiting_review", "error"})
+    assert j["state"] == "awaiting_review" and j["warnings"][0].startswith("Kịch bản ngắn hơn mục tiêu")
     short = client.get(f"/api/jobs/{jid}/script").json()
+    assert client.put(f"/api/jobs/{jid}/script", json=short["blocks"]).status_code == 200
     j = client.get(f"/api/jobs/{jid}").json()
+    assert j["warnings"] == []                        # the user saved the script: the length is theirs now
+    cap[0] = 30                                       # now the model extends
     assert client.put(f"/api/jobs/{jid}/review-settings", json={**j["review"], "minutes": 3}).status_code == 200
     assert client.post(f"/api/jobs/{jid}/script/rewrite").status_code == 200
     j = wait(client, jid, {"awaiting_review", "error"})

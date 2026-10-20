@@ -14,10 +14,12 @@ from .pace import syllables
 KINDS = ["hook", "mo_dau", "than", "ket"]
 MIN_SCENE = 0.5
 LENGTH_TOLERANCE = 0.15
+SHORT_WARNING = "Kịch bản ngắn hơn mục tiêu"
 BODY_SYLLABLES = 220     # one body block: a long script gets more blocks, not longer ones
 MAX_BODY = 30
 SENTENCE_SYLLABLES = 15  # an average sentence before any is written, for the pauses between sentences
 EXTEND_ROUNDS = 3
+EXTEND_INSIDE = 0.6   # share of an extension block that must lie in a span it was asked for
 MAX_LINES = 1200    # dialogue lines in the prompt; a longer part keeps every k-th line
 
 _SPAN = {"type": "object", "properties": {"start": {"type": "number"}, "end": {"type": "number"}}, "required": ["start", "end"]}
@@ -202,41 +204,86 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
     prompt = "\n".join(rows)
 
     keep_ending = is_last and not settings.spoil_ending
-    fix, length_tries, hook_tries = "", 0, 0
-    while True:
-        raw = llm.generate_json(prompt + fix, SCRIPT_SCHEMA).get("blocks", [])
+
+    def check(raw: list[dict]):
         blocks = validate_blocks(raw, part, settings, locked, keep_ending)
-        sec = estimate_seconds(Script(blocks=blocks), spm)
-        draft = f"\n\nBản trước: {_dump(blocks)}"
-        if abs(sec - goal) / goal > LENGTH_TOLERANCE and length_tries < 2:
-            length_tries += 1
-            fix = f"{draft}\nKịch bản đang {'ngắn' if sec < goal else 'dài'} hơn mục tiêu: viết lại cho khoảng {target} âm tiết."
-            continue
-        hook = next((b for b in blocks if b.kind == "hook" and not b.edited), None)
-        if hook and _norm(hook.text) in {_norm(h) for h in used} and hook_tries < 1:
-            hook_tries += 1
-            fix = f"{draft}\nHook bị trùng với phần trước: viết hook khác."
-            continue
-        if not blocks:
-            raise RuntimeError("LLM không trả về kịch bản")
-        break
+        return raw, blocks, estimate_seconds(Script(blocks=blocks), spm)
+
+    fix, best = "", None
+    for _ in range(3):                  # the answer nearest the length wins, not the last one
+        got = check(llm.generate_json(prompt + fix, SCRIPT_SCHEMA).get("blocks", []))
+        if got[1] and (best is None or abs(got[2] - goal) < abs(best[2] - goal)):
+            best = got
+        if abs(got[2] - goal) / goal <= LENGTH_TOLERANCE:
+            break
+        fix = (f"\n\nBản trước: {_dump(got[1])}\nKịch bản đang {'ngắn' if got[2] < goal else 'dài'} hơn mục tiêu: "
+               f"viết lại cho khoảng {target} âm tiết.")
+    if best is None:
+        raise RuntimeError("LLM không trả về kịch bản")
+    raw, blocks, sec = best
+    hook = next((b for b in blocks if b.kind == "hook" and not b.edited), None)
+    if hook and _norm(hook.text) in {_norm(h) for h in used}:
+        got = check(llm.generate_json(f"{prompt}\n\nBản trước: {_dump(blocks)}\nHook bị trùng với phần trước: viết hook khác.",
+                                      SCRIPT_SCHEMA).get("blocks", []))
+        if got[1]:
+            raw, blocks, sec = got
     for _ in range(EXTEND_ROUNDS):      # still short (models stop near 1,500 syllables a call): add body blocks
         if sec >= goal * (1 - LENGTH_TOLERANCE):
             break
         need = max(1, round((goal - sec) / 60 * spm))
-        k = min(MAX_BODY, max(1, round(need / BODY_SYLLABLES)))
-        spans = _uncovered(blocks, part.start, story_end(blocks, part, keep_ending))
-        ask = (f"\n\nBản nháp hiện tại: {_dump(blocks)}\nBản nháp còn thiếu khoảng {need} âm tiết. "
-               f"Viết thêm {k} khối than, mỗi khối khoảng {need // k} âm tiết, kể những diễn biến trong các khoảng phim "
-               "dưới đây mà bản nháp chưa kể hoặc mới kể sơ lược. Chỉ lấy từ tóm tắt và lời thoại của các khoảng đó, "
-               "không bịa thêm, không lặp lại bản nháp. Chỉ trả về các khối than mới.\n"
-               + "\n".join(f"UNCOVERED {_span(a, b)}" for a, b in spans))
-        more = [r for r in llm.generate_json(prompt + ask, SCRIPT_SCHEMA).get("blocks", []) if r.get("kind") == "than"]
-        longer = validate_blocks(raw + more, part, settings, locked, keep_ending)
-        if (n := estimate_seconds(Script(blocks=longer), spm)) <= sec:
+        end = story_end(blocks, part, keep_ending)
+        spans = _uncovered(blocks, part.start, end)
+        ask = _extend_prompt(meta=meta, cast=cast, chunks=chunks, lines=lines, part=part, spans=spans, settings=settings,
+                             keep_ending=keep_ending, blocks=blocks, need=need)
+        more = _extension(llm.generate_json(ask, SCRIPT_SCHEMA).get("blocks", []), spans, end if keep_ending else None)
+        got = check(raw + more)
+        if got[2] <= sec:
             break
-        raw, blocks, sec = raw + more, longer, n
+        raw, blocks, sec = got
     return Script(blocks=blocks)
+
+def _extend_prompt(*, meta: MovieMeta, cast, chunks: list[ChunkSummary], lines: list[Segment], part: PartInfo,
+                   spans: list[tuple[float, float]], settings: ReviewSettings, keep_ending: bool,
+                   blocks: list[ScriptBlock], need: int) -> str:
+    """Ask for body blocks of the stretches the draft skips: only their summaries and dialogue, no length target for
+    the whole script (a model given one tends to write the whole script again)."""
+    inside = lambda a, b: any(a < e and b > s for s, e in spans)  # noqa: E731
+    k = min(MAX_BODY, max(1, round(need / BODY_SYLLABLES)))
+    rows = [f"Bạn là người viết kịch bản video review phim. Bản nháp lời đọc phần {part.index} còn ngắn: viết thêm "
+            "các khối than cho những khoảng phim nó chưa kể hoặc mới kể sơ lược.",
+            RULES, "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
+            "Tóm tắt các đoạn phim của những khoảng đó:", _chunks([c for c in chunks if inside(c.start, c.end)], part), "",
+            "Lời thoại của những khoảng đó ([giây] câu thoại gốc):",
+            _dialogue([s for s in lines if inside(s.start, s.start + 0.01)], part), "",
+            f"Phong cách: {templates.prompt('styles', settings.style)}"]
+    if keep_ending:
+        rows.append("Không được tiết lộ cái kết của phim: dừng trước cao trào và để lửng.")
+    if settings.notes.strip():
+        rows.append(f"Yêu cầu thêm: {settings.notes.strip()}")
+    rows += ["", f"Bản nháp hiện tại: {_dump(blocks)}", "",
+             f"Bản nháp còn thiếu khoảng {need} âm tiết. Viết thêm {k} khối than, mỗi khối khoảng {need // k} âm tiết, "
+             "mỗi khối nằm trong một khoảng phim dưới đây. Chỉ lấy từ tóm tắt và lời thoại của các khoảng đó, không bịa "
+             "thêm, không lặp lại bản nháp. Chỉ trả về các khối than mới, không viết lại hook, mo_dau hay ket.",
+             *(f"UNCOVERED {_span(a, b)}" for a, b in spans), f"RANGE {part.start} {part.end}"]
+    return "\n".join(rows)
+
+def _extension(raw: list[dict], spans: list[tuple[float, float]], ending: float | None) -> list[dict]:
+    """The new body blocks worth merging: an answer with a hook, opening or ending tells the story again (nothing
+    merged); a block counts only when most of it lies in one asked-for span and, with the ending kept, it stops
+    before `ending` (its text would tell what the part holds back)."""
+    if any(r.get("kind") != "than" for r in raw):
+        return []
+    out = []
+    for r in raw:
+        try:
+            a, b = float(r["source_start"]), float(r["source_end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if b <= a or (ending is not None and b > ending + MIN_SCENE):
+            continue
+        if max((min(b, e) - max(a, s) for s, e in spans), default=0) >= EXTEND_INSIDE * (b - a):
+            out.append(r)
+    return out
 
 def rewrite_block(llm: LLMProvider, script: Script, bid: int, instruction: str, *, meta: MovieMeta,
                   settings: ReviewSettings, part: PartInfo) -> ScriptBlock:

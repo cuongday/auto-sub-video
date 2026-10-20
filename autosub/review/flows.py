@@ -179,7 +179,7 @@ def _script(ctx: Ctx):
     sec, goal = script.estimate_seconds(s, spm), job.review.minutes * 60
     ctx.log(f"Kịch bản: {len(s.blocks)} khối, khoảng {sec / 60:.1f} phút ({spm:.0f} âm tiết/phút)")
     short = sec < goal * (1 - script.LENGTH_TOLERANCE)
-    job.warnings = [f"Kịch bản ngắn hơn mục tiêu: {sec / 60:.1f}/{job.review.minutes:g} phút"] if short else []
+    job.warnings = [f"{script.SHORT_WARNING}: {sec / 60:.1f}/{job.review.minutes:g} phút"] if short else []
     if short:
         ctx.log(f"Cảnh báo: {job.warnings[0]}. Viết lại kịch bản hoặc thêm khối để đủ độ dài.")
 

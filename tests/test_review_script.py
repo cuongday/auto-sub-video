@@ -3,7 +3,7 @@ import re
 import pytest
 from autosub import projects, store
 from autosub.models import (ChunkSummary, FilmCharacter, MovieMeta, Notebook, NotebookCharacter, NotebookEntry, PartInfo,
-                            ReviewSettings, SceneNote, ScriptBlock, TimeSpan)
+                            ReviewSettings, SceneNote, ScriptBlock, Segment, TimeSpan)
 from autosub.review import notebook, pace, script, templates
 from autosub.storage import get_store
 from tests.fakes import FakeLLM, FakeTTS, review_llm_hook
@@ -97,6 +97,18 @@ def test_straddling_chunk_tells_only_its_part():
     for text in ["Tóm tắt kể cả phần trước.", "Tóm tắt lộ phần sau.", "Sự kiện phần trước"]:
         assert text not in p, text
 
+def test_prompt_has_the_part_dialogue_with_timestamps():
+    llm = FakeLLM(review_llm_hook)
+    lines = [Segment(id=i, start=t, end=t + 2, source=f"thoại {t}") for i, t in enumerate([50, 150.3, 399, 450])]
+    _build(llm, lines=lines)
+    p = llm.prompts[-1]
+    assert "[150.3] thoại 150.3" in p and "[399.0] thoại 399" in p
+    assert "thoại 50" not in p and "thoại 450" not in p
+    many = [Segment(id=i, start=100 + i * 0.1, end=100 + i * 0.1 + 0.1, source=f"câu số {i}.") for i in range(2999)]
+    _build(llm, lines=many)
+    n = len(re.findall(r"câu số \d+\.", llm.prompts[-1]))
+    assert 600 <= n <= script.MAX_LINES and "câu số 0." in llm.prompts[-1]
+
 def test_length_retry():
     calls = []
     def hook(prompt, schema):
@@ -123,7 +135,7 @@ def test_prompt_rules():
                  templates.prompt("hooks", "cau_hoi"), templates.prompt("openings", "tom_tat_truoc"), "Nhắc tên đạo diễn",
                  "Tiểu Minh rời nhà", "Phim thử", "Tiểu Minh", "RANGE 100.0 400.0", "TARGET 950",
                  "Chỉ kể những gì có trong tóm tắt, không thêm tình tiết", "kể ở ngôi thứ ba, bằng tiếng Việt",
-                 "mỗi khối kèm các cảnh minh hoạ lấy từ mốc thời gian trong tóm tắt"]:
+                 "theo đúng thứ tự lời đọc kể", "hook, mo_dau và ket cũng phải có cảnh"]:
         assert text in p, text
     for text in ["Phần sau không được đọc.", "Đoạn không thuộc phần này.", "Sự kiện ngoài phần", "Không được tiết lộ cái kết"]:
         assert text not in p, text

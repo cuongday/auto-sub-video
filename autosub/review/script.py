@@ -1,9 +1,11 @@
 """The review script of one part: blocks of narration (hook, opening, body, ending), each with the film
-scenes that illustrate it. Written by the LLM from the chunk summaries, never from beyond them."""
+scenes that illustrate it. Written by the LLM from the chunk summaries, never from beyond them; the part's
+timestamped dialogue lets it point each scene at the moment its sentence tells."""
 import json
+import math
 import re
 from ..llm.base import LLMProvider
-from ..models import ChunkSummary, FilmCharacter, MovieMeta, Notebook, PartInfo, ReviewSettings, Script, ScriptBlock, TimeSpan
+from ..models import ChunkSummary, FilmCharacter, MovieMeta, Notebook, PartInfo, ReviewSettings, Script, ScriptBlock, Segment, TimeSpan
 from . import notebook as nb_mod, templates
 from .film import _meta
 from .pace import syllables
@@ -12,6 +14,7 @@ KINDS = ["hook", "mo_dau", "than", "ket"]
 MIN_SCENE = 0.5
 LENGTH_TOLERANCE = 0.15
 BLOCK_PAUSE = 0.35
+MAX_LINES = 1200    # dialogue lines in the prompt; a longer part keeps every k-th line
 
 _SPAN = {"type": "object", "properties": {"start": {"type": "number"}, "end": {"type": "number"}}, "required": ["start", "end"]}
 
@@ -32,7 +35,10 @@ RULES = ("Quy tắc:\n"
          "- Lời đọc kể ở ngôi thứ ba, bằng tiếng Việt, câu ngắn dễ đọc thành tiếng.\n"
          "- Các khối theo thứ tự: hook, mo_dau, các khối than (theo diễn biến), ket. "
          "source_start/source_end là khoảng phim mà khối đang kể.\n"
-         "- mỗi khối kèm các cảnh minh hoạ lấy từ mốc thời gian trong tóm tắt (giây), nằm trong RANGE.")
+         "- Mỗi khối kèm các cảnh minh hoạ (giây, nằm trong RANGE) liệt kê theo đúng thứ tự lời đọc kể: khoảng một cảnh "
+         "cho mỗi câu, mỗi cảnh dài 2–8 giây, đặt đúng lúc trong lời thoại hoặc sự kiện mà câu đó nói tới.\n"
+         "- hook, mo_dau và ket cũng phải có cảnh: hook là khoảnh khắc nó gợi tò mò, mo_dau là những cảnh mở ra bối cảnh "
+         "của phần, ket là khoảnh khắc cuối cùng mà các khối than đã kể.")
 
 def opening_for(settings: ReviewSettings, part: PartInfo) -> str:
     return settings.opening or ("gioi_thieu" if part.index == 1 else "tom_tat_truoc")
@@ -101,6 +107,11 @@ def _chunks(chunks: list[ChunkSummary], part: PartInfo) -> str:
         rows += [f"  - Cảnh nổi bật {_span(h.start, h.end)} {h.text}" for h in c.highlights if inside(h)]
     return "\n".join(rows) or "(không có)"
 
+def _dialogue(lines: list[Segment], part: PartInfo) -> str:
+    rows = [s for s in lines if part.start <= s.start < part.end]
+    k = math.ceil(len(rows) / MAX_LINES) or 1
+    return "\n".join(f"[{s.start:.1f}] {s.source}" for s in rows[::k]) or "(không có)"
+
 def _cast(chars) -> str:
     rows = []
     for c in chars:
@@ -117,7 +128,7 @@ def _dump(blocks: list[ScriptBlock]) -> str:
 
 def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmCharacter], chunks: list[ChunkSummary],
                  part: PartInfo, total_parts: int, is_last: bool, settings: ReviewSettings, notebook: Notebook,
-                 spm: float, locked: list[ScriptBlock] = ()) -> Script:
+                 spm: float, locked: list[ScriptBlock] = (), lines: list[Segment] = ()) -> Script:
     target = round(settings.minutes * spm)
     opening = opening_for(settings, part)
     known = {c.name for c in notebook.characters}
@@ -126,6 +137,7 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
     rows = [f"Bạn là người viết kịch bản video review phim. Viết lời đọc cho phần {part.index}/{total_parts} của video review.",
             RULES, "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
             "Tóm tắt các đoạn phim trong phần này:", _chunks(chunks, part), "",
+            "Lời thoại trong phần này ([giây] câu thoại gốc), để đặt cảnh đúng lúc:", _dialogue(lines, part), "",
             f"Phong cách: {templates.prompt('styles', settings.style)}",
             f"Hook: {templates.prompt('hooks', settings.hook)}",
             f"Mở đầu: {templates.prompt('openings', opening)}"]

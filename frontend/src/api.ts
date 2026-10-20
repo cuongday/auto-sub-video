@@ -1,4 +1,7 @@
-import type { AppSettings, BrowseListing, GpuStatus, VieneuDevice, Context, DyLookup, DyTask, Job, Options, Project, Segment, Settings, SharedGlossary, Voice } from "./types";
+import type {
+  AppSettings, BrowseListing, GpuStatus, VieneuDevice, Context, DyLookup, DyTask, Job, Lang, Notebook, Options, Project, ReviewProjectData,
+  ReviewSettings, ScriptBlock, ScriptData, Segment, Settings, SharedGlossary, Templates, Voice, VsFilters, VsMovie, VsPage, VsTask,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -17,6 +20,19 @@ const JSONH = { "Content-Type": "application/json" };
 const post = (url: string, body?: unknown) => fetch(url, { method: "POST", headers: JSONH, body: JSON.stringify(body ?? {}) });
 const put = (url: string, body: unknown) => fetch(url, { method: "PUT", headers: JSONH, body: JSON.stringify(body) });
 
+/** POST a form with upload progress (fetch has no upload progress). */
+const send = <T>(url: string, fd: FormData, onProgress: (p: number) => void) => new Promise<T>((resolve, reject) => {
+  const xhr = new XMLHttpRequest();
+  xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+  xhr.onload = () => {
+    let body: { detail?: string } = {};
+    try { body = JSON.parse(xhr.responseText || "{}"); } catch { /* proxy error page */ }
+    xhr.status < 300 ? resolve(body as T) : reject(new ApiError(xhr.status, body.detail || xhr.statusText));
+  };
+  xhr.onerror = () => reject(new ApiError(0, "Lỗi mạng khi tải lên"));
+  xhr.open("POST", url); xhr.send(fd);
+});
+
 export type SegmentsData = { segments: Segment[]; slots: number[] };
 
 export const api = {
@@ -33,18 +49,11 @@ export const api = {
   jobs: () => j<Job[]>(fetch("/api/jobs")),
   job: (id: string) => j<Job>(fetch(`/api/jobs/${id}`)),
   createFromPath: (path: string, project?: string | null) => j<Job>(post("/api/jobs", { path, project: project || null })),
-  upload: (file: File, onProgress: (p: number) => void, project?: string | null) => new Promise<Job>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  upload: (file: File, onProgress: (p: number) => void, project?: string | null) => {
     const fd = new FormData(); fd.append("file", file);
     if (project) fd.append("project", project);
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-    xhr.onload = () => {
-      const body = JSON.parse(xhr.responseText || "{}");
-      xhr.status < 300 ? resolve(body) : reject(new ApiError(xhr.status, body.detail || xhr.statusText));
-    };
-    xhr.onerror = () => reject(new ApiError(0, "Lỗi mạng khi tải lên"));
-    xhr.open("POST", "/api/jobs"); xhr.send(fd);
-  }),
+    return send<Job>("/api/jobs", fd, onProgress);
+  },
   browse: (path: string) => j<BrowseListing>(fetch(`/api/browse?path=${encodeURIComponent(path)}`)),
   appSettings: () => j<AppSettings>(fetch("/api/app-settings")),
   saveAppSettings: (s: { video_dir?: string; auto_prune?: boolean; vieneu_device?: VieneuDevice }) => j<AppSettings>(put("/api/app-settings", s)),
@@ -105,4 +114,38 @@ export const api = {
   deletePreset: (name: string) => j<Record<string, Settings>>(fetch(`/api/presets/${encodeURIComponent(name)}`, { method: "DELETE" })),
   file: (id: string, name: string, bust?: number | string) => `/api/jobs/${id}/files/${name}${bust ? `?v=${bust}` : ""}`,
   download: (id: string, name: string) => `/api/jobs/${id}/files/${name}?download=1`,
+
+  // ---- review phim
+  vsHome: (page = 1) => j<VsPage>(fetch(`/api/vsmov/home?page=${page}`)),
+  vsSearch: (q: string, page = 1) => j<VsPage>(fetch(`/api/vsmov/search?q=${encodeURIComponent(q)}&page=${page}`)),
+  vsList: (kind: "phim-le" | "phim-bo" | "the-loai" | "quoc-gia", slug = "", page = 1) =>
+    j<VsPage>(fetch(`/api/vsmov/list?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}`)),
+  vsFilters: () => j<VsFilters>(fetch("/api/vsmov/filters")),
+  vsMovie: (slug: string) => j<VsMovie>(fetch(`/api/vsmov/movie/${encodeURIComponent(slug)}`)),
+  reviewTemplates: () => j<Templates>(fetch("/api/review/templates")),
+  createReview: (slug: string, server: string) => j<Project>(post("/api/review/projects", { slug, server })),
+  uploadReview: (file: File, lang: Lang, onProgress: (p: number) => void) => {
+    const fd = new FormData(); fd.append("file", file); fd.append("lang", lang);
+    return send<Project>("/api/review/projects/upload", fd, onProgress);
+  },
+  reviewProject: (pid: string) => j<ReviewProjectData>(fetch(`/api/review/projects/${pid}`)),
+  prepareEpisode: (pid: string, slug: string) => j<VsTask>(post(`/api/review/projects/${pid}/episodes/${encodeURIComponent(slug)}/prepare`)),
+  saveReviewSettings: (pid: string, settings: ReviewSettings, job_settings: Settings | null = null, parts_per_episode: 1 | 2 | null = null) =>
+    j<Project>(put(`/api/review/projects/${pid}/settings`, { settings, job_settings, parts_per_episode })),
+  proposeSplit: (pid: string, film_job: string, by: { parts?: number; minutes?: number }) =>
+    j<{ cuts: number[] }>(post(`/api/review/projects/${pid}/split`, { film_job, ...by })),
+  saveParts: (pid: string, film_job: string, cuts: number[]) => j<Project>(put(`/api/review/projects/${pid}/parts`, { film_job, cuts })),
+  uploadMusic: (pid: string, file: File) => {
+    const fd = new FormData(); fd.append("file", file);
+    return j<Project>(fetch(`/api/review/projects/${pid}/music`, { method: "POST", body: fd }));
+  },
+  deleteMusic: (pid: string) => j<Project>(fetch(`/api/review/projects/${pid}/music`, { method: "DELETE" })),
+  notebook: (pid: string) => j<Notebook>(fetch(`/api/review/projects/${pid}/notebook`)),
+  saveNotebook: (pid: string, nb: Notebook) => j<Notebook>(put(`/api/review/projects/${pid}/notebook`, nb)),
+  script: (jid: string) => j<ScriptData>(fetch(`/api/jobs/${jid}/script`)),
+  saveScript: (jid: string, blocks: ScriptBlock[]) => j<ScriptData>(put(`/api/jobs/${jid}/script`, blocks)),
+  rewriteScript: (jid: string) => j<Job>(post(`/api/jobs/${jid}/script/rewrite`)),
+  rewriteBlock: (jid: string, bid: number, instruction = "") => j<ScriptBlock>(post(`/api/jobs/${jid}/script/blocks/${bid}/rewrite`, { instruction })),
+  saveJobReviewSettings: (jid: string, s: ReviewSettings) => j<Job>(put(`/api/jobs/${jid}/review-settings`, s)),
+  thumbUrl: (jid: string, t: number) => `/api/jobs/${jid}/thumb?t=${t.toFixed(1)}`,
 };

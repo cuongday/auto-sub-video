@@ -8,6 +8,9 @@ const PATHS = {
   chevron: "M9 6l6 6-6 6",
   folderPlus: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 10v6 M9 13h6",
   alert: "M12 4l9 16H3z M12 10v4 M12 17v.5",
+  clapper: "M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z M4 10l-.6-3.4 15.8-2.8.5 3.4z M8.5 6l2.2 3.2 M13.3 5.2l2.2 3.2",
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M20 20l-4-4",
+  upload: "M12 20V9 M7 14l5-5 5 5 M5 4h14",
 } as const;
 
 export type IconName = keyof typeof PATHS;

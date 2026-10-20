@@ -13,10 +13,11 @@ import Progress from "./views/Progress";
 import ProjectView from "./views/ProjectView";
 import Result from "./views/Result";
 import Review from "./views/Review";
+import ReviewSource from "./views/ReviewSource";
 import Setup from "./views/Setup";
 
 type View = "setup" | "progress" | "review" | "result";
-type Section = "subs" | "douyin";
+type Section = "subs" | "douyin" | "review";
 
 const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
 const saveOpen = (v: boolean) => { try { localStorage.setItem("autosub.jobsOpen", v ? "1" : "0"); } catch { /* private mode */ } };
@@ -34,7 +35,11 @@ export default function App() {
   const [options, setOptions] = useState<Options | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sel, setSel] = useState<string | null>(() => new URLSearchParams(location.search).get("job"));
-  const [section, setSection] = useState<Section>(() => new URLSearchParams(location.search).get("tab") === "douyin" ? "douyin" : "subs");
+  const [section, setSection] = useState<Section>(() => {
+    const t = new URLSearchParams(location.search).get("tab");
+    return t === "douyin" || t === "review" ? t : "subs";
+  });
+  const [reviewSeen, setReviewSeen] = useState(section === "review");   // mounted on first visit, then kept (uploads)
   const [jobsOpen, setJobsOpen] = useState(readOpen);
   const [dyActive, setDyActive] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -91,6 +96,7 @@ export default function App() {
   useEffect(() => { if (job) expand(job.project && projects.some((p) => p.id === job.project) ? job.project : NO_PROJECT); },  // eslint-disable-line react-hooks/exhaustive-deps
     [job?.id, job?.project, projects.length]);
   const openDouyin = (pid?: string) => { if (pid !== undefined) setDyProject(pid); setSection("douyin"); history.replaceState(null, "", "?tab=douyin"); };
+  const openReview = () => { setSection("review"); setReviewSeen(true); history.replaceState(null, "", "?tab=review"); };
   const toggleJobs = () => setJobsOpen((o) => { saveOpen(!o); return !o; });
   const onDyActive = useCallback((n: number) => setDyActive(n), []);
   const busyJobs = jobs.filter((j) => j.state === "running" || j.state === "queued").length;
@@ -157,7 +163,7 @@ export default function App() {
         }}
         onToggleJobs={toggleJobs} onExpand={expand} onNewVideo={() => select(null)} onSelectJob={(id) => select(id)}
         onNewProject={async () => { const p = await newProject(); if (p) openProject(p.id); }}
-        onOpenProject={openProject} onDouyin={() => openDouyin()} />
+        onOpenProject={openProject} onDouyin={() => openDouyin()} onReview={openReview} />
       <main className="main">
         {/* kept mounted while hidden so downloads to a folder keep going when you switch screens */}
         <div hidden={section !== "douyin"}>
@@ -165,6 +171,11 @@ export default function App() {
             projects={projects} project={dyProject} onProject={setDyProject} onNewProject={newProject} onOpenProject={openProject}
             onOpenJob={(id) => { refresh(); select(id, "setup"); }} />
         </div>
+        {reviewSeen && (
+          <div hidden={section !== "review"}>
+            <ReviewSource onCreated={async (p) => { await Promise.all([refresh(), refreshProjects()]); openProject(p.id); }} />
+          </div>
+        )}
         {section !== "subs" ? null : project && !job ? (
           <ProjectView key={project.id} project={project} jobs={jobs} onOpenJob={(id) => select(id)} onChanged={putProject}
             onAddVideos={() => openDouyin(project.id)}

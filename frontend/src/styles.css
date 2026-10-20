@@ -431,3 +431,58 @@ button.srow.on, button.srow.on:hover:not(:disabled) { background: var(--selected
 .device { display: flex; flex-direction: column; gap: 6px; }
 .device-head { font-size: .9em; color: var(--muted); }
 .device p { margin: 0; }
+
+/* ---------- review phim: source ---------- */
+.review-src { max-width: 1180px; }
+.review-src .tabs button { gap: 6px; }
+.vs-bar { margin-bottom: 14px; }
+.vs-bar select { flex: 1 1 130px; width: auto; max-width: 190px; }
+.vs-search { flex: 1 1 280px; position: relative; display: flex; align-items: center; }
+.vs-search .icon-svg { position: absolute; left: 10px; color: var(--muted); pointer-events: none; }
+.vs-search input { padding-left: 32px; }
+.vs-head { margin-bottom: 10px; min-height: 22px; }
+.vs-empty { padding: 32px 0; text-align: center; }
+.vs-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px;
+  transition: opacity .15s; }
+.vs-grid.dim { opacity: .5; }
+.vs-card { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 0; text-align: left;
+  background: none; border: none; border-radius: 8px; }
+.vs-card:hover:not(:disabled) { background: none; border: none; }
+.vs-card:focus-visible { outline-offset: 4px; }
+.vs-poster { position: relative; display: block; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--panel-2);
+  border: 1px solid var(--line); margin-bottom: 5px; transition: border-color .15s, transform .2s cubic-bezier(.2, .8, .2, 1); }
+.vs-poster img, .vs-poster .noimg { width: 100%; height: 100%; object-fit: cover; display: flex; align-items: center; justify-content: center; color: #3A4150; }
+.vs-card:hover .vs-poster { border-color: var(--amber); transform: translateY(-2px); }
+.vs-rate { position: absolute; top: 6px; right: 6px; font-size: .75em; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 18px;
+  padding: 0 6px; border-radius: 5px; background: rgba(11, 13, 17, .82); color: var(--amber); }
+.vs-name { font-weight: 600; font-size: .93em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.vs-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-pages { justify-content: center; margin-top: 18px; }
+.vs-detail > .link { margin-bottom: 12px; }
+.vs-movie { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
+.vs-poster.big { border-radius: 10px; }
+.vs-info { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.vs-info h1 { font-size: 1.5rem; line-height: 1.25; text-wrap: balance; }
+.vs-info > p { margin: 0; }
+.vs-facts { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: .9em; }
+.vs-facts div { display: contents; }
+.vs-facts dt { color: var(--muted); }
+.vs-facts dd { margin: 0; }
+.vs-plot { max-width: 70ch; color: #C9CDD6; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.vs-server { margin-top: 4px; }
+.vs-server select { width: auto; min-width: 160px; }
+.vs-eps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 148px; overflow: auto; }
+.vs-eps li { font-size: .82em; font-variant-numeric: tabular-nums; padding: 3px 9px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
+.vs-none { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; padding: 10px 12px; border-radius: 8px; color: var(--amber);
+  background: rgba(245, 184, 61, .08); border: 1px solid rgba(245, 184, 61, .25); }
+.vs-go { margin-top: 6px; }
+.vs-upload { max-width: 720px; }
+.vs-upload-bar { margin-top: 14px; }
+.vs-progress { display: block; margin-top: 12px; }
+.vs-progress > span { background: var(--amber); }
+@media (max-width: 760px) {
+  .vs-movie { grid-template-columns: 1fr; }
+  .vs-poster.big { max-width: 200px; }
+  .vs-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) { .vs-poster, .vs-grid { transition: none; } .vs-card:hover .vs-poster { transform: none; } }

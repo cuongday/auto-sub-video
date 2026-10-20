@@ -5,23 +5,24 @@ import Icon from "./Icon";
 export const NO_PROJECT = "_none";
 const stateText = (j: Job) => (j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]);
 
-/** Left navigation: the subtitle workspace (projects -> videos) and the Douyin downloader.
+/** Left navigation: the subtitle workspace (projects -> videos), the Douyin downloader and film reviews.
  *  Every row is one hover target; nested buttons inside a row never paint their own hover. */
 export default function Sidebar({
   jobs, projects, section, sel, selProject, jobsOpen, expanded, busyJobs, dyActive, checks,
-  onSubs, onToggleJobs, onExpand, onNewVideo, onNewProject, onOpenProject, onSelectJob, onDouyin,
+  onSubs, onToggleJobs, onExpand, onNewVideo, onNewProject, onOpenProject, onSelectJob, onDouyin, onReview,
 }: {
-  jobs: Job[]; projects: Project[]; section: "subs" | "douyin"; sel: string | null; selProject: string | null;
+  jobs: Job[]; projects: Project[]; section: "subs" | "douyin" | "review"; sel: string | null; selProject: string | null;
   jobsOpen: boolean; expanded: Set<string>; busyJobs: number; dyActive: number;
   checks: { name: string; hint: string }[];
   onSubs: () => void; onToggleJobs: () => void; onExpand: (pid: string, open: boolean) => void;
   onNewVideo: () => void; onNewProject: () => void; onOpenProject: (pid: string) => void;
-  onSelectJob: (id: string) => void; onDouyin: () => void;
+  onSelectJob: (id: string) => void; onDouyin: () => void; onReview: () => void;
 }) {
   const known = new Set(projects.map((p) => p.id));
+  const shown = jobs.filter((j) => j.kind !== "film");   // a review project's movie is shown on the project page
   const groups = [
-    ...projects.map((p) => ({ id: p.id, name: p.name, real: true, jobs: jobs.filter((j) => j.project === p.id) })),
-    { id: NO_PROJECT, name: "Không thuộc project", real: false, jobs: jobs.filter((j) => !j.project || !known.has(j.project)) },
+    ...projects.map((p) => ({ id: p.id, name: p.name, real: true, review: p.kind === "review", jobs: shown.filter((j) => j.project === p.id) })),
+    { id: NO_PROJECT, name: "Không thuộc project", real: false, review: false, jobs: shown.filter((j) => !j.project || !known.has(j.project)) },
   ].filter((g) => g.real || g.jobs.length);
   const inSubs = section === "subs";
 
@@ -66,7 +67,7 @@ export default function Sidebar({
                       </button>
                       <button className="srow-main" title={g.name}
                         onClick={() => g.real ? onOpenProject(g.id) : onExpand(g.id, !open)}>
-                        <Icon name={g.real ? "folder" : "inbox"} size={15} />
+                        <Icon name={g.review ? "clapper" : g.real ? "folder" : "inbox"} size={15} />
                         <span className="srow-label">{g.name}</span>
                         {running > 0 && <span className="pill busy" title={`${running} video đang chạy`}>{running}</span>}
                         {waiting > 0 && <span className="pill done" title={`${waiting} video xong, chờ duyệt`}>{waiting}</span>}
@@ -98,6 +99,12 @@ export default function Sidebar({
           <button className="srow-main" aria-current={section === "douyin" ? "page" : undefined} onClick={onDouyin}>
             <Icon name="download" /> <span className="srow-label">Tải video Douyin</span>
             {dyActive > 0 && <span className="pill busy" title="Video đang tải">{dyActive}</span>}
+          </button>
+        </div>
+
+        <div className={`srow top ${section === "review" ? "on" : ""}`}>
+          <button className="srow-main" aria-current={section === "review" ? "page" : undefined} onClick={onReview}>
+            <Icon name="clapper" /> <span className="srow-label">Review phim</span>
           </button>
         </div>
       </nav>

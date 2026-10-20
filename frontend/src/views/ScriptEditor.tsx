@@ -23,8 +23,8 @@ const KIND_LABEL = { hook: "HOOK", mo_dau: "MỞ ĐẦU", ket: "KẾT" } as cons
 const grow = (el: HTMLTextAreaElement | null) => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight + 2}px`; } };
 
 /** The script of a review part (spec 5.4): narration blocks with their film scenes, the part's own settings beside them. */
-export default function ScriptEditor({ job, templates, onJob, onRun }: {
-  job: Job; templates: Templates | null; onJob: (j: Job) => void; onRun: (mode: "review" | "auto") => Promise<void>;
+export default function ScriptEditor({ job, film, templates, onJob, onRun }: {
+  job: Job; film?: string; templates: Templates | null; onJob: (j: Job) => void; onRun: (mode: "review" | "auto") => Promise<void>;
 }) {
   const part = job.part!;
   const written = job.steps.script?.status === "done";
@@ -60,7 +60,7 @@ export default function ScriptEditor({ job, templates, onJob, onRun }: {
     saving.current = saving.current.then(async () => {
       try {
         const d = await api.saveScript(job.id, next);
-        saved.current = d.blocks;
+        saved.current = d.blocks; setErr("");
         // only the flags come back: the text typed meanwhile in another block stays
         setBlocks((cur) => cur && cur.map((b) => ({ ...b, edited: d.blocks.find((x) => x.id === b.id)?.edited ?? b.edited })));
         onJob(await api.job(job.id));     // editing unapproves the part
@@ -77,7 +77,7 @@ export default function ScriptEditor({ job, templates, onJob, onRun }: {
     const n = { ...rv, ...patch };
     setRv(n);
     window.clearTimeout(rvTimer.current);
-    const go = () => { rvPending.current = null; return api.saveJobReviewSettings(job.id, n).then(onJob).catch((e) => setErr(e.message)); };
+    const go = () => { rvPending.current = null; return api.saveJobReviewSettings(job.id, n).then((j) => { onJob(j); setErr(""); }).catch((e) => setErr(e.message)); };
     rvPending.current = go;
     rvTimer.current = window.setTimeout(go, 500);
   };
@@ -93,8 +93,10 @@ export default function ScriptEditor({ job, templates, onJob, onRun }: {
     });
     if (ins === null) return;
     await run(`b${b.id}`, async () => {
-      await saving.current;
-      const nb = await api.rewriteBlock(job.id, b.id, ins);
+      // in the save chain: a save of another block can't carry this block's old text over the rewrite
+      const p = saving.current.then(() => api.rewriteBlock(job.id, b.id, ins));
+      saving.current = p.catch(() => {});
+      const nb = await p;
       saved.current = saved.current.map((x) => x.id === nb.id ? nb : x);
       setBlocks((cur) => cur && cur.map((x) => x.id === nb.id ? nb : x));
       onJob(await api.job(job.id));
@@ -113,13 +115,14 @@ export default function ScriptEditor({ job, templates, onJob, onRun }: {
   const off = blocks !== null && Math.abs(total - target) > target * TOLERANCE;
   const blocked = !written && job.prev_approved === false;
   const filmWait = !written && !blocked && job.film_state != null && job.film_state !== "done" && job.film_state !== "approved";
+  const rewriting = act.startsWith("b");    // the script is locked while one block is being rewritten
   let body = 0;
 
   return (
     <div className="se">
       <header className="se-head">
         <div>
-          <p className="se-crumb">Dự án: {job.name.replace(/ · Phần \d+$/, "")} · Phần {part.index} ({fmtClock(part.start)} → {fmtClock(part.end)})</p>
+          <p className="se-crumb">Dự án: {film ?? job.name} · Phần {part.index} ({fmtClock(part.start)} → {fmtClock(part.end)})</p>
           <h2>Kịch bản review: Phần {part.index}</h2>
         </div>
         {blocks && (
@@ -178,28 +181,28 @@ export default function ScriptEditor({ job, templates, onJob, onRun }: {
                     {b.edited && <span className="se-tag ed">đã sửa tay</span>}
                     <span className="se-dur" title="Thời lượng đọc ước tính">{mss(blockSecs(b, spm))}</span>
                   </div>
-                  <textarea ref={(el) => grow(el)} rows={2} value={b.text} disabled={mine} aria-label={`Lời đọc ${name}`}
+                  <textarea ref={(el) => grow(el)} rows={2} value={b.text} disabled={rewriting} aria-label={`Lời đọc ${name}`}
                     onChange={(e) => { grow(e.currentTarget); const text = e.target.value; setBlocks((cur) => cur && cur.map((x) => x.id === b.id ? { ...x, text, edited: true } : x)); }}
                     onBlur={() => { if (b.text !== saved.current.find((x) => x.id === b.id)?.text) save(blocks); }} />
                   <div className="se-scenes">
                     {b.scenes.map((s, i) => {
                       const on = open?.bid === b.id && open.i === i;
                       return (
-                        <button key={i} className="se-scene" aria-expanded={on} aria-label={`Cảnh ${fmtClock(s.start)} đến ${fmtClock(s.end)}`}
+                        <button key={i} className="se-scene" aria-expanded={on} disabled={rewriting} aria-label={`Cảnh ${fmtClock(s.start)} đến ${fmtClock(s.end)}`}
                           onClick={() => setOpen(on ? null : { bid: b.id, i })}>
                           <img src={api.thumbUrl(job.id, s.start)} alt="" loading="lazy" width={48} height={27} />
                           {fmtClock(s.start)}–{fmtClock(s.end)}
                         </button>
                       );
                     })}
-                    <button className="link small" onClick={() => {
+                    <button className="link small" disabled={rewriting} onClick={() => {
                       const start = Math.min(b.source_start ?? part.start, part.end - 1);
                       setScenes(b.id, [...b.scenes, { start, end: Math.min(start + NEW_SCENE, part.end) }]);
                       setOpen({ bid: b.id, i: b.scenes.length });
                     }}>+ thêm cảnh</button>
                     <button className="link small se-rw" disabled={!!act} onClick={() => rewriteBlock(b, name)}>
                       {mine ? <><span className="spin" aria-hidden /> Đang viết lại…</> : "↻ Viết lại"}</button>
-                    {open?.bid === b.id && b.scenes[open.i] && (
+                    {!rewriting && open?.bid === b.id && b.scenes[open.i] && (
                       <ScenePop key={open.i} src={api.file(part.film_job, "source")} scene={b.scenes[open.i]} part={part}
                         onClose={() => setOpen(null)}
                         onChange={(s) => setScenes(b.id, b.scenes.map((x, k) => k === open.i ? s : x))}
@@ -246,37 +249,44 @@ function ScenePop({ src, scene, part, onChange, onRemove, onClose }: {
   useEffect(() => {
     const out = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
-      if (!ref.current?.contains(t) && !t.closest(".se-scene")) onClose();
+      if (!ref.current?.contains(t) && !t.closest(".se-scene")) close.current();
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && close.current();
     document.addEventListener("pointerdown", out); document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("pointerdown", out); document.removeEventListener("keydown", esc); };
-  }, [onClose]);
+  }, []);
 
-  const apply = () => {
+  /** Apply the typed times; false (and the reason shown) when they are not valid. */
+  const apply = (): boolean => {
     // untouched fields keep their exact value (the box shows whole seconds)
     const s = a === fmtClock(scene.start) ? scene.start : parseClock(a);
     const e = b === fmtClock(scene.end) ? scene.end : parseClock(b);
-    if (s === null || e === null) return setBad("Nhập mốc theo dạng giờ:phút:giây, ví dụ 0:45:30");
-    if (s < part.start || e > part.end || e <= s)
-      return setBad(`Cảnh phải nằm trong phần này (${fmtClock(part.start)} → ${fmtClock(part.end)}) và kết thúc sau khi bắt đầu`);
+    if (s === null || e === null) { setBad("Nhập mốc theo dạng giờ:phút:giây, ví dụ 0:45:30"); return false; }
+    if (s < part.start || e > part.end || e <= s) {
+      setBad(`Cảnh phải nằm trong phần này (${fmtClock(part.start)} → ${fmtClock(part.end)}) và kết thúc sau khi bắt đầu`);
+      return false;
+    }
     setBad("");
     if (s !== scene.start || e !== scene.end) onChange({ start: s, end: e });
+    return true;
   };
+  // closing keeps what was typed; a bad time keeps the popover open with the reason (Xoá cảnh still works)
+  const close = useRef(() => {});
+  close.current = () => { if (apply()) onClose(); };
   const key = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); apply(); } };
 
   return (
     <div ref={ref} className="se-pop" role="dialog" aria-label={`Cảnh ${fmtClock(scene.start)}–${fmtClock(scene.end)}`}>
       <video key={`${scene.start}-${scene.end}`} src={`${src}#t=${scene.start.toFixed(2)},${scene.end.toFixed(2)}`} controls preload="metadata" />
       <div className="se-times">
-        <label>Bắt đầu<input value={a} onChange={(e) => setA(e.target.value)} onBlur={apply} onKeyDown={key} inputMode="decimal" /></label>
-        <label>Kết thúc<input value={b} onChange={(e) => setB(e.target.value)} onBlur={apply} onKeyDown={key} inputMode="decimal" /></label>
+        <label>Bắt đầu<input value={a} onChange={(e) => setA(e.target.value)} onBlur={apply} onKeyDown={key} /></label>
+        <label>Kết thúc<input value={b} onChange={(e) => setB(e.target.value)} onBlur={apply} onKeyDown={key} /></label>
       </div>
       {bad && <p className="error small" role="alert">{bad}</p>}
       <div className="row">
         <button className="ghost small danger" onClick={onRemove}>Xoá cảnh</button>
         <span className="grow" />
-        <button className="ghost small" onClick={onClose}>Đóng</button>
+        <button className="ghost small" onClick={() => close.current()}>Đóng</button>
       </div>
     </div>
   );

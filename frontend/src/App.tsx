@@ -233,7 +233,7 @@ export default function App() {
                 onClick={() => removeJob(job)}>🗑</button>
             </header>
             {view === "setup" && !isReview && <Setup job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
-            {view === "script" && isReview && <ScriptEditor key={job.id} job={job} templates={templates} onJob={replace} onRun={(m) => run(m)} />}
+            {view === "script" && isReview && <ScriptEditor key={job.id} job={job} film={projects.find((p) => p.id === job.project)?.review?.movie.name} templates={templates} onJob={replace} onRun={(m) => run(m)} />}
             {view === "progress" && (
               <Progress job={job} pct={pct[job.id] ?? {}} logs={logs[job.id] ?? []}
                 onCancel={() => api.cancel(job.id)} onRetry={(step) => run(job.mode, step || job.stale_from)} />

@@ -21,6 +21,9 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
   const [pct, setPct] = useState(0);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const pickable = canPickLocation();
+  const review = job.kind === "review";
+  // a review part's info is its film's; the video itself is framed by the part's aspect
+  const [w, h] = review && job.review ? (job.review.aspect === "9:16" ? [9, 16] : [16, 9]) : job.info ? [job.info.width, job.info.height] : [0, 0];
   const [storage, setStorage] = useState<{ total: number; reclaimable: number } | null>(null);
   const [autoPrune, setAutoPrune] = useState(false);
   useEffect(() => {
@@ -45,8 +48,10 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
       <header className="card-head">
         <h2>Thành phẩm</h2>
         <div className="row">
-          <button className="ghost" onClick={onEdit}>Quay lại sửa phụ đề</button>
-          <button className="ghost" onClick={onSetup}>Đổi vùng che / tuỳ chọn</button>
+          {review ? <button className="ghost" onClick={onEdit}>Sửa kịch bản</button> : <>
+            <button className="ghost" onClick={onEdit}>Quay lại sửa phụ đề</button>
+            <button className="ghost" onClick={onSetup}>Đổi vùng che / tuỳ chọn</button>
+          </>}
         </div>
       </header>
       <div className={`approve-bar ${job.state === "approved" ? "on" : ""}`}>
@@ -58,14 +63,17 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
           </>
         ) : job.state === "done" ? (
           <>
-            <span><strong>Video đã xong.</strong> <span className="muted small">Xem lại rồi bấm duyệt để đánh dấu là đạt.</span></span>
+            <span><strong>Video đã xong.</strong> <span className="muted small">{review
+              ? "Xem lại rồi bấm duyệt. Duyệt xong, sổ tay dự án được cập nhật và phần sau viết kịch bản được."
+              : "Xem lại rồi bấm duyệt để đánh dấu là đạt."}</span></span>
             <span className="grow" />
             <button className="primary" disabled={!!busy} onClick={async () => {
-              try { onJob?.(await api.approve(job.id)); } catch (e) { setMsg({ kind: "err", text: (e as Error).message }); }
-            }}>✓ Duyệt video</button>
+              setBusy("approve"); setMsg(null);
+              try { onJob?.(await api.approve(job.id)); } catch (e) { setMsg({ kind: "err", text: (e as Error).message }); } finally { setBusy(null); }
+            }}>{busy === "approve" ? <><span className="spin" aria-hidden /> {review ? "Đang cập nhật sổ tay…" : "Đang duyệt…"}</> : "✓ Duyệt video"}</button>
           </>
         ) : <span className="muted small">Video đang được cập nhật, duyệt sau khi chạy xong.</span>}
-        {project && onProject && (
+        {project && onProject && !review && (
           <button className="ghost small" disabled={!!busy} title="Các video mới của project sẽ dùng vị trí phụ đề, vùng che, font và giọng đọc của video này"
             onClick={async () => {
               try { onProject(await api.saveProjectPreset(project.id, job.id)); setMsg({ kind: "ok", text: `Đã lưu làm preset của project “${project.name}”` }); }
@@ -74,9 +82,9 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
         )}
       </div>
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}
-      {job.info && (
+      {w > 0 && (
         <video className="result" src={api.file(job.id, "output.mp4", bust)} controls
-          style={{ aspectRatio: `${job.info.width} / ${job.info.height}`, width: `min(100%, calc(70vh * ${job.info.width / job.info.height}))` }} />
+          style={{ aspectRatio: `${w} / ${h}`, width: `min(100%, calc(70vh * ${w / h}))` }} />
       )}
       <div className="downloads">
         {FILES.filter((f) => job.files[f.name]).map((f) => (
@@ -85,7 +93,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
           </button>
         ))}
       </div>
-      {!job.files["output_softsub.mp4"] && job.files["output.mp4"] && (
+      {!review && !job.files["output_softsub.mp4"] && job.files["output.mp4"] && (
         <p className="muted small">
           <button className="link" disabled={!!busy} onClick={async () => {
             setBusy("softsub"); setMsg(null);

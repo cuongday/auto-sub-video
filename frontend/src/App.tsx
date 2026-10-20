@@ -4,7 +4,7 @@ import { useDialog } from "./components/Dialog";
 import Icon from "./components/Icon";
 import Sidebar, { NO_PROJECT } from "./components/Sidebar";
 import { STEP_LABEL } from "./labels";
-import type { Job, JobEvent, Options, Project } from "./types";
+import type { Job, JobEvent, Options, Project, Templates } from "./types";
 import { useEvents } from "./useEvents";
 import DouyinImport from "./views/DouyinImport";
 import Login from "./views/Login";
@@ -15,9 +15,10 @@ import ReviewProjectView from "./views/ReviewProjectView";
 import Result from "./views/Result";
 import Review from "./views/Review";
 import ReviewSource from "./views/ReviewSource";
+import ScriptEditor from "./views/ScriptEditor";
 import Setup from "./views/Setup";
 
-type View = "setup" | "progress" | "review" | "result";
+type View = "setup" | "progress" | "review" | "result" | "script";
 type Section = "subs" | "douyin" | "review";
 
 const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
@@ -26,6 +27,7 @@ const readExpanded = (): Set<string> => { try { return new Set(JSON.parse(localS
 const saveExpanded = (v: Set<string>) => { try { localStorage.setItem("autosub.projOpen", JSON.stringify([...v])); } catch { /* private mode */ } };
 
 function defaultView(j: Job): View {
+  if (j.kind === "review" && (j.state === "new" || j.state === "awaiting_review")) return "script";
   if (j.state === "running" || j.state === "queued" || j.state === "error" || j.state === "cancelled" || j.state === "interrupted") return "progress";
   if (j.state === "awaiting_review") return "review";
   if (j.state === "done" || j.state === "approved") return "result";
@@ -52,6 +54,7 @@ export default function App() {
   const [logs, setLogs] = useState<Record<string, string[]>>({});
   const [fatal, setFatal] = useState("");
   const [checks, setChecks] = useState<{ name: string; ok: boolean; hint: string }[]>([]);
+  const [templates, setTemplates] = useState<Templates | null>(null);
   const dialog = useDialog();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -101,7 +104,11 @@ export default function App() {
   const toggleJobs = () => setJobsOpen((o) => { saveOpen(!o); return !o; });
   const onDyActive = useCallback((n: number) => setDyActive(n), []);
   const busyJobs = jobs.filter((j) => j.state === "running" || j.state === "queued").length;
-  useEffect(() => { if (job && view === "setup" && job.state !== "new" && defaultView(job) !== "setup") setView(defaultView(job)); }, [sel, jobs.length]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (job && ((view === "setup" && defaultView(job) !== "setup") || (view === "script" && job.kind !== "review"))) setView(defaultView(job));
+  }, [sel, jobs.length]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const isReview = job?.kind === "review";
+  useEffect(() => { if (isReview && !templates) api.reviewTemplates().then(setTemplates).catch(() => {}); }, [isReview, templates]);
 
   useEvents((e: JobEvent) => {
     if (e.type === "progress") setPct((p) => ({ ...p, [e.job]: { ...p[e.job], [e.step]: e.pct } }));
@@ -121,7 +128,11 @@ export default function App() {
       replace(await go(false));
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.message.startsWith("NEEDS_CONFIRM")) {
-        const ok = await dialog.confirm({
+        const ok = await dialog.confirm(job.kind === "review" ? {
+          title: "Viết lại kịch bản trước khi dựng?",
+          message: "Cài đặt kịch bản đã đổi nên kịch bản sẽ được viết lại. Các khối bạn đã sửa tay vẫn được giữ nguyên.",
+          confirmLabel: "Viết lại và chạy",
+        } : {
           title: "Ghi đè phụ đề đã sửa?",
           message: "Chạy lại sẽ nhận dạng và dịch lại từ đầu, các câu bạn đã sửa tay sẽ bị thay thế.",
           confirmLabel: "Chạy lại", danger: true,
@@ -196,7 +207,7 @@ export default function App() {
                 <h1>{job.name}</h1>
                 <span className="muted small">{job.source}</span>
               </div>
-              <label className="inline small job-proj">Project
+              {!isReview && <label className="inline small job-proj">Project
                 <select value={job.project ?? ""} disabled={job.state === "running" || job.state === "queued"} onChange={async (e) => {
                   const pid = e.target.value || null;
                   const p = projects.find((x) => x.id === pid);
@@ -209,26 +220,29 @@ export default function App() {
                   <option value="">Không thuộc project</option>
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-              </label>
+              </label>}
               <nav className="tabs" aria-label="Màn hình">
-                <button className={view === "setup" ? "on" : ""} onClick={() => setView("setup")}>Thiết lập</button>
+                {isReview
+                  ? <button className={view === "script" ? "on" : ""} onClick={() => setView("script")}>Kịch bản</button>
+                  : <button className={view === "setup" ? "on" : ""} onClick={() => setView("setup")}>Thiết lập</button>}
                 <button className={view === "progress" ? "on" : ""} onClick={() => setView("progress")}>Tiến độ</button>
-                <button className={view === "review" ? "on" : ""} disabled={job.steps.translate.status !== "done"} onClick={() => setView("review")}>Rà soát</button>
+                {!isReview && <button className={view === "review" ? "on" : ""} disabled={job.steps.translate?.status !== "done"} onClick={() => setView("review")}>Rà soát</button>}
                 <button className={view === "result" ? "on" : ""} disabled={!job.files["output.mp4"]} onClick={() => setView("result")}>Kết quả</button>
               </nav>
               <button className="icon danger" title="Xoá job" aria-label="Xoá job" disabled={job.state === "running" || job.state === "queued"}
                 onClick={() => removeJob(job)}>🗑</button>
             </header>
-            {view === "setup" && <Setup job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
+            {view === "setup" && !isReview && <Setup job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
+            {view === "script" && isReview && <ScriptEditor key={job.id} job={job} templates={templates} onJob={replace} onRun={(m) => run(m)} />}
             {view === "progress" && (
-              <Progress job={job} steps={options.steps} pct={pct[job.id] ?? {}} logs={logs[job.id] ?? []}
+              <Progress job={job} pct={pct[job.id] ?? {}} logs={logs[job.id] ?? []}
                 onCancel={() => api.cancel(job.id)} onRetry={(step) => run(job.mode, step || job.stale_from)} />
             )}
-            {view === "review" && <Review key={job.id} job={job} fonts={options.fonts} onJob={replace} onRender={() => run("review", "tts")} />}
-            {view === "result" && <Result job={job} onEdit={() => setView("review")} onSetup={() => setView("setup")}
+            {view === "review" && !isReview && <Review key={job.id} job={job} fonts={options.fonts} onJob={replace} onRender={() => run("review", "tts")} />}
+            {view === "result" && <Result job={job} onEdit={() => setView(isReview ? "script" : "review")} onSetup={() => setView("setup")}
               project={projects.find((p) => p.id === job.project) ?? null} onJob={replace} onProject={putProject}
               onRefresh={() => api.job(job.id).then(replace)} />}
-            {view !== "progress" && (job.state === "done" || job.state === "approved") && job.stale_from && view !== "review" && (
+            {view !== "progress" && (job.state === "done" || job.state === "approved") && job.stale_from && view !== "review" && view !== "script" && (
               <div className="actions sticky stale">
                 <span>Tuỳ chọn đã đổi từ bước “{STEP_LABEL[job.stale_from]}”.</span>
                 <button className="primary" onClick={() => run(job.mode, null)}>Cập nhật video</button>

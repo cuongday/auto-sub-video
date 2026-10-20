@@ -3,13 +3,13 @@ import { api } from "../api";
 import { STEP_LABEL, fmtDur } from "../labels";
 import type { Job } from "../types";
 
-export default function Progress({ job, steps, pct, logs, onCancel, onRetry }: {
-  job: Job; steps: string[]; pct: Record<string, number>; logs: string[];
+export default function Progress({ job, pct, logs, onCancel, onRetry }: {
+  job: Job; pct: Record<string, number>; logs: string[];
   onCancel: () => void; onRetry: (step: string) => void;
 }) {
   const active = job.state === "running" || job.state === "queued";
-  const lastStep = job.mode === "review" && job.steps.translate.status !== "done" ? "translate" : "render";
-  const shown = steps.slice(0, steps.indexOf(lastStep) + 1);
+  const { steps, review_stop: stop } = job.flow;
+  const shown = job.mode === "review" && stop && job.steps[stop]?.status !== "done" ? steps.slice(0, steps.indexOf(stop) + 1) : steps;
   const failed = steps.find((s) => job.steps[s].status === "error");
   const [eta, setEta] = useState<{ steps: Record<string, number>; total: number; calibrated: boolean } | null>(null);
   const curPct = job.current_step ? pct[job.current_step] ?? 0 : 0;

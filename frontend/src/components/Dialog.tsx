@@ -3,11 +3,12 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 type Base = { title: string; message?: ReactNode; confirmLabel?: string; cancelLabel?: string; danger?: boolean };
 type Request =
   | (Base & { kind: "confirm"; resolve: (ok: boolean) => void })
-  | (Base & { kind: "prompt"; placeholder?: string; initial?: string; resolve: (value: string | null) => void });
+  | (Base & { kind: "prompt"; placeholder?: string; initial?: string; optional?: boolean; resolve: (value: string | null) => void });
 
 type DialogApi = {
   confirm: (o: Base) => Promise<boolean>;
-  prompt: (o: Base & { placeholder?: string; initial?: string }) => Promise<string | null>;
+  /** null when cancelled; with `optional` an empty answer is allowed and comes back as "". */
+  prompt: (o: Base & { placeholder?: string; initial?: string; optional?: boolean }) => Promise<string | null>;
 };
 
 const Ctx = createContext<DialogApi | null>(null);
@@ -22,7 +23,7 @@ export function useDialog(): DialogApi {
 export function DialogProvider({ children }: { children: ReactNode }) {
   const [req, setReq] = useState<Request | null>(null);
   const confirm = useCallback((o: Base) => new Promise<boolean>((resolve) => setReq({ ...o, kind: "confirm", resolve })), []);
-  const prompt = useCallback((o: Base & { placeholder?: string; initial?: string }) =>
+  const prompt = useCallback((o: Base & { placeholder?: string; initial?: string; optional?: boolean }) =>
     new Promise<string | null>((resolve) => setReq({ ...o, kind: "prompt", resolve })), []);
   return (
     <Ctx.Provider value={{ confirm, prompt }}>
@@ -44,7 +45,7 @@ function Modal({ req, onDone }: { req: Request; onDone: () => void }) {
 
   const finish = (ok: boolean) => {
     if (req.kind === "confirm") req.resolve(ok);
-    else req.resolve(ok && value.trim() ? value.trim() : null);
+    else req.resolve(ok && (value.trim() || req.optional) ? value.trim() : null);
     ref.current?.close();
     onDone();
   };
@@ -62,7 +63,7 @@ function Modal({ req, onDone }: { req: Request; onDone: () => void }) {
         <div className="modal-actions">
           <button type="button" className="ghost" onClick={() => finish(false)}>{req.cancelLabel ?? "Huỷ"}</button>
           <button type="submit" className={req.danger ? "danger-solid" : "primary"} autoFocus={req.kind === "confirm"}
-            disabled={req.kind === "prompt" && !value.trim()}>
+            disabled={req.kind === "prompt" && !req.optional && !value.trim()}>
             {req.confirmLabel ?? "Đồng ý"}
           </button>
         </div>

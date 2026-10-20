@@ -3,12 +3,13 @@ script block's narration with 2-6 s straight-cut shots of the film (no slow moti
 import bisect
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from .. import proc
 
 MIN_SHOT, MAX_SHOT, MIN_LAST = 2.0, 6.0, 1.0
 SAME = 0.05                                  # starts closer than this count as the same shot
+RANGE = 30.0                                 # a scene this long is a stretch of story, not a moment
 _PTS = re.compile(r"pts_time:\s*(-?[\d.]+)")
 
 @dataclass(frozen=True)
@@ -55,6 +56,20 @@ def _pieces(start: float, length: float, cuts: list[float], lo: float, hi: float
         x = y
     return out + [[x, end, lo, hi]]
 
+def _lens(b: BlockNeed) -> list[float]:
+    """Footage lengths of a block without scenes: its sentence times (one under MIN_SHOT joins its neighbour)."""
+    ws = [max(0.0, w) for w in b.weights or []]
+    if sum(ws) <= 0:
+        return [e - s for s, e, *_ in _pieces(0, b.duration, [], 0, 0)]
+    out: list[float] = []
+    for w in ws:
+        n = b.duration * w / sum(ws)
+        if out and (n < MIN_SHOT or out[-1] < MIN_SHOT):
+            out[-1] += n
+        else:
+            out.append(n)
+    return out
+
 def _plan_block(b: BlockNeed, part: tuple[float, float], window: tuple[float, float], stretch: tuple[float, float],
                 cuts: list[float]) -> list[Shot]:
     p0, p1 = part
@@ -69,7 +84,9 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], window: tuple[float, fl
     # 1. scenes in narration order (never re-sorted), snapped to a real cut within 1 s, each with its share of the
     # narration: its sentence's time when there is one sentence per scene, else equal shares. A scene under MIN_SHOT
     # from a kept one, or with under MIN_SHOT to tell, gives its share to the scene before
-    ws = b.weights if b.weights and len(b.weights) == len(b.scenes) and sum(b.weights) > 0 else [1.0] * len(b.scenes)
+    ws = [max(0.0, w) for w in b.weights or []]
+    if len(ws) != len(b.scenes) or sum(ws) <= 0:
+        ws = [1.0] * len(b.scenes)
     kept: list[list[float]] = []             # [start, share, scene end]
     for (a, e), w in zip(b.scenes, ws):
         s = _snap(min(max(a, p0), p1 - MIN_SHOT), cuts, p0, p1 - MIN_SHOT)
@@ -95,16 +112,18 @@ def _plan_block(b: BlockNeed, part: tuple[float, float], window: tuple[float, fl
             start = max(lo, min(s, top - todo))
             runs.append([start, min(todo, top - start), lo, hi])
         carry = todo - runs[-1][1]
-    # 3. no scenes: shots spread evenly over the block's stretch of film
+    # 3. no scenes: one run per sentence (2-6 s pieces without sentence times), spread evenly over the stretch
     if not kept:
         a, z = stretch
-        lens = [e - s for s, e, *_ in _pieces(0, b.duration, [], 0, 0)]
         if z - a < b.duration - 1e-6:        # stretch shorter than the block: all of it, then reuse
             runs, carry = [[a, z - a, a, z]], b.duration - (z - a)
         else:
-            step = (z - a - lens[-1]) / (len(lens) - 1) if len(lens) > 1 else 0
-            t0 = a if len(lens) > 1 else a + (z - a - lens[0]) / 2
-            runs = [[_snap(t0 + j * step, cuts, a, z - n), n, a, z] for j, n in enumerate(lens)]
+            lens = _lens(b)
+            gap = (z - a - b.duration) / (len(lens) - 1 or 2)
+            t = a if len(lens) > 1 else a + gap
+            for n in lens:
+                runs.append([_snap(t, cuts, runs[-1][0] + runs[-1][1] if runs else a, z - n), n, a, z])
+                t += n + gap
     shots = [sh for r in runs for sh in _pieces(r[0], r[1], cuts, r[2], r[3])]
     # 4. the window has no footage left to tell: reuse shots, never the same one twice in a row
     if carry > 1e-6:
@@ -163,15 +182,27 @@ def plan_shots(blocks: list[BlockNeed], part: tuple[float, float], cuts: list[fl
     spans = [_span(b, part) for b in blocks]
     out = []
     for i, b in enumerate(blocks):
-        if b.source and spans[i]:            # its own range inside the window, grown to its duration
-            a, z = max(spans[i][0], w0), min(spans[i][1], w1)
-            if z - a < b.duration:
-                z = min(w1, max(a, w0) + b.duration)
-                a = max(w0, z - b.duration)
-        else:                                # the film between the blocks around it, else the whole window
-            a = max(w0, next((s[1] for s in reversed(spans[:i]) if s), w0))
-            z = min(w1, next((s[0] for s in spans[i + 1:] if s), w1))
-            if z - a < b.duration:
-                a, z = w0, w1
+        prev = next((s for s in reversed(spans[:i]) if s), None)
+        nxt = next((s for s in spans[i + 1:] if s), None)
+        # the block's stretch of film: scenes that are whole ranges (the script's fallback scene = the source range)
+        # are spread over like no scenes; else its source range; else the footage next to the blocks around it
+        if b.scenes and all(e - a >= RANGE or (a, e) == b.source for a, e in b.scenes):
+            a, z = min(a for a, _ in b.scenes), max(e for _, e in b.scenes)
+            b = replace(b, scenes=[])
+        elif b.source and spans[i]:
+            a, z = spans[i]
+        elif prev and nxt and nxt[0] - prev[1] >= b.duration:
+            a, z = prev[1], nxt[0]
+        elif nxt:                            # the hook: where the next block's footage starts
+            a, z = nxt[0], nxt[0] + b.duration
+        elif prev:                           # the ending: where the last block's footage ends
+            a, z = prev[1] - b.duration, prev[1]
+        else:
+            a, z = w0, w1
+        # inside the window, grown to the block's duration
+        a, z = max(a, w0), min(z, w1)
+        if z - a < b.duration:
+            z = min(w1, max(a, w0) + b.duration)
+            a = max(w0, z - b.duration)
         out += _plan_block(b, part, (w0, w1), (a, z), cuts)
     return out

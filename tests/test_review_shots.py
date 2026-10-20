@@ -1,7 +1,10 @@
 import random
 import subprocess
+import threading
 import pytest
 from autosub import store
+from autosub.models import PartInfo, ReviewSettings
+from autosub.review.script import validate_blocks
 from autosub.review.shots import MAX_SHOT, MIN_LAST, MIN_SHOT, BlockNeed, Shot, detect_cuts, plan_shots
 from tests.review_helpers import ReviewRig, review_rig  # noqa: F401  (fixture)
 
@@ -56,6 +59,35 @@ def test_scenes_keep_the_narration_order():
     shots = plan_shots([BlockNeed(1, 9.0, [(300, 303), (100, 103), (200, 203)], None)], (0, 600), [])
     assert [s.start for s in shots] == [300, 100, 200]
 
+def test_body_block_without_scenes_spreads_over_its_source():
+    # the script gives a body block with no usable scene its source range as its one scene
+    part = PartInfo(film_job="f", index=1, start=0, end=2000)
+    raw = [{"kind": "than", "text": "Thân.", "scenes": [], "source_start": 600, "source_end": 1200}]
+    blk = validate_blocks(raw, part, ReviewSettings())[0]
+    need = BlockNeed(blk.id, 40.0, [(s.start, s.end) for s in blk.scenes], (blk.source_start, blk.source_end), [8.0] * 5)
+    shots = plan_shots([need], (0, 2000), [float(c) for c in range(0, 2000, 5)])
+    check(shots, [need], (0, 2000))
+    starts = [s.start for s in shots]
+    assert starts == sorted(starts) and starts[0] <= 601 and starts[-1] >= 1200 - 8 - 1, starts
+    assert len({round(s // 100) for s in starts}) >= 5                     # every sentence its own stretch
+
+def test_negative_weights_terminate():
+    blocks = [BlockNeed(1, 87.9, [(960, 968), (924, 928), (624, 631)], (755, 1189), [-2.42, 0.40, 2.45])]
+    got = []
+    t = threading.Thread(target=lambda: got.append(plan_shots(blocks, (662.5, 1262.5), [])), daemon=True)
+    t.start()
+    t.join(5)                                                          # a hang fails here instead of freezing pytest
+    assert got, "plan_shots did not return"
+    check(got[0], blocks, (662.5, 1262.5))
+
+def test_hook_and_ending_without_scenes_use_the_footage_next_to_the_body():
+    blocks = [BlockNeed(1, 10.0, [], None), BlockNeed(2, 30.0, [(300, 304)], (300, 500)),
+              BlockNeed(3, 30.0, [(520, 524)], (520, 700)), BlockNeed(4, 10.0, [], None)]
+    shots = plan_shots(blocks, (0, 1200), [], (25, 1100))
+    check(shots, blocks, (0, 1200), (25, 1100))
+    assert all(300 <= s.start and s.end <= 310 for s in shots if s.block == 1), shots
+    assert all(690 <= s.start and s.end <= 700 for s in shots if s.block == 4), shots
+
 def test_short_part_reuses_but_not_back_to_back():
     blocks = [BlockNeed(1, 60.0, [(2, 5)], None)]
     shots = plan_shots(blocks, (0, 20), [5.0, 12.0])
@@ -93,7 +125,7 @@ def test_blocks_in_order_and_property():
                 scenes += [(a, a + r.uniform(1, 8)) for a in (r.choice([c, c + r.uniform(0, 20)]) for _ in range(r.randint(2, 4)))]
             s0 = r.uniform(*part)
             source = (s0, min(part[1], s0 + r.uniform(5, 120))) if r.random() < 0.7 else None
-            weights = [r.uniform(0.5, 8) for _ in scenes] if r.random() < 0.5 else None
+            weights = [r.uniform(-1, 8) for _ in range(r.choice([len(scenes), 1, 4]))] if r.random() < 0.5 else None
             blocks.append(BlockNeed(i, r.choice([r.uniform(0.5, 2), r.uniform(3, 60)]), scenes, source, weights))
         window = (part[0] + r.uniform(0, 15), part[1] - r.uniform(0, 15)) if r.random() < 0.6 else None
         shots = plan_shots(blocks, part, cuts, window)

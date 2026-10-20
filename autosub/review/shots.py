@@ -57,17 +57,20 @@ def _pieces(start: float, length: float, cuts: list[float], lo: float, hi: float
     return out + [[x, end, lo, hi]]
 
 def _lens(b: BlockNeed) -> list[float]:
-    """Footage lengths of a block without scenes: its sentence times (one under MIN_SHOT joins its neighbour)."""
+    """Footage lengths of a block without scenes: its sentence times, short sentences gathered until MIN_SHOT."""
     ws = [max(0.0, w) for w in b.weights or []]
     if sum(ws) <= 0:
         return [e - s for s, e, *_ in _pieces(0, b.duration, [], 0, 0)]
     out: list[float] = []
     for w in ws:
         n = b.duration * w / sum(ws)
-        if out and (n < MIN_SHOT or out[-1] < MIN_SHOT):
+        if out and out[-1] < MIN_SHOT:       # the open entry is still too short: it takes this sentence too
             out[-1] += n
         else:
             out.append(n)
+    if len(out) > 1 and out[-1] < MIN_SHOT:  # a too-short tail joins the entry before
+        tail = out.pop()
+        out[-1] += tail
     return out
 
 def _plan_block(b: BlockNeed, part: tuple[float, float], window: tuple[float, float], stretch: tuple[float, float],

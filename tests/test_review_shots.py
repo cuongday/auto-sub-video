@@ -71,6 +71,13 @@ def test_body_block_without_scenes_spreads_over_its_source():
     assert starts == sorted(starts) and starts[0] <= 601 and starts[-1] >= 1200 - 8 - 1, starts
     assert len({round(s // 100) for s in starts}) >= 5                     # every sentence its own stretch
 
+def test_many_short_sentences_still_spread():
+    blocks = [BlockNeed(1, 40.0, [], (600, 1200), [1.33] * 30)]          # "Trịnh Mộc Sinh." x 30
+    shots = plan_shots(blocks, (0, 2000), [])
+    check(shots, blocks, (0, 2000))
+    starts = [s.start for s in shots]
+    assert starts == sorted(starts) and starts[0] < 650 and starts[-1] > 1100, starts
+
 def test_negative_weights_terminate():
     blocks = [BlockNeed(1, 87.9, [(960, 968), (924, 928), (624, 631)], (755, 1189), [-2.42, 0.40, 2.45])]
     got = []

@@ -282,12 +282,9 @@ def _has_ass(job: Job) -> bool:
     """16:9 without subtitles burns nothing; 9:16 always has the title."""
     return job.review.subtitles or job.review.aspect == "9:16"
 
-def _assemble(ctx: Ctx):
-    """Lay the narration out block after block, mix it with the music, plan the film shots, write the subtitles."""
-    job, rv = ctx.job, ctx.job.review
-    blocks = Script.model_validate(store.load_json(job.id, "script.json", default={})).blocks
-    nar = store.load_json(job.id, "narration.json", default=[])
-    ctx.work.fetch_dir("tts")
+def _timeline(blocks, nar: list[dict]) -> tuple[float, list[tuple[float, str]], list[Segment], list[shots.BlockNeed]]:
+    """The narration laid out block after block: (length, (start, tts file) of each sentence, subtitle lines,
+    what footage each block needs)."""
     t, items, lines, needs = 0.0, [], [], []
     for b in blocks:
         sents = sorted((n for n in nar if n["block"] == b.id), key=lambda n: n["n"])
@@ -296,15 +293,29 @@ def _assemble(ctx: Ctx):
         start = t
         for i, n in enumerate(sents):
             t += narration.SENT_GAP if i else 0
-            items.append((t, ctx.work.local(n["file"])))
+            items.append((t, n["file"]))
             lines += narration.subtitle_lines(n["text"], t, n["dur"])
             t += n["dur"]
         t += narration.BLOCK_GAP
         src = (b.source_start, b.source_end) if b.source_start is not None and b.source_end is not None else None
         needs.append(shots.BlockNeed(b.id, t - start, [(s.start, s.end) for s in b.scenes], src,
                                      [n["dur"] for n in sents]))
+    return t, items, lines, needs
+
+def _review_ass(job: Job, lines: list[Segment]) -> str:
+    rv = job.review
+    return compose.build_review_ass(lines if rv.subtitles else [], rv.aspect, job.settings.style,
+                                    _title(job) if rv.aspect == "9:16" else None, rv)
+
+def _assemble(ctx: Ctx):
+    """Lay the narration out block after block, mix it with the music, plan the film shots, write the subtitles."""
+    job, rv = ctx.job, ctx.job.review
+    blocks = Script.model_validate(store.load_json(job.id, "script.json", default={})).blocks
+    ctx.work.fetch_dir("tts")
+    t, items, lines, needs = _timeline(blocks, store.load_json(job.id, "narration.json", default=[]))
     if not needs:
         raise RuntimeError("Không có lời đọc để dựng video")
+    items = [(at, ctx.work.local(f)) for at, f in items]
     sf.write(ctx.dir / "voice_raw.wav", mix.build_voice_track(items, t), mix.SR, subtype="PCM_16")
     bed = None
     if m := _music(job):
@@ -316,9 +327,7 @@ def _assemble(ctx: Ctx):
     plan = shots.plan_shots(needs, (job.part.start, _story_end(job, blocks)),
                             store.load_json(job.id, "cuts.json", default=[]), _window(job, blocks))
     store.save_json(job.id, "shots.json", [{"block": s.block, "start": s.start, "end": s.end} for s in plan])
-    files = {"subs.ass": _has_ass(job) and compose.build_review_ass(
-                 lines if rv.subtitles else [], rv.aspect, job.settings.style,
-                 _title(job) if rv.aspect == "9:16" else None),
+    files = {"subs.ass": _has_ass(job) and _review_ass(job, lines),
              "subs.srt": rv.subtitles and build_srt(lines)}
     for name, text in files.items():
         if text:
@@ -352,6 +361,35 @@ def _render(ctx: Ctx):
                      sum(s["end"] - s["start"] for s in plan), lambda p: ctx.progress("render", 0.9 + 0.1 * p),
                      ctx.cancel)
 
+def preview(job: Job, t: float) -> None:
+    """preview.jpg: the frame of the video at narration time t with the part's current cover, subtitle and title
+    settings (no re-render). Needs the assembled shot plan."""
+    rv, fj = job.review, store.load(job.part.film_job)
+    with workdir.pinned(job.id), workdir.pinned(fj.id):
+        src = workdir.WorkDir(fj.id).fetch(fj.source)
+        if src is None:
+            raise RuntimeError("Không tìm thấy video gốc của phim trong kho lưu trữ")
+        w = workdir.WorkDir(job.id)
+        t, at = max(0.0, t), 0.0
+        for s in store.load_json(job.id, "shots.json"):
+            if t < at + s["end"] - s["start"]:
+                break
+            at += s["end"] - s["start"]
+        at = min(s["start"] + t - at, s["end"] - 1 / compose.FPS, fj.info.duration - 0.1)   # past the end: last frame
+        ass = None
+        if _has_ass(job):
+            blocks = Script.model_validate(store.load_json(job.id, "script.json", default={})).blocks
+            _, _, lines, _ = _timeline(blocks, store.load_json(job.id, "narration.json", default=[]))
+            # the line under t, else the nearest one: the subtitle box is always visible while placing it
+            near = min(lines, key=lambda l: 0 if l.start <= t < l.end else min(abs(l.start - t), abs(l.end - t)),
+                       default=None)
+            ass = w.local("preview.ass")
+            ass.write_text(_review_ass(job, [near.model_copy(update={"start": 0, "end": 1})] if near else []),
+                           encoding="utf-8")
+        boxes = [region_px(r, fj.info.width, fj.info.height) for r in rv.cover_regions]
+        compose.preview_frame(src, max(0.0, at), w.local("preview.jpg"), rv.aspect, fj.info, boxes, rv.cover, ass)
+        w.push("preview.jpg")
+
 REVIEW_RUNNERS = {"script": _script, "scenes": _scenes, "tts": _tts, "assemble": _assemble, "render": _render}
 
 def review_step_hash(ctx: Ctx, step: str) -> str:
@@ -377,7 +415,8 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
         m = _music(j)
         return _h(prev, step, [(b.id, [s.model_dump() for s in b.scenes], b.source_start, b.source_end) for b in blocks],
                   rv.subtitles, rv.aspect, st.style.model_dump(), m[1] if m else "", rv.music_db, rv.music_duck,
-                  _title(j) if rv.aspect == "9:16" else "", _story_end(j, blocks), _window(j, blocks))
+                  _title(j) if rv.aspect == "9:16" else "", _story_end(j, blocks), _window(j, blocks),
+                  rv.model_dump(mode="json", include={"sub_region", "title_region", "show_title"}))
     if step == "render":
         return _h(prev, step, rv.aspect, [r.model_dump() for r in rv.cover_regions], rv.cover)
     raise KeyError(step)

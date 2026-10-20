@@ -162,8 +162,11 @@ class ReviewSettings(BaseModel):
     subtitles: bool = True
     music_db: float = Field(-20, ge=-40, le=0)
     music_duck: bool = True
-    cover_regions: list[Region] = Field(default_factory=list, max_length=5)
+    cover_regions: list[Region] = Field(default_factory=list, max_length=5)   # source-frame coordinates
     cover: Literal["blur", "blur_dim", "solid"] = "blur_dim"
+    sub_region: Region | None = None      # output-frame coordinates; None -> compose.layout's default
+    title_region: Region | None = None    # 9:16 only; None -> default
+    show_title: bool = True               # 9:16 "movie name / PHẦN N" title
 
 
 class TimeSpan(BaseModel):

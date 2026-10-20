@@ -119,3 +119,34 @@ def test_finalize_duration_follows_audio(tmp_path):
     out = compose.finalize(shots, audio, work / "subs.ass", work / "output.mp4", 3.5)
     o = media.probe(out)
     assert o.has_audio and abs(o.duration - 3.5) < 0.15
+
+def test_layout_overrides_from_review_settings():
+    from autosub.models import Region, ReviewSettings
+    sub, title = Region(x=0.1, y=0.5, w=0.8, h=0.1), Region(x=0.1, y=0.05, w=0.8, h=0.1)
+    rv = ReviewSettings(sub_region=sub, title_region=title)
+    assert compose.layout("9:16", rv) == {"subs": sub, "title": title}
+    assert compose.layout("9:16", ReviewSettings()) == compose.layout("9:16")
+    assert compose.layout("16:9", rv) == {"subs": sub, "title": None}         # 16:9 never has a title
+
+def test_review_ass_uses_custom_regions_and_hides_the_title():
+    from autosub.models import Region, ReviewSettings
+    lines = [Segment(id=0, start=0, end=2, source="", vi="Lời đọc")]
+    rv = ReviewSettings(sub_region=Region(x=0.1, y=0.5, w=0.8, h=0.1), title_region=Region(x=0.1, y=0.05, w=0.8, h=0.1))
+    ass = compose.build_review_ass(lines, "9:16", SubStyle(), "Phim\\NPHẦN 1", rv)
+    assert "{\\pos(540,1056)}Lời đọc" in ass and "{\\pos(540,192)}Phim" in ass     # (108,960,864,192), (108,96,864,192)
+    default = next(l for l in ass.splitlines() if l.startswith("Style: Default,")).split(",")
+    assert (default[19], default[20]) == ("108", "108")
+    hidden = compose.build_review_ass(lines, "9:16", SubStyle(), "Phim\\NPHẦN 1", rv.model_copy(update={"show_title": False}))
+    assert "Title" not in hidden and "Lời đọc" in hidden
+
+def test_preview_frame_is_one_framed_image_with_the_ass(tmp_path):
+    src = make_video(tmp_path / "src.mp4", seconds=4, size=(640, 360))
+    work = tmp_path / "job"; work.mkdir()
+    (work / "preview.ass").write_text(compose.build_review_ass(
+        [Segment(id=0, start=0, end=1, source="", vi="Xin chào")], "9:16", SubStyle(), "Phim"), encoding="utf-8")
+    out = compose.preview_frame(src, 1.5, work / "preview.jpg", "9:16", media.probe(src), [(0, 290, 640, 64)], "blur",
+                                work / "preview.ass")
+    info = media.probe(out)
+    assert (info.width, info.height) == (1080, 1920)
+    plain = compose.preview_frame(src, 1.5, work / "plain.jpg", "16:9", media.probe(src), [], "blur", None)
+    assert (media.probe(plain).width, media.probe(plain).height) == (1920, 1080)

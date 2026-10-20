@@ -520,7 +520,7 @@ async def preview_render(jid: str, body: PreviewIn):
         raise HTTPException(500, str(e))
     return {"ok": True}
 
-_FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|output_softsub\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|ref\.wav|log\.txt)$")
+_FILES = re.compile(r"^(frames/f\d+\.jpg|source|output\.mp4|output_softsub\.mp4|subs\.srt|subs\.ass|voice\.wav|preview\.mp4|preview\.jpg|ref\.wav|log\.txt)$")
 
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
 

@@ -2,17 +2,23 @@
 the narration subtitles (+ the title on 9:16) and the final concat that follows the narration's length."""
 from pathlib import Path
 from .. import proc, render
-from ..models import Region, Segment, SubStyle, VideoInfo
+from ..models import Region, ReviewSettings, Segment, SubStyle, VideoInfo
 from ..subtitles import build_ass, region_px
 
 OUT = {"16:9": (1920, 1080), "9:16": (1080, 1920)}
 FPS = 30
 
-def layout(aspect: str) -> dict:
-    """Subtitle and title regions of the output frame (9:16: the film sits in the middle, title above, subs below)."""
+def layout(aspect: str, review: ReviewSettings | None = None) -> dict:
+    """Subtitle and title regions of the output frame (9:16: the film sits in the middle, title above, subs below);
+    the part's own boxes win when set."""
     if aspect == "9:16":
-        return {"subs": Region(x=0.05, y=0.69, w=0.90, h=0.11), "title": Region(x=0.06, y=0.20, w=0.88, h=0.12)}
-    return {"subs": Region(x=0.05, y=0.80, w=0.90, h=0.14), "title": None}
+        out = {"subs": Region(x=0.05, y=0.69, w=0.90, h=0.11), "title": Region(x=0.06, y=0.20, w=0.88, h=0.12)}
+    else:
+        out = {"subs": Region(x=0.05, y=0.80, w=0.90, h=0.14), "title": None}
+    if review:
+        out["subs"] = review.sub_region or out["subs"]
+        out["title"] = out["title"] and (review.title_region or out["title"])
+    return out
 
 def frame_filter(aspect: str, info: VideoInfo, cover_boxes: list[tuple[int, int, int, int]], cover: str) -> str:
     """[0:v] -> [v]: cover regions (source coordinates), then fit the frame (16:9 letterbox, 9:16 blurred background)."""
@@ -46,6 +52,22 @@ def render_shot(src: Path, start: float, frames: int, out: Path, aspect: str, in
     tmp.replace(out)
     return out
 
+def preview_frame(src: Path, t: float, out: Path, aspect: str, info: VideoInfo, cover_boxes, cover: str,
+                  ass: Path | None) -> Path:
+    """One output frame of the film at t, framed for `aspect`, with `ass` (in out's dir, cue times on the same
+    clock as t_ass = 0) burnt in: what the render would show at that point."""
+    out = Path(out)
+    work = out.parent
+    graph = frame_filter(aspect, info, cover_boxes, cover)
+    if ass:
+        render._link_fonts(work)
+        graph = graph[:-3] + f"[fr];[fr]ass={Path(ass).name}:fontsdir=fonts[v]"
+    tmp = work / (out.stem + ".tmp.jpg")
+    proc.run_ffmpeg(["-ss", f"{max(0.0, t):.3f}", "-i", str(Path(src).resolve()), "-frames:v", "1",
+                     "-filter_complex", graph, "-map", "[v]", "-q:v", "3", tmp.name], cwd=work)
+    tmp.replace(out)
+    return out
+
 def music_bed(music: Path, out_wav: Path, duration: float, cancel=None) -> Path:
     """The music looped to `duration`, loudness-normalized, with a 2 s fade-out."""
     out_wav = Path(out_wav)
@@ -56,12 +78,13 @@ def music_bed(music: Path, out_wav: Path, duration: float, cancel=None) -> Path:
     tmp.replace(out_wav)
     return out_wav
 
-def build_review_ass(lines: list[Segment], aspect: str, style: SubStyle, title: str | None) -> str:
-    """Narration subtitles; with a title (9:16) also a `Title` style 1.4x larger, shown the whole video."""
+def build_review_ass(lines: list[Segment], aspect: str, style: SubStyle, title: str | None,
+                     review: ReviewSettings | None = None) -> str:
+    """Narration subtitles; with a title (9:16, not turned off) also a `Title` style 1.4x larger, the whole video."""
     W, H = OUT[aspect]
-    lay = layout(aspect)
+    lay = layout(aspect, review)
     ass = build_ass(lines, W, H, lay["subs"], style)
-    if not (title and lay["title"]):
+    if not (title and lay["title"]) or (review and not review.show_title):
         return ass
     x, y, w, h = region_px(lay["title"], W, H)
     default = next(l for l in ass.splitlines() if l.startswith("Style: Default,"))

@@ -15,8 +15,8 @@ from . import api, config, proc, projects, store, vsmov, workdir
 from .models import (ChunkSummary, FilmCharacter, FilmInfo, Job, JobSettings, Lang, MovieMeta, Notebook, ReviewSettings,
                      Script, ScriptBlock, Segment, SubTrack)
 from .projects import Project, ReviewProject
-from .review import notebook, pace, parts, script as script_mod, split, templates
-from .storage import content_type, get_store
+from .review import flows, notebook, pace, parts, script as script_mod, split, templates
+from .storage import StorageError, content_type, get_store
 
 router = APIRouter()
 
@@ -276,7 +276,8 @@ class ProjectSettingsIn(BaseModel):
     parts_per_episode: Literal[1, 2] | None = None    # None: keep
 
 # what only the voice-over, assembly and render read: reaches every idle part (spec 7.4: set once per project)
-RENDER_FIELDS = {"aspect", "subtitles", "music_db", "music_duck", "cover_regions", "cover"}
+RENDER_FIELDS = {"aspect", "subtitles", "music_db", "music_duck", "cover_regions", "cover", "sub_region", "title_region",
+                 "show_title"}
 RENDER_JOB_FIELDS = {"tts_engine", "tts_voice", "tts_rate", "style"}
 
 @router.put("/api/review/projects/{pid}/settings")
@@ -503,6 +504,25 @@ def put_review_settings(jid: str, body: ReviewSettings):
     api._unapprove(job)
     store.save(job)
     return api._view(job)
+
+class PreviewIn(BaseModel):
+    t: float = 0.0
+
+@router.post("/api/jobs/{jid}/review-preview")
+async def review_preview(jid: str, body: PreviewIn):
+    """One frame of the part's video at narration time t with its current cover / subtitle / title settings."""
+    job = _part(jid)
+    if job.steps["assemble"].status != "done" or not store.exists(jid, "shots.json"):
+        raise HTTPException(409, "Dựng video trước rồi mới chỉnh")
+    if not math.isfinite(body.t):
+        raise HTTPException(400, "Thời điểm không hợp lệ")
+    try:
+        await asyncio.to_thread(flows.preview, job, body.t)
+    except StorageError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, str(e))
+    return {"url": f"/api/jobs/{jid}/files/preview.jpg?v={uuid.uuid4().hex[:8]}"}
 
 @router.get("/api/jobs/{jid}/thumb")
 def thumb(jid: str, t: float = 0.0):

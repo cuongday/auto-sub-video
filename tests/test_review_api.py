@@ -350,11 +350,13 @@ def test_render_settings_reach_scripted_parts(client, rig):
     assert client.post(f"/api/jobs/{p1.id}/approve", json={}).json()["state"] == "approved"
     base = f"/api/review/projects/{rig.project.id}"
     rs = {**projects.get(rig.project.id).review.settings.model_dump(mode="json"), "minutes": 3, "notes": "vui hơn",
-          "cover_regions": [{"x": 0, "y": 0.8, "w": 1, "h": 0.1}], "cover": "solid", "subtitles": False}
+          "cover_regions": [{"x": 0, "y": 0.8, "w": 1, "h": 0.1}], "cover": "solid", "subtitles": False,
+          "show_title": False, "sub_region": {"x": 0.1, "y": 0.5, "w": 0.8, "h": 0.1}}
     js = {**store.load(p1.id).settings.model_dump(mode="json"), "tts_rate": 1.3, "translator_notes": "x"}
     assert client.put(f"{base}/settings", json={"settings": rs, "job_settings": js}).status_code == 200
     j1, j2 = client.get(f"/api/jobs/{p1.id}").json(), client.get(f"/api/jobs/{p2.id}").json()
     assert j1["review"]["cover"] == "solid" and j1["review"]["subtitles"] is False and j1["review"]["cover_regions"]
+    assert j1["review"]["show_title"] is False and j1["review"]["sub_region"]["y"] == 0.5
     assert j1["review"]["minutes"] == 1 and j1["review"]["notes"] == ""          # script fields: scripted part keeps
     assert j1["settings"]["tts_rate"] == 1.3 and j1["settings"]["translator_notes"] == ""
     assert j1["state"] == "done" and j1["stale_from"] == "tts"                    # unapproved, script not redone
@@ -446,3 +448,21 @@ def test_rewrite_after_raising_minutes_gives_a_longer_script(client, rig):
     assert j["state"] == "awaiting_review" and j["review"]["minutes"] == 3 and j["warnings"] == []
     long = client.get(f"/api/jobs/{jid}/script").json()
     assert long["target"] == 180 and long["estimate"] >= 0.85 * 180 and long["estimate"] > 2.5 * short["estimate"]
+
+def test_review_preview_needs_assemble_then_returns_a_frame(client, rig, tmp_path):
+    rig.film_done()
+    jid = parts.create_parts(store.load(rig.film.id), [])[0].id
+    r = client.post(f"/api/jobs/{jid}/review-preview", json={"t": 1})
+    assert r.status_code == 409 and r.json()["detail"] == "Dựng video trước rồi mới chỉnh"
+    client.post(f"/api/jobs/{jid}/run", json={"mode": "auto"})
+    j = done(client, jid)
+    rv = {**j["review"], "sub_region": {"x": 0.1, "y": 0.5, "w": 0.8, "h": 0.1}, "show_title": False,
+          "cover_regions": [{"x": 0, "y": 0.8, "w": 1, "h": 0.1}], "cover": "solid"}
+    assert client.put(f"/api/jobs/{jid}/review-settings", json=rv).json()["review"]["sub_region"]["y"] == 0.5
+    r = client.post(f"/api/jobs/{jid}/review-preview", json={"t": 2.5})
+    assert r.status_code == 200 and r.json()["url"].startswith(f"/api/jobs/{jid}/files/preview.jpg")
+    img = client.get(r.json()["url"])
+    assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg"
+    (tmp_path / "p.jpg").write_bytes(img.content)
+    assert (media.probe(tmp_path / "p.jpg").width, media.probe(tmp_path / "p.jpg").height) == (1080, 1920)
+    assert client.get(f"/api/jobs/{jid}").json()["stale_from"] == "assemble"

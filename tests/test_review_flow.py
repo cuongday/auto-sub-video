@@ -179,3 +179,21 @@ def test_hook_toggle_changes_the_script_hash(review_rig):
     h = flows.review_step_hash(make_ctx(job), "script")
     job.review.use_hook = False
     assert flows.review_step_hash(make_ctx(job), "script") != h
+
+def test_layout_change_reruns_assemble_and_render_only(review_rig):
+    from autosub.models import Region
+    review_rig.film_done()
+    p = review_rig.part()
+    before = review_rig.run(p.id, mode="auto")
+    job = store.load(p.id)
+    job.review.sub_region = Region(x=0.1, y=0.5, w=0.8, h=0.1)
+    job.review.show_title = False
+    store.save(job)
+    review_rig.tts.calls.clear()
+    review_rig.llm.prompts.clear()
+    job = review_rig.run(p.id, mode="auto")
+    assert job.state == "done" and review_rig.tts.calls == [] and review_rig.llm.prompts == []
+    assert [job.steps[s].hash == before.steps[s].hash for s in ("script", "scenes", "tts", "assemble", "render")] == \
+        [True, True, True, False, False]
+    ass = get_store().get_bytes(store.key(p.id, "subs.ass")).decode()
+    assert "\\pos(540,1056)" in ass and "PHẦN 1" not in ass

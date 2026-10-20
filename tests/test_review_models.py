@@ -30,3 +30,11 @@ def test_unknown_template_id_falls_back_to_first():
 def test_old_review_settings_have_the_hook_on():
     from autosub.models import ReviewSettings
     assert ReviewSettings.model_validate({"minutes": 5}).use_hook is True
+
+def test_review_layout_fields_default_and_old_json():
+    from autosub.models import Region, ReviewSettings
+    old = ReviewSettings.model_validate({"minutes": 5, "cover": "solid"})
+    assert old.sub_region is None and old.title_region is None and old.show_title is True
+    r = ReviewSettings(sub_region=Region(x=0.1, y=0.5, w=0.8, h=0.1), show_title=False)
+    back = ReviewSettings.model_validate(r.model_dump(mode="json"))
+    assert back.sub_region.y == 0.5 and back.show_title is False

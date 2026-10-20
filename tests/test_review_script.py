@@ -2,8 +2,8 @@ import json
 import re
 import pytest
 from autosub import projects, store
-from autosub.models import (ChunkSummary, FilmCharacter, MovieMeta, Notebook, NotebookEntry, PartInfo, ReviewSettings,
-                            SceneNote, ScriptBlock, TimeSpan)
+from autosub.models import (ChunkSummary, FilmCharacter, MovieMeta, Notebook, NotebookCharacter, NotebookEntry, PartInfo,
+                            ReviewSettings, SceneNote, ScriptBlock, TimeSpan)
 from autosub.review import notebook, pace, script, templates
 from autosub.storage import get_store
 from tests.fakes import FakeLLM, FakeTTS, review_llm_hook
@@ -189,3 +189,16 @@ def test_locked_block_survives_length_retry():
     assert len(calls) == 2 and "Câu tôi tự viết" in calls[1]
     got = [b for b in s.blocks if b.edited]
     assert len(got) == 1 and (got[0].text, got[0].scenes, got[0].source_start) == (mine.text, mine.scenes, 200)
+
+def test_cast_merges_notebook_and_film_characters():
+    llm = FakeLLM(review_llm_hook)
+    nb = Notebook(characters=[NotebookCharacter(name="Tiểu Minh", arc="đã rời làng")])
+    _build(llm, notebook=nb, characters=[FilmCharacter(name="Tiểu Minh", role="nhân vật chính"),
+                                         FilmCharacter(name="Lão Trương", role="trưởng làng")])
+    cast = llm.prompts[0].split("Nhân vật:\n", 1)[1].split("\n\n", 1)[0].splitlines()
+    assert cast == ["- Tiểu Minh: đã rời làng", "- Lão Trương: trưởng làng"]
+
+def test_unknown_template_falls_back_to_first():
+    first = templates.load()["styles"][0]
+    assert templates.prompt("styles", "khong_con") == first["prompt"]
+    assert templates.label("styles", "khong_con") == first["label"]

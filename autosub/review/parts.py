@@ -10,6 +10,10 @@ def project_of(job: Job) -> Project:
         raise KeyError(job.project)
     return p
 
+def is_series(p: Project) -> bool:
+    """A series of episodes (one-episode "series" are single movies)."""
+    return p.review.movie.type != "single" and len(p.review.episodes) > 1
+
 def parts_of(project_id: str) -> list[Job]:
     return sorted((j for j in store.list_jobs() if j.kind == "review" and j.project == project_id),
                   key=lambda j: j.part.index)
@@ -49,7 +53,7 @@ def create_parts(film_job: Job, cuts: list[float]) -> list[Job]:
 def ensure_default_parts(film_job: Job) -> None:
     """Series: one part per episode (or two) when the film has none yet."""
     p = project_of(film_job)
-    if p.review.movie.type == "single" or any(j.part.film_job == film_job.id for j in parts_of(p.id)):
+    if not is_series(p) or any(j.part.film_job == film_job.id for j in parts_of(p.id)):
         return
     cuts = []
     if p.review.parts_per_episode == 2:

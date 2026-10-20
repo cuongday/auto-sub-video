@@ -101,7 +101,7 @@ def part_view(job: Job, all_jobs: list[Job] | None = None) -> dict:
                  and j.part.index == job.part.index - 1), None)
     p = projects.get(job.project) if job.project else None
     return {"film_state": film.state if film else None,
-            "prev_approved": job.part.index <= 1 or (prev is not None and prev.state == "approved"),
+            "prev_approved": prev is None or prev.state == "approved",    # no part before (deleted): not blocked
             "notebook_stale": job.steps["script"].status == "done" and bool(p and p.review)
                               and notebook.is_stale(p.review.notebook, job.part)}
 
@@ -177,8 +177,15 @@ def start_prepare(p: Project, index: int) -> dict:
     with _VS_LOCK:
         busy = any(t["project"] == p.id and t["episode"] == ep.slug and t["state"] in ("queued", "running")
                    for t in _VS_TASKS.values())
-        if busy or any(j.film and j.film.episode and j.film.episode.slug == ep.slug for j in _films(p.id, store.list_jobs())):
+        films = [j for j in _films(p.id, store.list_jobs()) if j.film and j.film.episode and j.film.episode.slug == ep.slug]
+        # a download cut short by a restart leaves a film job with no video and no task: dead, prepare again
+        dead = [] if busy else [j for j in films if j.state == "new" and not store.exists(j.id, j.source)]
+        if busy or len(films) > len(dead):
             raise HTTPException(409, "Tập này đã được chuẩn bị")
+        for j in dead:
+            store.delete(j.id)
+        for k in [k for k, t in _VS_TASKS.items() if t["project"] == p.id and t["episode"] == ep.slug]:
+            del _VS_TASKS[k]                # the failed attempt's row: the new one replaces it
         tid = uuid.uuid4().hex[:8]
         _VS_TASKS[tid] = {"id": tid, "project": p.id, "episode": ep.slug, "name": ep.name, "state": "queued", "pct": 0,
                           "job": None, "error": None}
@@ -245,14 +252,37 @@ def prepare_episode(pid: str, slug: str):
         raise HTTPException(404, "Không có tập này")
     return start_prepare(p, index)
 
+@router.delete("/api/review/projects/{pid}")
+def delete_review_project(pid: str):
+    """The whole project: its parts, its films (the downloaded videos) and the music. Refused while one runs."""
+    p = _review(pid)
+    with _VS_LOCK:
+        mine = [j for j in store.list_jobs() if j.project == pid]
+        if any(api.QUEUE.is_active(j.id) for j in mine) or any(
+                t["project"] == pid and t["state"] in ("queued", "running") for t in _VS_TASKS.values()):
+            raise HTTPException(409, "Dự án đang có việc chạy hoặc chờ, hãy chờ xong hoặc huỷ trước khi xoá")
+        projects.delete(pid)
+        for k in [k for k, t in _VS_TASKS.items() if t["project"] == pid]:
+            del _VS_TASKS[k]
+    for j in mine:
+        store.delete(j.id)
+    if p.review.music:
+        get_store().delete(p.review.music)
+    return {"ok": True}
+
 class ProjectSettingsIn(BaseModel):
     settings: ReviewSettings
     job_settings: JobSettings | None = None          # None: keep
     parts_per_episode: Literal[1, 2] | None = None    # None: keep
 
+# what only the voice-over, assembly and render read: reaches every idle part (spec 7.4: set once per project)
+RENDER_FIELDS = {"aspect", "subtitles", "music_db", "music_duck", "cover_regions", "cover"}
+RENDER_JOB_FIELDS = {"tts_engine", "tts_voice", "tts_rate", "style"}
+
 @router.put("/api/review/projects/{pid}/settings")
 def put_project_settings(pid: str, body: ProjectSettingsIn):
-    """Shared settings; copied onto every part whose script is not written yet."""
+    """Shared settings: all of them go to parts whose script is not written yet; the voice, subtitle style and
+    render fields also go to parts already scripted (not running), which then only redo voice/assembly/render."""
     p = _review(pid)
     p.review.settings = body.settings
     if body.job_settings is not None:
@@ -261,12 +291,22 @@ def put_project_settings(pid: str, body: ProjectSettingsIn):
         p.review.parts_per_episode = body.parts_per_episode
     projects.save(p)
     for j in parts.parts_of(pid):
-        if j.steps["script"].status == "done" or api.QUEUE.is_active(j.id):
+        if api.QUEUE.is_active(j.id):
             continue
-        j.review = body.settings.model_copy(deep=True)
-        if body.job_settings is not None:     # a part keeps its own uploaded voice sample
-            j.settings = body.job_settings.model_copy(update={"ref_audio": j.settings.ref_audio}, deep=True)
-        store.save(j)
+        before = (j.review.model_copy(deep=True), j.settings.model_copy(deep=True))
+        if j.steps["script"].status != "done":
+            j.review = body.settings.model_copy(deep=True)
+            if body.job_settings is not None:     # a part keeps its own uploaded voice sample
+                j.settings = body.job_settings.model_copy(update={"ref_audio": j.settings.ref_audio}, deep=True)
+        else:
+            j.review = ReviewSettings.model_validate({**j.review.model_dump(),
+                                                     **body.settings.model_dump(include=RENDER_FIELDS)})
+            if body.job_settings is not None:
+                j.settings = JobSettings.model_validate({**j.settings.model_dump(),
+                                                         **body.job_settings.model_dump(include=RENDER_JOB_FIELDS)})
+        if (j.review, j.settings) != before:
+            api._unapprove(j)
+            store.save(j)
     return api._project_view(p)
 
 class SplitIn(BaseModel):
@@ -346,26 +386,37 @@ def get_notebook(pid: str):
 
 @router.put("/api/review/projects/{pid}/notebook")
 def put_notebook(pid: str, body: Notebook):
-    """The user's edit of the notebook; renamed characters are renamed in the films' character lists too."""
+    """The user's edit of the notebook; renamed characters are renamed in the films' character lists too, and keep
+    their old name as an alias (the chunk summaries still use it)."""
+    # ponytail: a rename is a name changed at the same position (lists of equal length) where neither name is in
+    # the other list, so reorders never rename. Add character ids if users delete+add and rename in one save
     with _NB_LOCK:
         p = _review(pid)
         old = p.review.notebook
         if body.rev != old.rev:
             raise HTTPException(409, "Sổ tay đã thay đổi, tải lại rồi sửa tiếp")
+        before, after = {c.name for c in old.characters}, {c.name for c in body.characters}
+        renames = {o.name: n.name for o, n in zip(old.characters, body.characters)
+                   if len(old.characters) == len(body.characters) and o.name not in after and n.name not in before}
+        back = {v: k for k, v in renames.items()}
+        for c in body.characters:
+            if c.name in back and back[c.name] not in c.aliases:
+                c.aliases.append(back[c.name])
         p.review.notebook = notebook.apply_user_edit(old, body)
         projects.save(p)
-    # ponytail: a rename is a name changed at the same position (lists of equal length) where neither name is in
-    # the other list, so reorders never rename. Add character ids if users delete+add and rename in one save
-    before, after = {c.name for c in old.characters}, {c.name for c in body.characters}
-    renames = {o.name: n.name for o, n in zip(old.characters, body.characters)
-               if len(old.characters) == len(body.characters) and o.name not in after and n.name not in before}
     if renames:
         for fj in _films(pid, store.list_jobs()):
             chars = store.load_json(fj.id, "characters.json")
             if chars and any(c.get("name") in renames for c in chars):
-                store.save_json(fj.id, "characters.json",
-                                [{**c, "name": renames.get(c.get("name"), c.get("name"))} for c in chars])
+                store.save_json(fj.id, "characters.json", [_renamed(c, renames) for c in chars])
     return p.review.notebook.model_dump(mode="json")
+
+def _renamed(c: dict, renames: dict[str, str]) -> dict:
+    name = c.get("name")
+    if name not in renames:
+        return c
+    aliases = c.get("aliases") or []
+    return {**c, "name": renames[name], "aliases": aliases if name in aliases else [*aliases, name]}
 
 # ------------------------------------------------------------------ script of a part
 
@@ -481,6 +532,15 @@ def thumb(jid: str, t: float = 0.0):
             data = out.read_bytes()
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
+def forget_part(job: Job) -> None:
+    """After a part is deleted: later parts move up (no gap left to block them), its notebook entry goes."""
+    parts._reindex(job.project)
+    with _NB_LOCK:
+        p = projects.get(job.project)
+        if p and p.review and any(e.job == job.id for e in p.review.notebook.entries):
+            p.review.notebook.entries = [e for e in p.review.notebook.entries if e.job != job.id]
+            projects.save(p)
+
 # ------------------------------------------------------------------ approval (called by api.approve_job)
 
 def approve_part(job: Job) -> Job:
@@ -518,7 +578,7 @@ def approve_part(job: Job) -> Job:
 
 def _next_episode(job: Job, p: Project, fj: Job) -> None:
     """Series: approving the last part of an episode starts downloading the next one."""
-    if p.review.movie.type == "single" or not fj.film:
+    if not parts.is_series(p) or not fj.film:
         return
     same = [j.part.index for j in parts.parts_of(p.id) if j.part.film_job == fj.id]
     nxt = fj.film.episode_index + 1

@@ -15,7 +15,7 @@ from ..pipeline import Ctx, Flow, _h
 from . import compose, film, narration, notebook, pace, parts, script, shots, templates, transcript
 
 SR = 44100
-NO_LINES ="Không có lời thoại: không viết được kịch bản review"
+NO_LINES = "Không có lời thoại: không viết được kịch bản review"
 
 def _use_subs(job: Job) -> str | None:
     return job.film.subtitle if job.film else None
@@ -139,10 +139,16 @@ pipeline.register("film", FILM_FLOW)
 
 # ---------------------------------------------------------------- review
 
-def _position(job: Job) -> tuple[int, bool]:
-    """(number of parts in the project, whether this part is the last one)."""
+def _position(job: Job, fj: Job) -> tuple[int, bool]:
+    """(number of parts in the project, whether this part is the last one). Series: later episodes have no parts
+    yet, so the total comes from the episode count and only the last part of the last episode is the end."""
+    p = parts.project_of(job)
     ps = parts.parts_of(job.project)
-    return len(ps), job.part.index == max(p.part.index for p in ps)
+    if not parts.is_series(p):
+        return len(ps), job.part.index == max(x.part.index for x in ps)
+    same = [x.part.index for x in ps if x.part.film_job == fj.id]
+    last_ep = fj.film is not None and fj.film.episode_index == len(p.review.episodes) - 1
+    return len(p.review.episodes) * p.review.parts_per_episode, last_ep and job.part.index == max(same)
 
 def _script(ctx: Ctx):
     job, st = ctx.job, ctx.job.settings
@@ -151,15 +157,17 @@ def _script(ctx: Ctx):
         raise RuntimeError("Phim chưa chuẩn bị xong")
     if job.part.index > 1 and not store.exists(job.id, "script.json"):      # first script: one part after another
         prev = next((j for j in parts.parts_of(job.project) if j.part.index == job.part.index - 1), None)
-        if prev is None or prev.state != "approved":
+        if prev is not None and prev.state != "approved":
             raise RuntimeError(f"Phần {job.part.index - 1} chưa được duyệt")
     if not _lines(fj):
         raise RuntimeError("Không có lời thoại để viết kịch bản")
     p = parts.project_of(job)
     nb = p.review.notebook
-    total, last = _position(job)
+    total, last = _position(job, fj)
     chars = [FilmCharacter.model_validate(c) for c in store.load_json(fj.id, "characters.json", default=[])]
     chunks = [ChunkSummary.model_validate(c) for c in store.load_json(fj.id, "summary.json", default={}).get("chunks", [])]
+    if not any(c.end > job.part.start and c.start < job.part.end for c in chunks):
+        raise RuntimeError("Không có tóm tắt cho đoạn phim này")
     old = Script.model_validate(store.load_json(job.id, "script.json", default={}))
     spm = pace.measure_spm(ctx.engines.tts(st.tts_engine), st.tts_voice, st.tts_rate, ctx.ref_audio())
     s = script.build_script(pipeline._llm(ctx), meta=p.review.movie, characters=chars, chunks=chunks, part=job.part,
@@ -237,8 +245,9 @@ def _tts(ctx: Ctx):
 
 def _title(job: Job) -> str:
     """9:16 title: movie name, then the part (series: the episode and the part's rank inside it)."""
-    movie = parts.project_of(job).review.movie
-    if movie.type == "single":
+    p = parts.project_of(job)
+    movie = p.review.movie
+    if not parts.is_series(p):
         return f"{_escape(movie.name)}\\NPHẦN {job.part.index}"
     fj = store.load(job.part.film_job)
     same = [j.id for j in parts.parts_of(job.project) if j.part.film_job == fj.id]
@@ -329,9 +338,9 @@ def review_step_hash(ctx: Ctx, step: str) -> str:
     if step == "script":
         fj = store.load(j.part.film_job)
         rv = j.review.model_dump(include={"minutes", "style", "hook", "opening", "notes", "spoil_ending"})
-        # the notebook version and is_last stay out: a changed notebook only warns (notebook_rev), the user rewrites
-        return _h(fj.steps["summarize"].hash, rv, j.part.start, j.part.end, st.llm_provider, st.llm_model,
-                  st.tts_engine, st.tts_voice, st.tts_rate)
+        # the notebook version, is_last and the voice (its pace sets the length) stay out: a changed notebook only
+        # warns (notebook_rev) and a new voice only re-reads the script; the user rewrites when they want
+        return _h(fj.steps["summarize"].hash, rv, j.part.start, j.part.end, st.llm_provider, st.llm_model)
     if step == "scenes":
         fj = store.load(j.part.film_job)
         info = ctx.work.store.stat(store.key(fj.id, fj.source))

@@ -106,3 +106,16 @@ def review_llm_hook(prompt, schema):
     if "characters" in props and "summary" not in props:
         return {"characters": [{"name": "Tiểu Minh", "aliases": ["小明"], "role": "nhân vật chính"}]}
     return None
+
+def review_llm_arcs():
+    """Like review_llm_hook, but every notebook update tells a new arc and voice (as a real LLM would)."""
+    n = [0]
+
+    def hook(prompt, schema):
+        out = review_llm_hook(prompt, schema)
+        if "entry" in schema["properties"]:
+            n[0] += 1
+            out["characters"][0]["arc"] = f"diễn biến {n[0]}"
+            out["voice"] = f"giọng {n[0]}"
+        return out
+    return hook

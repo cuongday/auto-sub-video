@@ -8,10 +8,9 @@ def load() -> dict:
     return json.loads((Path(__file__).parent / "templates.json").read_text(encoding="utf-8"))
 
 def _item(group: str, tid: str) -> dict:
-    for t in load()[group]:
-        if t["id"] == tid:
-            return t
-    raise KeyError(tid)
+    """Unknown id (template removed or renamed): the group's first one, so a saved setting never breaks a step."""
+    items = load()[group]
+    return next((t for t in items if t["id"] == tid), items[0])
 
 def prompt(group: str, tid: str) -> str:
     return _item(group, tid)["prompt"]

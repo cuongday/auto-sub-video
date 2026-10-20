@@ -48,6 +48,7 @@ def wait(c, jid, states):
 def done(c, jid):
     j = wait(c, jid, {"done", "error", "awaiting_review"})
     assert j["state"] == "done", j.get("error")
+    wait_for(lambda: not api.QUEUE.is_active(jid))     # the queue lets go just after saving "done"
     return j
 
 def detail(c, pid):
@@ -236,7 +237,9 @@ def test_notebook_rename_updates_film_characters(client, rig):
     nb["characters"][0]["name"] = "Minh Nhỏ"
     out = client.put(url, json=nb).json()
     assert out["rev"] == 2 and out["shared_rev"] == 2 and out["characters"][0]["name"] == "Minh Nhỏ"
-    assert [c["name"] for c in store.load_json(rig.film.id, "characters.json")] == ["Minh Nhỏ"]
+    assert out["characters"][0]["aliases"] == ["Tiểu Minh"]               # the summaries still say "Tiểu Minh"
+    film_chars = store.load_json(rig.film.id, "characters.json")
+    assert [(c["name"], c["aliases"]) for c in film_chars] == [("Minh Nhỏ", ["小明", "Tiểu Minh"])]
     assert client.put(url, json=nb).status_code == 409                     # stale copy (rev 1)
     assert client.put(url, json=nb).json()["detail"] == "Sổ tay đã thay đổi, tải lại rồi sửa tiếp"
 
@@ -300,7 +303,6 @@ def test_series_next_episode_prepared_after_last_part_approved(client, fake_vsmo
     assert client.post(f"/api/jobs/{part['id']}/approve", json={}).json()["state"] == "approved"
     films = wait_for(lambda: len(f := detail(client, p["id"])["films"]) == 2 and f)
     assert films[1]["name"] == "Phim A · Tập 2" and films[1]["film"]["episode_index"] == 1
-    done(client, films[1]["id"])
 
 def test_vsmov_search_routes(client, monkeypatch):
     card = vsmov.Card("phim-a", "Phim A", "Film A", 2024, "p.jpg", "t.jpg", 7.5)
@@ -337,3 +339,86 @@ def test_thumb_returns_jpeg(client, rig, tmp_path):
     assert store.exists(rig.film.id, "thumbs/15.jpg")
     (tmp_path / "t.jpg").write_bytes(r.content)
     assert media.probe(tmp_path / "t.jpg").width == 160
+
+def test_render_settings_reach_scripted_parts(client, rig):
+    rig.film_done()
+    p1, p2 = parts.create_parts(store.load(rig.film.id), [62.0])
+    client.post(f"/api/jobs/{p1.id}/run", json={"mode": "auto"})
+    done(client, p1.id)
+    assert client.post(f"/api/jobs/{p1.id}/approve", json={}).json()["state"] == "approved"
+    base = f"/api/review/projects/{rig.project.id}"
+    rs = {**projects.get(rig.project.id).review.settings.model_dump(mode="json"), "minutes": 3, "notes": "vui hơn",
+          "cover_regions": [{"x": 0, "y": 0.8, "w": 1, "h": 0.1}], "cover": "solid", "subtitles": False}
+    js = {**store.load(p1.id).settings.model_dump(mode="json"), "tts_rate": 1.3, "translator_notes": "x"}
+    assert client.put(f"{base}/settings", json={"settings": rs, "job_settings": js}).status_code == 200
+    j1, j2 = client.get(f"/api/jobs/{p1.id}").json(), client.get(f"/api/jobs/{p2.id}").json()
+    assert j1["review"]["cover"] == "solid" and j1["review"]["subtitles"] is False and j1["review"]["cover_regions"]
+    assert j1["review"]["minutes"] == 1 and j1["review"]["notes"] == ""          # script fields: scripted part keeps
+    assert j1["settings"]["tts_rate"] == 1.3 and j1["settings"]["translator_notes"] == ""
+    assert j1["state"] == "done" and j1["stale_from"] == "tts"                    # unapproved, script not redone
+    assert j2["review"]["minutes"] == 3 and j2["review"]["notes"] == "vui hơn"
+    assert j2["settings"]["translator_notes"] == "x"
+    assert client.post(f"/api/jobs/{p1.id}/approve", json={}).json()["state"] == "approved"
+    assert client.put(f"{base}/settings", json={"settings": rs, "job_settings": js}).status_code == 200
+    assert client.get(f"/api/jobs/{p1.id}").json()["state"] == "approved"       # nothing changed: stays approved
+
+def test_deleting_a_part_does_not_block_the_next(client, rig):
+    rig.film_done()
+    p1, p2 = parts.create_parts(store.load(rig.film.id), [62.0])
+    client.post(f"/api/jobs/{p1.id}/run", json={"mode": "auto"})
+    done(client, p1.id)
+    client.post(f"/api/jobs/{p1.id}/approve", json={})
+    assert client.delete(f"/api/jobs/{p1.id}").status_code == 200
+    j2 = client.get(f"/api/jobs/{p2.id}").json()
+    assert j2["part"]["index"] == 1 and j2["prev_approved"] is True
+    assert client.get(f"/api/review/projects/{rig.project.id}/notebook").json()["entries"] == []
+    job = store.load(p2.id)
+    job.part.index = 2; store.save(job)                    # a gap left some other way never blocks either
+    assert review_api.part_view(job)["prev_approved"] is True
+    assert client.post(f"/api/jobs/{p2.id}/run", json={"mode": "review"}).status_code == 200
+    assert wait(client, p2.id, {"awaiting_review", "error"})["state"] == "awaiting_review"
+
+def test_delete_review_project_removes_everything(client, rig, monkeypatch):
+    rig.film_done()
+    p1, p2 = parts.create_parts(store.load(rig.film.id), [62.0])
+    proj = projects.get(rig.project.id)
+    proj.review.music = projects.music_key(proj.id, ".mp3")
+    get_store().put_bytes(proj.review.music, b"ID3")
+    projects.save(proj)
+    other = store.create("khác", kind="sub")
+    url = f"/api/review/projects/{proj.id}"
+    with monkeypatch.context() as m:
+        m.setattr(api.QUEUE, "is_active", lambda jid: jid == p2.id)
+        r = client.delete(url)
+    assert r.status_code == 409 and "đang có việc" in r.json()["detail"] and projects.get(proj.id)
+    assert client.delete(url).json() == {"ok": True}
+    assert projects.get(proj.id) is None and get_store().get_bytes(proj.review.music) is None
+    assert [j.id for j in store.list_jobs()] == [other.id]
+    assert get_store().list(f"jobs/{rig.film.id}/") == [] and client.delete(url).status_code == 404
+
+def test_prepare_again_after_restart_mid_download(client, fake_vsmov):
+    p = client.post("/api/review/projects", json={"slug": "phim-c", "server": ""}).json()
+    task = wait_for(lambda: (t := detail(client, p["id"])["tasks"]) and t[0]["state"] in ("done", "error") and t[0])
+    done(client, task["job"])
+    url = f"/api/review/projects/{p['id']}/episodes/full/prepare"
+    assert client.post(url).status_code == 409                       # prepared: never twice
+    review_api._VS_TASKS.clear()                                     # a restart: no tasks in memory ...
+    film = store.load(task["job"])
+    get_store().delete(store.key(film.id, film.source))              # ... and a film job left with no video
+    film.state = "new"; store.save(film)
+    t = client.post(url).json()
+    assert t["state"] in ("queued", "running", "done")
+    task = wait_for(lambda: (t := detail(client, p["id"])["tasks"]) and t[0]["state"] in ("done", "error") and t[0])
+    assert task["state"] == "done" and task["job"] != film.id and len(detail(client, p["id"])["tasks"]) == 1
+    assert [f["id"] for f in detail(client, p["id"])["films"]] == [task["job"]]
+    done(client, task["job"])
+
+def test_retry_after_download_error(client, fake_vsmov):
+    fake_vsmov["fail"] = True
+    p = client.post("/api/review/projects", json={"slug": "phim-d", "server": ""}).json()
+    wait_for(lambda: (t := detail(client, p["id"])["tasks"]) and t[0]["state"] == "error")
+    fake_vsmov["fail"] = False
+    assert client.post(f"/api/review/projects/{p['id']}/episodes/full/prepare").status_code == 200
+    task = wait_for(lambda: (t := detail(client, p["id"])["tasks"]) and t[0]["state"] in ("done", "error") and t[0])
+    assert task["state"] == "done" and len(detail(client, p["id"])["tasks"]) == 1   # the error row is replaced
+    done(client, task["job"])

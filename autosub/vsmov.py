@@ -233,6 +233,8 @@ def strip_png(data: bytes) -> bytes:
     raise VsmovError("Đoạn video không đúng định dạng")
 
 def _fetch(url: str, headers: dict | None = None, timeout: float = 30) -> bytes:
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):   # URLs come from third-party pages
+        raise VsmovError(f"Đường dẫn không hợp lệ: {url[:80]}")
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:

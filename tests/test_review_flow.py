@@ -1,7 +1,9 @@
 """The review flow end to end with fakes: script -> scenes -> tts -> assemble -> render."""
 import subprocess
 import numpy as np
+import pytest
 from autosub import media, projects, store
+from autosub.models import Episode
 from autosub.review import compose
 from autosub.review.narration import BLOCK_GAP, SENT_GAP
 from autosub.storage import get_store
@@ -103,5 +105,32 @@ def test_title_single_and_series(review_rig):
     assert flows._title(store.load(p.id)) == "Phim thử\\NPHẦN 1"
     proj = projects.get(review_rig.project.id)
     proj.review.movie.type = "series"
+    proj.review.episodes = [Episode(name=f"Tập {i}", slug=f"tap-{i}", embed="e") for i in (1, 2)]
     projects.save(proj)
     assert flows._title(store.load(p.id)) == "Phim thử\\NTẬP 1 · PHẦN 1"
+
+def test_series_position_counts_every_episode(review_rig):
+    from autosub.review import flows, parts
+    proj = projects.get(review_rig.project.id)
+    proj.review.movie.type = "series"
+    proj.review.episodes = [Episode(name=f"Tập {i}", slug=f"tap-{i}", embed="e") for i in (1, 2, 3)]
+    projects.save(proj)
+    ep3 = review_rig.add_film(episode_index=2)
+    first = parts.create_parts(store.load(review_rig.film.id), [])[0]
+    last = parts.create_parts(store.load(ep3.id), [])[0]
+    # episode 2 has no parts yet: neither the part count nor "last" may come from the parts made so far
+    assert flows._position(store.load(first.id), store.load(review_rig.film.id)) == (3, False)
+    assert flows._position(store.load(last.id), ep3) == (3, True)
+    proj.review.parts_per_episode = 2
+    projects.save(proj)
+    assert flows._position(store.load(first.id), store.load(review_rig.film.id))[0] == 6
+    proj.review.episodes = proj.review.episodes[:1]           # a one-episode "series" is a single movie
+    projects.save(proj)
+    assert flows._title(store.load(first.id)) == "Phim thử\\NPHẦN 1"
+
+def test_part_outside_every_summary_fails_clearly(review_rig):
+    review_rig.film_done()
+    p = review_rig.part()
+    store.save_json(review_rig.film.id, "summary.json", {"chunks": [{"start": 100, "end": 200, "summary": "Sau này."}]})
+    with pytest.raises(RuntimeError, match="Không có tóm tắt cho đoạn phim này"):
+        review_rig.run(p.id, mode="review")

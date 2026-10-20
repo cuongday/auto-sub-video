@@ -336,6 +336,8 @@ def delete_job(jid: str):
     job = _get(jid)
     _idle(job)
     store.delete(jid)
+    if job.kind == "review" and job.project:
+        review_api.forget_part(job)
     return {"ok": True}
 
 @app.put("/api/jobs/{jid}/settings")

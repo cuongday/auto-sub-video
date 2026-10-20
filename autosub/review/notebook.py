@@ -39,16 +39,20 @@ def record_part(llm: LLMProvider, nb: Notebook, *, job_id: str, index: int, rang
         f"Nhân vật cấp phim: {json.dumps([c.model_dump() for c in film_characters], ensure_ascii=False)}",
         f"Kịch bản phần {index}:", *(f"[{b.kind}] {b.text}" for b in script.blocks)])
     out = llm.generate_json(prompt, ENTRY_SCHEMA)
+    e = out["entry"]
     new = nb.model_copy(deep=True)
     new.rev += 1
-    entry = NotebookEntry(job=job_id, index=index, range_label=range_label, rev=new.rev,
-                          **{**out["entry"], "hooks": [b.text for b in script.blocks if b.kind == "hook"]})
-    new.entries = sorted([e for e in new.entries if e.job != job_id] + [entry], key=lambda e: e.index)
-    chars = [NotebookCharacter(**c) for c in out["characters"]]
-    if chars != new.characters or out["voice"] != new.voice:
-        new.shared_rev = new.rev
-    new.characters, new.voice = chars, out["voice"]
+    entry = NotebookEntry(job=job_id, index=index, range_label=range_label, rev=new.rev, summary=e["summary"],
+                          ending=e.get("ending", ""), open_threads=e.get("open_threads", []),
+                          hooks=[b.text for b in script.blocks if b.kind == "hook"])
+    new.entries = sorted([x for x in new.entries if x.job != job_id] + [entry], key=lambda x: x.index)
+    # shared_rev stays: this entry's rev already covers every later part, and bumping it would mark this part
+    # (and the earlier ones) stale right after their own approval. Only the user's hand edits bump it.
+    new.characters, new.voice = [NotebookCharacter(**c) for c in out["characters"]], out["voice"]
     return new
+
+def _cast_key(chars: list[NotebookCharacter]) -> list[str]:
+    return sorted(c.model_dump_json() for c in chars)      # order-insensitive: a reorder is not a change
 
 def apply_user_edit(old: Notebook, new: Notebook) -> Notebook:
     """Bump revs for what the user changed by hand, so later parts show as stale."""
@@ -61,7 +65,7 @@ def apply_user_edit(old: Notebook, new: Notebook) -> Notebook:
             e.rev = nb.rev
         else:
             e.rev = o.rev
-    if nb.characters != old.characters or nb.voice != old.voice:
+    if _cast_key(nb.characters) != _cast_key(old.characters) or nb.voice != old.voice:
         nb.shared_rev = nb.rev
     else:
         nb.shared_rev = old.shared_rev

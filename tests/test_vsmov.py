@@ -145,3 +145,11 @@ def test_bad_json_is_vsmov_error(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: io.BytesIO(b"<html>"))
     with pytest.raises(VsmovError):
         vsmov.latest()
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://x/y.ts", "data:text/plain,hi", "/video/abc"])
+def test_fetch_refuses_non_http_urls(monkeypatch, url):
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("opened"))
+    with pytest.raises(VsmovError):
+        vsmov._fetch(url)
+    with pytest.raises(VsmovError):
+        vsmov.fetch_subtitle(url, "https://e")

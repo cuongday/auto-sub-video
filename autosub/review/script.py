@@ -106,9 +106,11 @@ def build_script(llm: LLMProvider, *, meta: MovieMeta, characters: list[FilmChar
                  spm: float, locked: list[ScriptBlock] = ()) -> Script:
     target = round(settings.minutes * spm)
     opening = opening_for(settings, part)
+    known = {c.name for c in notebook.characters}
+    cast = [*notebook.characters, *(c for c in characters if c.name not in known)]   # notebook wins on a name
     used = nb_mod.used_hooks(notebook.model_copy(update={"entries": [e for e in notebook.entries if e.index != part.index]}))
     rows = [f"Bạn là người viết kịch bản video review phim. Viết lời đọc cho phần {part.index}/{total_parts} của video review.",
-            RULES, "", _meta(meta), "", "Nhân vật:", _cast(notebook.characters or characters), "",
+            RULES, "", _meta(meta), "", "Nhân vật:", _cast(cast), "",
             "Tóm tắt các đoạn phim trong phần này:", _chunks(chunks, part), "",
             f"Phong cách: {templates.prompt('styles', settings.style)}",
             f"Hook: {templates.prompt('hooks', settings.hook)}",

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "./api";
+import ApiKeysDialog from "./components/ApiKeysDialog";
 import { useDialog } from "./components/Dialog";
 import Icon from "./components/Icon";
 import Sidebar, { NO_PROJECT } from "./components/Sidebar";
 import { STEP_LABEL } from "./labels";
-import type { Job, JobEvent, Options, Project, Templates } from "./types";
+import type { ApiKeyInfo, Job, JobEvent, Options, Project, Templates } from "./types";
 import { useEvents } from "./useEvents";
 import DouyinImport from "./views/DouyinImport";
 import Login from "./views/Login";
@@ -56,6 +57,8 @@ export default function App() {
   const [fatal, setFatal] = useState("");
   const [checks, setChecks] = useState<{ name: string; ok: boolean; hint: string }[]>([]);
   const [templates, setTemplates] = useState<Templates | null>(null);
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
+  const [keysOpen, setKeysOpen] = useState(false);
   const dialog = useDialog();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -68,6 +71,7 @@ export default function App() {
     if (!authed) return;
     api.options().then(setOptions).catch((e) => setFatal(`Không kết nối được server: ${e.message}`));
     api.health().then((h) => setChecks(h.checks.filter((c) => !c.ok))).catch(() => {});
+    api.apiKeys().then(setApiKeys).catch(() => {});
     refresh(); refreshProjects();
   }, [refresh, refreshProjects, authed]);
 
@@ -169,7 +173,7 @@ export default function App() {
   return (
     <div className="shell">
       <Sidebar jobs={jobs} projects={projects} section={section} sel={sel} selProject={selProject}
-        jobsOpen={jobsOpen} expanded={expanded} busyJobs={busyJobs} dyActive={dyActive} checks={checks}
+        jobsOpen={jobsOpen} expanded={expanded} busyJobs={busyJobs} dyActive={dyActive} checks={checks} apiKeys={apiKeys} onApiKeys={() => setKeysOpen(true)}
         onSubs={() => {
           if (section !== "subs") { setSection("subs"); history.replaceState(null, "", sel ? `?job=${sel}` : selProject ? `?project=${selProject}` : location.pathname); }
           if (!jobsOpen) toggleJobs();
@@ -256,6 +260,12 @@ export default function App() {
           </>
         )}
       </main>
+      {keysOpen && <ApiKeysDialog keys={apiKeys} onClose={() => setKeysOpen(false)} onChange={(k) => {
+        // a new key turns its provider on in every options form and clears the "Cần cấu hình" warning
+        setApiKeys(k);
+        api.options().then(setOptions).catch(() => {});
+        api.health().then((h) => setChecks(h.checks.filter((c) => !c.ok))).catch(() => {});
+      }} />}
     </div>
   );
 }

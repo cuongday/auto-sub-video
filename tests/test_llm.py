@@ -32,7 +32,7 @@ def test_retry_gives_up_on_non_retryable():
 def test_missing_credentials(monkeypatch):
     from autosub import config
     monkeypatch.setattr(config, "OPENAI_API_KEY", None)
-    with pytest.raises(LLMError, match="OPENAI_API_KEY"):
+    with pytest.raises(LLMError, match="OpenAI API key"):
         get_llm("openai").generate_json("hi", {"type": "object", "properties": {}})
     monkeypatch.setattr(config, "GCP_PROJECT", None)
     with pytest.raises(LLMError, match="GOOGLE_CLOUD_PROJECT"):

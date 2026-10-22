@@ -57,7 +57,7 @@ export type Options = {
   asr: Record<Lang, Option[]>;
   llm: Record<"gemini" | "openai", { default: string; models: Option[] }>;
   tts: { edge: Voice[] };
-  engines: { separate: EngineOk; ocr: EngineOk; asr: Record<Lang, EngineOk>; llm: Record<string, EngineOk>; tts: Record<string, EngineOk> };
+  engines: { separate: EngineOk; ocr: EngineOk; asr: Record<Lang, EngineOk>; llm: Record<"gemini" | "openai", EngineOk>; tts: Record<string, EngineOk> };
   steps: string[];
   fonts: FontOption[];
   defaults: Settings;
@@ -71,6 +71,8 @@ export type BrowseEntry = { name: string; path: string };
 export type BrowseFile = BrowseEntry & { size: number; mtime: number };
 export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
 export type VieneuDevice = "auto" | "cpu" | "cuda";
+export type ApiKeyInfo = { id: string; label: string; placeholder: string; env: string;
+  source: "web" | "env" | null; last4: string; sha256: string; saved: number | null; stale?: boolean };
 export type AppSettings = { video_dir: string; browse_available: boolean; auto_prune: boolean; vieneu_device: VieneuDevice };
 export type GpuStatus = {
   requested: VieneuDevice; device: "cpu" | "cuda"; note: string;

@@ -1,5 +1,5 @@
 import { STATE_LABEL, STEP_LABEL } from "../labels";
-import type { Job, Project } from "../types";
+import type { ApiKeyInfo, Job, Project } from "../types";
 import Icon from "./Icon";
 
 export const NO_PROJECT = "_none";
@@ -8,15 +8,15 @@ const stateText = (j: Job) => (j.state === "running" && j.current_step ? STEP_LA
 /** Left navigation: the subtitle workspace (projects -> videos), the Douyin downloader and film reviews.
  *  Every row is one hover target; nested buttons inside a row never paint their own hover. */
 export default function Sidebar({
-  jobs, projects, section, sel, selProject, jobsOpen, expanded, busyJobs, dyActive, checks,
-  onSubs, onToggleJobs, onExpand, onNewVideo, onNewProject, onOpenProject, onSelectJob, onDouyin, onReview,
+  jobs, projects, section, sel, selProject, jobsOpen, expanded, busyJobs, dyActive, checks, apiKeys,
+  onSubs, onToggleJobs, onExpand, onNewVideo, onNewProject, onOpenProject, onSelectJob, onDouyin, onReview, onApiKeys,
 }: {
   jobs: Job[]; projects: Project[]; section: "subs" | "douyin" | "review"; sel: string | null; selProject: string | null;
   jobsOpen: boolean; expanded: Set<string>; busyJobs: number; dyActive: number;
-  checks: { name: string; hint: string }[];
+  checks: { name: string; hint: string }[]; apiKeys: ApiKeyInfo[];
   onSubs: () => void; onToggleJobs: () => void; onExpand: (pid: string, open: boolean) => void;
   onNewVideo: () => void; onNewProject: () => void; onOpenProject: (pid: string) => void;
-  onSelectJob: (id: string) => void; onDouyin: () => void; onReview: () => void;
+  onSelectJob: (id: string) => void; onDouyin: () => void; onReview: () => void; onApiKeys: () => void;
 }) {
   const known = new Set(projects.map((p) => p.id));
   const shown = jobs.filter((j) => j.kind !== "film");   // a review project's movie is shown on the project page
@@ -111,12 +111,23 @@ export default function Sidebar({
         </div>
       </nav>
 
+      <div className="side-foot">
       {checks.length > 0 && (
         <div className="checks">
           <strong><Icon name="alert" size={14} /> Cần cấu hình</strong>
           {checks.map((c) => <p key={c.name} title={c.hint}>{c.name}: <span className="muted">{c.hint}</span></p>)}
         </div>
       )}
+
+      <button className="side-keys" onClick={onApiKeys} title="Cấu hình API key của các nhà cung cấp">
+        <Icon name="key" size={15} />
+        <span className="srow-label">API key</span>
+        <span className="side-keys-status">
+          {apiKeys.map((k) => <i key={k.id} className={`dot ${k.source ? "on" : ""}`} title={`${k.label}: ${k.source ? "đã có" : "chưa có"}`} />)}
+          <span className="muted small">{apiKeys.filter((k) => k.source).length}/{apiKeys.length}</span>
+        </span>
+      </button>
+      </div>
     </aside>
   );
 }

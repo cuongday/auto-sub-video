@@ -11,7 +11,7 @@ Mọi model chạy trên CPU.
 App chỉ chạy qua Docker Compose, gồm 2 service: `auto-sub` (app) và `minio` (kho lưu trữ toàn bộ dữ liệu).
 
 ```bash
-cp .env.example .env        # điền MINIO_ROOT_PASSWORD, GOOGLE_CLOUD_PROJECT + ADC_HOST_PATH (hoặc OPENAI_API_KEY)
+cp .env.example .env        # điền MINIO_ROOT_PASSWORD, GOOGLE_CLOUD_PROJECT + ADC_HOST_PATH (hoặc nhập OpenAI API key trên giao diện)
 docker compose up -d --build   # hoặc: make up
 # -> http://localhost:8020      (trang quản trị MinIO: http://127.0.0.1:9201)
 ```
@@ -55,7 +55,8 @@ ADC_HOST_PATH=/Users/<tên>/.config/gcloud/application_default_credentials.json
 | `GOOGLE_LOCATION` | `global` | vùng gọi Vertex AI |
 | `ADC_HOST_PATH` | (trống) | file ADC trên máy; trống nếu chỉ dùng OpenAI |
 | `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` | |
-| `OPENAI_API_KEY` | — | bắt buộc khi dùng OpenAI |
+| `OPENAI_API_KEY` | — | khi dùng OpenAI; có thể nhập trên giao diện thay vì đặt ở đây (key trên web được ưu tiên) |
+| `AUTOSUB_SECRET` | `MINIO_ROOT_PASSWORD` | khoá mã hoá API key nhập trên web |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | |
 | `HOST_ROOT` | `./videos` | thư mục máy được duyệt chọn video trên web (chỉ đọc) |
 | `AUTOSUB_BIND` | `127.0.0.1` | `0.0.0.0` để mở cho mạng LAN |

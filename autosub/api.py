@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import soundfile as sf
-from . import auth, browse, checks, config, douyin, eta, glossary, jobs, media, pipeline, projects, prune, render, store, translate, voices, workdir
+from . import apikeys, auth, browse, checks, config, douyin, eta, glossary, jobs, media, pipeline, projects, prune, render, store, translate, voices, workdir
 from .storage import StorageError, content_type, get_store
 from .models import STEPS, Job, JobSettings, Segment, TranslationContext, default_region
 from .fonts import FONTS
@@ -832,6 +832,33 @@ def put_app_settings(body: AppSettingsIn):
     if body.vieneu_device is not None and "autosub.tts.vieneu_tts" in sys.modules:
         sys.modules["autosub.tts.vieneu_tts"].reset_pool()      # next line is built on the new device
     return get_app_settings()
+
+# ------------------------------------------------------------------ API keys (encrypted, never sent back)
+
+class ApiKeyIn(BaseModel):
+    key: str
+
+def _provider(provider: str) -> str:
+    if provider not in apikeys.PROVIDERS:
+        raise HTTPException(404, "Không hỗ trợ nhà cung cấp này")
+    return provider
+
+@app.get("/api/api-keys")
+def get_api_keys():
+    return apikeys.listing()
+
+@app.put("/api/api-keys/{provider}")
+def put_api_key(provider: str, body: ApiKeyIn):
+    try:
+        apikeys.save(_provider(provider), body.key)
+    except apikeys.KeyStoreError as e:
+        raise HTTPException(400, str(e))
+    return get_api_keys()
+
+@app.delete("/api/api-keys/{provider}")
+def delete_api_key(provider: str):
+    apikeys.clear(_provider(provider))
+    return get_api_keys()
 
 @app.get("/api/gpu")
 def gpu_status():

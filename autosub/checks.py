@@ -1,7 +1,7 @@
 import importlib.util
 import shutil
 from pathlib import Path
-from . import config
+from . import apikeys, config
 
 def _has(mod: str) -> bool:
     return importlib.util.find_spec(mod) is not None
@@ -9,6 +9,7 @@ def _has(mod: str) -> bool:
 def engines() -> dict:
     """Which engines can run on this machine, with a hint when they cannot."""
     full = "Chạy: make setup-full"
+    openai_ok = bool(apikeys.get("openai"))
     return {
         "separate": {"ok": _has("demucs"), "hint": "" if _has("demucs") else full},
         "ocr": {"ok": _has("rapidocr"), "hint": "" if _has("rapidocr") else full},
@@ -16,7 +17,7 @@ def engines() -> dict:
                 "en": {"ok": _has("faster_whisper"), "hint": "" if _has("faster_whisper") else full},
                 "ko": {"ok": _has("faster_whisper"), "hint": "" if _has("faster_whisper") else full}},
         "llm": {"gemini": {"ok": bool(config.GCP_PROJECT), "hint": "" if config.GCP_PROJECT else "Đặt GOOGLE_CLOUD_PROJECT trong .env"},
-                "openai": {"ok": bool(config.OPENAI_API_KEY), "hint": "" if config.OPENAI_API_KEY else "Đặt OPENAI_API_KEY trong .env"}},
+                "openai": {"ok": openai_ok, "hint": "" if openai_ok else "Nhập key ở mục API key (góc dưới thanh bên trái)"}},
         "tts": {"edge": {"ok": _has("edge_tts"), "hint": "" if _has("edge_tts") else "Chạy: make setup"},
                 "vieneu": {"ok": _has("vieneu"), "hint": "" if _has("vieneu") else full}},
     }
@@ -42,7 +43,7 @@ def run_checks() -> list[dict]:
     add("GOOGLE_CLOUD_PROJECT", config.GCP_PROJECT, "Đặt GOOGLE_CLOUD_PROJECT trong .env")
     if config.ADC_PATH:
         add("ADC_HOST_PATH", Path(config.ADC_PATH).is_file(), f"Không thấy file ADC: {config.ADC_PATH}")
-    add("OPENAI_API_KEY", config.OPENAI_API_KEY, "Đặt OPENAI_API_KEY trong .env (chỉ cần khi dùng OpenAI)")
+    add("OpenAI API key", apikeys.get("openai"), "Nhập ở mục API key, góc dưới thanh bên trái (chỉ cần khi dùng OpenAI)")
     return out
 
 def test_llm(provider: str, model: str = "") -> dict:

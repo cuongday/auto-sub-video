@@ -31,6 +31,8 @@ FONTS_DIR = ROOT / "fonts"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 PORT = int(os.environ.get("AUTOSUB_PORT", "8020"))
 APP_PASSWORD = os.environ.get("AUTOSUB_PASSWORD", "")   # empty: no login (default, app bound to 127.0.0.1)
+# encrypts API keys entered in the web UI (apikeys.py); the MinIO password is the fallback so it works with no setup
+APP_SECRET = os.environ.get("AUTOSUB_SECRET") or MINIO_SECRET_KEY
 
 GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT")
 GCP_LOCATION = os.environ.get("GOOGLE_LOCATION") or os.environ.get("GOOGLE_CLOUD_LOCATION", "global")

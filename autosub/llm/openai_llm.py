@@ -11,10 +11,12 @@ class OpenAILLM:
 
     def client(self):
         if self._client is None:
-            if not config.OPENAI_API_KEY:
-                raise LLMError("Thiếu OPENAI_API_KEY trong file .env")
+            from .. import apikeys
+            key = apikeys.get("openai")
+            if not key:
+                raise LLMError("Thiếu OpenAI API key: nhập ở mục API key (góc dưới thanh bên trái) hoặc đặt OPENAI_API_KEY trong .env")
             from openai import OpenAI
-            self._client = OpenAI(api_key=config.OPENAI_API_KEY, max_retries=0, timeout=180)
+            self._client = OpenAI(api_key=key, max_retries=0, timeout=180)
         return self._client
 
     def generate_json(self, prompt: str, schema: dict, temperature: float = 0.3) -> dict:

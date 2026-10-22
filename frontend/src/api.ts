@@ -1,5 +1,5 @@
 import type {
-  AppSettings, BrowseListing, GpuStatus, VieneuDevice, Context, DyLookup, DyTask, Job, Lang, Notebook, Options, Project, ReviewProjectData,
+  ApiKeyInfo, AppSettings, BrowseListing, GpuStatus, VieneuDevice, Context, DyLookup, DyTask, Job, Lang, Notebook, Options, Project, ReviewProjectData,
   ReviewSettings, ScriptBlock, ScriptData, Segment, Settings, SharedGlossary, Templates, Voice, VsFilters, VsMovie, VsPage, VsTask,
 } from "./types";
 
@@ -58,6 +58,9 @@ export const api = {
   appSettings: () => j<AppSettings>(fetch("/api/app-settings")),
   saveAppSettings: (s: { video_dir?: string; auto_prune?: boolean; vieneu_device?: VieneuDevice }) => j<AppSettings>(put("/api/app-settings", s)),
   gpu: () => j<GpuStatus>(fetch("/api/gpu")),
+  apiKeys: () => j<ApiKeyInfo[]>(fetch("/api/api-keys")),
+  saveApiKey: (provider: string, key: string) => j<ApiKeyInfo[]>(put(`/api/api-keys/${provider}`, { key })),
+  deleteApiKey: (provider: string) => j<ApiKeyInfo[]>(fetch(`/api/api-keys/${provider}`, { method: "DELETE" })),
   storage: (id: string) => j<{ total: number; reclaimable: number }>(fetch(`/api/jobs/${id}/storage`)),
   prune: (id: string) => j<{ freed: number; total: number; reclaimable: number }>(post(`/api/jobs/${id}/prune`)),
   createVoice: (fd: FormData) => j<{ id: string; name: string; duration: number }>(fetch("/api/voices/custom", { method: "POST", body: fd })),

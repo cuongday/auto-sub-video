@@ -12,6 +12,7 @@ const PATHS = {
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M20 20l-4-4",
   upload: "M12 20V9 M7 14l5-5 5 5 M5 4h14",
   book: "M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z M5 17a3 3 0 0 1 3-3h11 M9 8h6",
+  key: "M8 11a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M11 13.5l8-8 M16 8.5l2.5 2.5 M14 10.5l2 2",
 } as const;
 
 export type IconName = keyof typeof PATHS;

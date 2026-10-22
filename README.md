@@ -151,6 +151,17 @@ make test-minio   # test lớp lưu trữ với MinIO thật (tự bật contain
 make test-slow    # Demucs, FunASR, faster-whisper thật (cần setup-full)
 ```
 
+Sửa code không cần build lại image (chế độ dev, mount code từ thư mục này vào container):
+
+```bash
+make dev          # build giao diện 1 lần rồi chạy container với code ở máy; sửa .py là server tự khởi động lại
+make dev-web      # (cửa sổ khác) tự build lại giao diện mỗi lần lưu — refresh trang để thấy
+                  # hoặc: cd frontend && npm run dev  → mở http://localhost:5175 (đổi giao diện ngay, /api chuyển sang :8020)
+make up           # quay lại chạy bằng image (cần khi đổi thư viện, Dockerfile, hoặc để chạy thật)
+```
+
+Lưu ý: mỗi lần server tự khởi động lại thì job đang chạy sẽ dừng — đừng sửa code backend khi có job dài đang chạy.
+
 Thêm / nâng thư viện: `uv add <gói>` (hoặc `uv add --optional full <gói>`), rồi commit cả `pyproject.toml` và `uv.lock`.
 
 Cấu trúc: `autosub/` (lõi: `pipeline.py` điều phối các bước; `storage.py` + `store.py` đọc ghi MinIO; `workdir.py` thư mục tạm; `asr/`, `llm/`, `tts/` là engine cắm được; `api.py` FastAPI), `frontend/` (React + Vite), `fonts/` (Be Vietnam Pro, giấy phép OFL).

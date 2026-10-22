@@ -1,0 +1,11 @@
+# Dev mode (make dev): run the code from this folder instead of the copy baked into the image.
+# Python changes reload by themselves; the web UI is served from frontend/dist (make dev-web rebuilds it on save).
+# Rebuild the image (make up) after changing dependencies or the Dockerfile.
+# Note: a reload restarts the server, which stops any job that is running. The short graceful timeout keeps
+# open browser streams (/api/events) from holding the old server alive forever.
+services:
+  auto-sub:
+    volumes:
+      - ./autosub:/app/autosub:ro
+      - ./frontend/dist:/app/frontend/dist:ro
+    command: ["sh", "-c", "mkdir -p $$HOME && exec uvicorn autosub.api:app --host 0.0.0.0 --port $$AUTOSUB_PORT --reload --reload-dir /app/autosub --timeout-graceful-shutdown 2"]

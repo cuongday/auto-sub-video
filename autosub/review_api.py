@@ -84,7 +84,13 @@ def _films(pid: str, all_jobs: list[Job]) -> list[Job]:
     return sorted((j for j in all_jobs if j.kind == "film" and j.project == pid),
                   key=lambda j: (j.film.episode_index if j.film else 0, j.created))
 
-def guess_lang(countries: list[str]) -> str:
+DUBBED = ("thuyết minh", "lồng tiếng")
+
+def guess_lang(countries: list[str], server: str = "") -> str:
+    """Spoken language of a vsmov episode: a dubbed server ("Thuyết minh", "Lồng tiếng") carries a Vietnamese
+    voice over the film, so it is heard in Vietnamese, not in the language of the film's country."""
+    if any(d in server.lower() for d in DUBBED):
+        return "vi"
     if any(c in ("Trung Quốc", "Đài Loan", "Hồng Kông") for c in countries):
         return "zh"
     return "ko" if "Hàn Quốc" in countries else "en"
@@ -146,7 +152,7 @@ def _prepare(tid: str, pid: str, index: int) -> None:
         movie, ep = p.review.movie, p.review.episodes[index]
         job = store.create(f"{movie.name} · {ep.name}", "source.mp4", kind="film")
         job.settings = JobSettings.model_validate(p.review.job_settings) if p.review.job_settings else JobSettings()
-        job.settings.separate, job.settings.lang = False, guess_lang(movie.countries)
+        job.settings.separate, job.settings.lang = False, guess_lang(movie.countries, p.review.server)
         job.film = FilmInfo(episode=ep, episode_index=index)
         job.project = pid                   # shows in the project (and blocks a second prepare) while downloading
         store.save(job)

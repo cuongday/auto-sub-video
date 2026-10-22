@@ -1,4 +1,6 @@
 from autosub.models import FilmInfo, Job, JobSettings, Segment
+from autosub.models import Word
+from autosub.review import transcript
 from autosub.review.transcript import chunk, transcript_lang, filter_ads, parse_vtt
 
 SAMPLE = """WEBVTT
@@ -62,3 +64,37 @@ def test_transcript_lang():
     assert transcript_lang(_job(FilmInfo(subtitle="eng"))) == "en"
     assert transcript_lang(_job(FilmInfo(subtitle=None))) == "ko"
     assert transcript_lang(_job(None)) == "ko"
+
+def test_dubbed_film_is_transcribed_in_vietnamese():
+    # a "Thuyết minh" / "Lồng tiếng" server carries a Vietnamese voice track over the film, whatever its country
+    from autosub import api  # noqa: F401  (review_api is loaded through the app)
+    from autosub.review_api import guess_lang
+    assert guess_lang(["Trung Quốc", "Hồng Kông"], "Thuyết minh #1") == "vi"
+    assert guess_lang(["Hàn Quốc"], "Lồng Tiếng") == "vi"
+    assert guess_lang(["Trung Quốc"], "Vietsub #1") == "zh"
+    assert guess_lang(["Hàn Quốc"]) == "ko" and guess_lang(["Âu Mỹ"], "") == "en"
+
+def test_dubbed_asr_hears_vietnamese_and_chinese(monkeypatch):
+    from autosub import asr
+    from autosub.asr.whisper_mixed import MixedWhisperASR, pick, windows
+    monkeypatch.setattr(asr.importlib.util, "find_spec", lambda m: object())
+    a = asr.get_asr("vi")
+    assert isinstance(a, MixedWhisperASR) and a.languages == ("vi", "zh")
+    sr = 16000
+    speech = [{"start": 0, "end": 2 * sr}, {"start": int(2.5 * sr), "end": 4 * sr},   # 0.5 s pause: one window
+              {"start": 10 * sr, "end": 12 * sr},                                      # long pause: a new window
+              {"start": int(12.2 * sr), "end": 40 * sr}]                               # would pass 28 s: new window
+    assert windows(speech) == [(0, 4 * sr), (10 * sr, 12 * sr), (int(12.2 * sr), 40 * sr)]
+    assert pick({"vi": 0.1, "zh": 0.8, "en": 0.9}, ("vi", "zh")) == "zh" and pick({}, ("vi", "zh")) == "vi"
+
+def test_mixed_transcript_lines():
+    w = lambda t, s: Word(text=t, start=s, end=s + 0.3)  # noqa: E731
+    lines = transcript.from_words([w("Xin", 0), w("chào.", 0.3), w("你要", 3), w("是", 3.3), w("不", 3.6), w("喜欢", 3.9),
+                                  w("開始,", 9), w("向", 9.3)], "vi")
+    assert [s.source for s in lines] == ["Xin chào.", "你要是不喜欢", "開始,向"]
+
+def test_whisper_channel_outro_is_dropped():
+    ls = [Segment(id=1, start=4012, end=4017, source="Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn"),
+          Segment(id=2, start=2105, end=2108, source="Các bạn hãy đăng kí cho kênh lalaschool"),
+          Segment(id=3, start=3000, end=3002, source="Kênh này hay quá, đăng ký đi")]
+    assert [s.id for s in filter_ads(ls, 7200)] == [1]

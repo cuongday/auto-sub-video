@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
-Lang = Literal["zh", "en", "ko"]
+Lang = Literal["zh", "en", "ko", "vi"]   # "vi": a film dubbed in Vietnamese ("Thuyết minh"), transcribed as is
 STEPS = ["probe", "extract", "separate", "asr", "segment", "translate", "tts", "fit", "mix", "render"]
 FILM_STEPS = ["probe", "extract", "separate", "asr", "transcript", "characters", "summarize"]
 REVIEW_STEPS = ["script", "scenes", "tts", "assemble", "render"]

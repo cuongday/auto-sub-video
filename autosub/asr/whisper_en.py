@@ -9,12 +9,12 @@ class WhisperASR:
         self.language = language
         self.model = model or "large-v3-turbo"
 
-    def _load(self):
-        if self.model not in _MODELS:
+    def _load(self, name: str = ""):
+        name = name or self.model
+        if name not in _MODELS:
             from faster_whisper import WhisperModel
-            _MODELS[self.model] = WhisperModel(self.model, device="cpu", compute_type="int8",
-                                               cpu_threads=os.cpu_count() or 4)
-        return _MODELS[self.model]
+            _MODELS[name] = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+        return _MODELS[name]
 
     def transcribe(self, wav16k: Path, progress=None) -> list[Word]:
         segments, info = self._load().transcribe(str(wav16k), language=self.language, word_timestamps=True, vad_filter=True,

@@ -14,6 +14,9 @@ def get_asr(lang: Lang, model: str = "", diarize: bool = False) -> ASR:
     if lang == "zh":
         from .funasr_zh import FunASRZH
         return FunASRZH(model, diarize=diarize)
+    if lang == "vi":                     # a dubbed film: the voice-over leaves some scenes in Chinese
+        from .whisper_mixed import MixedWhisperASR
+        return MixedWhisperASR(model, ("vi", "zh"))
     from .whisper_en import WhisperASR
     return WhisperASR(model, lang)
 

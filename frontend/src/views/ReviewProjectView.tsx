@@ -14,7 +14,8 @@ import { Poster } from "./ReviewSource";
 
 const MUSIC_EXT = [".mp3", ".m4a", ".aac", ".wav", ".ogg"];
 const MUSIC_MAX = 50 << 20;
-const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "Tiếng Trung" }, { id: "en", label: "Tiếng Anh" }, { id: "ko", label: "Tiếng Hàn" }];
+const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "Tiếng Trung" }, { id: "en", label: "Tiếng Anh" }, { id: "ko", label: "Tiếng Hàn" },
+  { id: "vi", label: "Tiếng Việt (thuyết minh)" }];
 const busy = (j: Job) => j.state === "running" || j.state === "queued";
 const ready = (j: Job) => j.state === "done" || j.state === "approved";
 const filmName = (j: Job) => j.film?.episode?.name ?? j.name;

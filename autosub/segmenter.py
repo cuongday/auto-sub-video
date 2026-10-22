@@ -2,10 +2,11 @@
 import re
 from .models import Lang, Segment, Word
 
-MAX_CHARS = {"zh": 20, "en": 42, "ko": 24}
+MAX_CHARS = {"zh": 20, "en": 42, "ko": 24, "vi": 42}
 SENTENCE_END = tuple("。！？!?.;；…")
 CLAUSE_END = tuple("，,、：:")
 _NO_SPACE_BEFORE = re.compile(r"^[,.!?;:%)\]}…'’”]")
+_CJK = re.compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]")
 
 def text_len(text: str, lang: Lang) -> int:
     return len(re.sub(r"\s+", "", text)) if lang == "zh" else len(text)
@@ -18,7 +19,9 @@ def join_words(words: list[Word], lang: Lang) -> str:
         t = w.text.strip()
         if not t:
             continue
-        out += t if not out or _NO_SPACE_BEFORE.match(t) else " " + t
+        # Chinese inside a mixed transcript: no space between its words, nor after its punctuation ("開始, 向" -> "開始,向")
+        glued = not out or _NO_SPACE_BEFORE.match(t) or (_CJK.match(t) and _CJK.match(out.rstrip(",.!?;:，。！？")[-1:]))
+        out += t if glued else " " + t
     return out
 
 def _too_big(chunk: list[Word], lang: Lang, max_dur: float) -> bool:

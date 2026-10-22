@@ -64,6 +64,7 @@ ASR_MODELS = {
     "zh": [("paraformer-zh", "Paraformer (FunASR) — tiếng Trung")],
     "en": _WHISPER_MODELS,
     "ko": _WHISPER_MODELS,
+    "vi": _WHISPER_MODELS,
 }
 
 EDGE_VOICES = [("vi-VN-HoaiMyNeural", "Hoài My (nữ)"), ("vi-VN-NamMinhNeural", "Nam Minh (nam)")]

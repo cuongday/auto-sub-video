@@ -16,6 +16,6 @@
     {"id": "tom_tat_truoc", "label": "Tóm tắt phần trước", "prompt": "Nhắc lại ngắn gọn những gì đã xảy ra ở phần trước, đủ để người xem theo kịp phần này."},
     {"id": "vao_thang", "label": "Vào thẳng truyện", "prompt": "Bỏ qua phần dẫn nhập, kể thẳng vào diễn biến chính của phần phim."}
   ],
-  "ads": ["https?://", "www\\.", "\\b[\\w-]+\\.(com|net|org|app|io|vn|xyz|tv|me|co|cc|top|site)\\b"],
+  "ads": ["https?://", "www\\.", "\\b[\\w-]+\\.(com|net|org|app|io|vn|xyz|tv|me|co|cc|top|site)\\b", "(đăng k[ýí]|subscribe).{0,40}kênh"],
   "edge_keywords": ["phụ đề", "vietsub", "subtitle", "sub by", "dịch bởi", "biên dịch", "translated by", "ngôn ngữ"]
 }

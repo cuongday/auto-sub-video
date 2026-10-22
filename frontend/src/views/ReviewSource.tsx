@@ -4,7 +4,8 @@ import Icon from "../components/Icon";
 import type { Lang, Project, VsCard, VsFilters, VsMovie, VsPage } from "../types";
 
 type Source = { kind: "home" } | { kind: "search"; q: string } | { kind: "phim-le" | "phim-bo" } | { kind: "the-loai" | "quoc-gia"; slug: string };
-const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "Trung" }, { id: "en", label: "Anh" }, { id: "ko", label: "Hàn" }];
+const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "Trung" }, { id: "en", label: "Anh" }, { id: "ko", label: "Hàn" },
+  { id: "vi", label: "Việt (thuyết minh)" }];
 // vsmov descriptions are HTML: keep the text only (DOMParser never runs scripts)
 const plain = (html: string) => new DOMParser().parseFromString(html, "text/html").body.textContent?.trim() ?? "";
 

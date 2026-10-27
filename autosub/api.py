@@ -990,12 +990,13 @@ def delete_projects(body: ProjectsDeleteIn):
                 "message": "Có việc đang chạy hoặc chờ, hãy chờ xong hoặc huỷ trước khi xoá", "busy": busy})
         for k in [k for k, t in review_api._VS_TASKS.items() if t["project"] in ids]:
             del review_api._VS_TASKS[k]
+    for p in ps:                          # the project record first: a failure below leaves loose videos, not a half-emptied project
+        projects.delete(p.id)
     for j in mine:
         store.delete(j.id)
         workdir.remove(j.id)
     for p in ps:
         delete_project_assets(p)
-        projects.delete(p.id)
     return {"deleted_projects": len(ps), "deleted_jobs": len(mine)}
 
 class ProjectPresetIn(BaseModel):

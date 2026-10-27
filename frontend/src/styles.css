@@ -696,5 +696,9 @@ label.inline.split-n input[type="number"] { width: 90px; }
 
 .select-bar { align-items: center; flex-wrap: wrap; padding-top: 0; }
 .select-bar .small { margin-right: auto; color: var(--muted); }
-.tool.danger:not(:disabled) { color: var(--bad, #ff6b6b); }
-.proj-check { margin: 0 2px 0 6px; flex: none; accent-color: var(--amber); }
+.tool.danger:not(:disabled) { color: var(--bad); }
+.side .proj-check { width: 15px; height: 15px; padding: 0; margin: 0 0 0 6px; align-self: center; flex: none; accent-color: var(--amber); }
+.side-tools { container-type: inline-size; }
+@container (max-width: 215px) { .side-tools .tool-text { display: none; } }
+.side-tools .tool { min-width: 0; white-space: nowrap; padding: 0 8px; }
+.side-tools .tool.icon-only { width: 30px; padding: 0; flex: none; }

@@ -70,11 +70,11 @@ export default function Sidebar({
                 <Icon name="plus" size={14} /> Video mới
               </button>
               <button className="tool" onClick={onNewProject} title="Tạo project mới (một kênh)">
-                <Icon name="folderPlus" size={14} /> Project
+                <Icon name="folderPlus" size={14} /> <span className="tool-text">Project</span>
               </button>
               {projects.length > 0 && (
-                <button className={`tool ${selecting ? "on" : ""}`} aria-pressed={selecting} onClick={() => selecting ? stopSelect() : setSelecting(true)}
-                  title="Chọn nhiều project để xoá">Chọn</button>
+                <button className={`tool icon-only ${selecting ? "on" : ""}`} aria-pressed={selecting} onClick={() => selecting ? stopSelect() : setSelecting(true)}
+                  title="Chọn nhiều project để xoá" aria-label="Chọn nhiều project để xoá"><Icon name="check" size={14} /></button>
               )}
             </div>
             {selecting && (
@@ -97,7 +97,7 @@ export default function Sidebar({
                   <li key={g.id}>
                     <div className={`srow proj ${g.real ? "" : "loose"} ${inSubs && selProject === g.id && !sel ? "on" : ""}`}>
                       {selecting && g.real && (
-                        <input type="checkbox" className="proj-check" checked={picked.has(g.id)} onChange={() => toggle(g.id)}
+                        <input type="checkbox" className="proj-check" tabIndex={-1} checked={picked.has(g.id)} onChange={() => toggle(g.id)}
                           aria-label={`Chọn ${g.name}`} />
                       )}
                       <button className="srow-chev lead" aria-expanded={open} aria-label={open ? `Thu gọn ${g.name}` : `Mở ${g.name}`}
@@ -105,7 +105,7 @@ export default function Sidebar({
                         <Icon name="chevron" size={13} className={open ? "rot" : ""} />
                       </button>
                       <button className="srow-main" title={g.name}
-                        onClick={() => g.real ? onOpenProject(g.id) : onExpand(g.id, !open)}>
+                        onClick={() => g.real ? (selecting ? toggle(g.id) : onOpenProject(g.id)) : onExpand(g.id, !open)}>
                         <Icon name={g.review ? "clapper" : g.real ? "folder" : "inbox"} size={15} />
                         <span className="srow-label">{g.name}</span>
                         {running > 0 && <span className="pill busy" title={`${running} video đang chạy`}>{running}</span>}

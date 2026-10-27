@@ -12,7 +12,7 @@ export type StepStatus = "pending" | "running" | "done" | "error";
 export type StepState = { status: StepStatus; hash: string | null; seconds: number | null; error: string | null };
 export type JobState = "new" | "queued" | "running" | "awaiting_review" | "done" | "approved" | "error" | "interrupted" | "cancelled";
 export type VideoInfo = { width: number; height: number; duration: number; fps: number; has_audio: boolean };
-export type JobKind = "sub" | "film" | "review";
+export type JobKind = "sub" | "film" | "review" | "audio";
 export type SubTrack = { code: string; url: string };
 export type MovieMeta = {
   slug: string; name: string; origin_name: string; year: number | null; type: string; poster_url: string; thumb_url: string;
@@ -46,7 +46,9 @@ export type Job = {
   frames: string[]; files: Record<string, boolean>; stale_from: string | null; pruned: string[]; project: string | null;
   film: FilmInfo | null; part: PartInfo | null; review: ReviewSettings | null; flow: { steps: string[]; review_stop: string | null };
   notebook_stale?: boolean; film_state?: JobState | null; prev_approved?: boolean;   // review parts only
+  audio_part?: AudioPart | null; meta?: { duration: number | null; chars: number | null } | null;   // audio parts only
 };
+export type AudioPart = { script_name: string; script_kind: "txt" | "docx" | "srt"; index: number };
 export type Segment = { id: number; start: number; end: number; source: string; vi: string; flags: string[]; speed: number | null; speaker?: number | null };
 export type Character = { name: string; vi_name: string; addressing: string };
 export type Context = { summary: string; genre_tone: string; characters: Character[]; glossary: { source: string; vi: string }[] };
@@ -66,7 +68,9 @@ export type JobEvent =
   | { type: "state"; job: string; state: JobState; error?: string; t: number }
   | { type: "progress"; job: string; step: string; pct: number; t: number }
   | { type: "log"; job: string; msg: string; t: number }
-  | { type: "vsmov"; task: string };
+  | { type: "vsmov"; task: string }
+  | { type: "task"; key: string; state: "queued" | "running" | "done" | "error" | "cancelled"; error?: string }
+  | { type: "task_progress"; key: string; pct: number };
 export type BrowseEntry = { name: string; path: string };
 export type BrowseFile = BrowseEntry & { size: number; mtime: number };
 export type BrowseListing = { path: string; parent: string | null; dirs: BrowseEntry[]; files: BrowseFile[] };
@@ -88,8 +92,13 @@ export type ReviewProject = {
 };
 export type Project = {
   id: string; name: string; source_url: string; created: number; preset: Settings | null; preset_from: string | null;
-  kind: "sub" | "review"; review: ReviewProject | null;
+  kind: "sub" | "review" | "audio"; review: ReviewProject | null; audio?: AudioProject | null;
   jobs: number; counts: Partial<Record<JobState, number>>;
+};
+export type AudioProject = {
+  background: string | null; background_info: VideoInfo | null; background_state: "none" | "processing" | "ready" | "error";
+  background_error: string | null; background_etag: string | null; music: string | null; music_volume: number;
+  engine: "edge" | "vieneu"; voice: string; rate: number; rev: number;
 };
 export type VsTask = { id: string; project: string; episode: string; name: string; state: "queued" | "running" | "done" | "error"; pct: number; job: string | null; error: string | null };
 export type ReviewProjectData = { project: Project; films: Job[]; parts: Job[]; tasks: VsTask[] };

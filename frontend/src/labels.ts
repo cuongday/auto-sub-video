@@ -4,7 +4,7 @@ export const STEP_LABEL: Record<string, string> = {
   probe: "Đọc video", extract: "Tách âm thanh", separate: "Tách giọng / nhạc nền", asr: "Nhận dạng giọng nói",
   segment: "Cắt câu", translate: "Dịch (LLM)", tts: "Đọc thuyết minh", fit: "Khớp thời gian", mix: "Trộn âm thanh",
   render: "Ghép video", transcript: "Lấy lời thoại", characters: "Nhận diện nhân vật", summarize: "Tóm tắt phim",
-  script: "Viết kịch bản", scenes: "Dò chuyển cảnh", assemble: "Ghép lời đọc và cảnh",
+  script: "Viết kịch bản", parse: "Đọc kịch bản", scenes: "Dò chuyển cảnh", assemble: "Ghép lời đọc và cảnh",
 };
 export const STATE_LABEL: Record<JobState, string> = {
   new: "Mới", queued: "Đang chờ", running: "Đang chạy", awaiting_review: "Chờ rà soát", done: "Xong", approved: "Đã duyệt",

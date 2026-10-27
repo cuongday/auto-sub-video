@@ -22,6 +22,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const pickable = canPickLocation();
   const review = job.kind === "review";
+  const audio = job.kind === "audio";      // an audio-story part: no approval, preset or subtitles to edit
   // a review part's info is its film's; the video itself is framed by the part's aspect
   const [w, h] = review && job.review ? (job.review.aspect === "9:16" ? [9, 16] : [16, 9]) : job.info ? [job.info.width, job.info.height] : [0, 0];
   const [storage, setStorage] = useState<{ total: number; reclaimable: number } | null>(null);
@@ -47,7 +48,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
     <section className="card">
       <header className="card-head">
         <h2>Thành phẩm</h2>
-        <div className="row">
+        {!audio && <div className="row">
           {review ? <>
             <button className="ghost" onClick={onEdit}>Sửa kịch bản</button>
             <button className="ghost" onClick={onSetup}>Chỉnh bố cục</button>
@@ -55,9 +56,9 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
             <button className="ghost" onClick={onEdit}>Quay lại sửa phụ đề</button>
             <button className="ghost" onClick={onSetup}>Đổi vùng che / tuỳ chọn</button>
           </>}
-        </div>
+        </div>}
       </header>
-      <div className={`approve-bar ${job.state === "approved" ? "on" : ""}`}>
+      {!audio && <div className={`approve-bar ${job.state === "approved" ? "on" : ""}`}>
         {job.state === "approved" ? (
           <>
             <span><strong>✓ Đã duyệt</strong> <span className="muted small">Bạn đã xem và chấp nhận video này.</span></span>
@@ -83,7 +84,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
               catch (e) { setMsg({ kind: "err", text: (e as Error).message }); }
             }}>{project.preset_from === job.name ? "✓ Là preset của project" : "Lưu làm preset của project"}</button>
         )}
-      </div>
+      </div>}
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}
       {w > 0 && (
         <video className="result" src={api.file(job.id, "output.mp4", bust)} controls
@@ -96,7 +97,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
           </button>
         ))}
       </div>
-      {!review && !job.files["output_softsub.mp4"] && job.files["output.mp4"] && (
+      {!review && !audio && !job.files["output_softsub.mp4"] && job.files["output.mp4"] && (
         <p className="muted small">
           <button className="link" disabled={!!busy} onClick={async () => {
             setBusy("softsub"); setMsg(null);

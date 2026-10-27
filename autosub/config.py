@@ -29,6 +29,7 @@ HOST_ROOT = Path(os.environ.get("AUTOSUB_HOST_ROOT", "/host"))
 WORK_MAX_BYTES = int(float(os.environ.get("AUTOSUB_WORK_MAX_GB", "20")) * (1 << 30))
 FONTS_DIR = ROOT / "fonts"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
+AUDIO_WORKERS = int(os.environ.get("AUTOSUB_AUDIO_WORKERS", "2"))   # audio-story jobs run side by side
 PORT = int(os.environ.get("AUTOSUB_PORT", "8020"))
 APP_PASSWORD = os.environ.get("AUTOSUB_PASSWORD", "")   # empty: no login (default, app bound to 127.0.0.1)
 # encrypts API keys entered in the web UI (apikeys.py); the MinIO password is the fallback so it works with no setup

@@ -5,9 +5,10 @@ Lang = Literal["zh", "en", "ko", "vi"]   # "vi": a film dubbed in Vietnamese ("T
 STEPS = ["probe", "extract", "separate", "asr", "segment", "translate", "tts", "fit", "mix", "render"]
 FILM_STEPS = ["probe", "extract", "separate", "asr", "transcript", "characters", "summarize"]
 REVIEW_STEPS = ["script", "scenes", "tts", "assemble", "render"]
-STEPS_BY_KIND = {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS}
+AUDIO_STEPS = ["parse", "tts", "mix", "render"]
+STEPS_BY_KIND = {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS, "audio": AUDIO_STEPS}
 # "sub": subtitle/voice-over a video; "film": analyze a whole movie; "review": one review video of a film part
-JobKind = Literal["sub", "film", "review"]
+JobKind = Literal["sub", "film", "review", "audio"]
 
 class Region(BaseModel):
     """Rectangle in normalized frame coordinates (0..1)."""

@@ -2,11 +2,11 @@
 import sys
 import pytest
 from autosub import eta, pipeline, store, workdir
-from autosub.models import FILM_STEPS, REVIEW_STEPS, STEPS, STEPS_BY_KIND, Job, StepState, VideoInfo
+from autosub.models import AUDIO_STEPS, FILM_STEPS, REVIEW_STEPS, STEPS, STEPS_BY_KIND, Job, StepState, VideoInfo
 from tests.test_api import client  # noqa: F401  (fixture)
 
 def test_steps_by_kind():
-    assert STEPS_BY_KIND == {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS}
+    assert STEPS_BY_KIND == {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS, "audio": AUDIO_STEPS}
 
 def test_old_job_json_without_kind_is_sub():
     j = Job.model_validate({"id": "old", "name": "x", "created": 0, "source": "source.mp4"})

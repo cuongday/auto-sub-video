@@ -47,3 +47,144 @@ def test_reset_interrupted():
     jobs.reset_interrupted()
     j = store.load(j.id)
     assert j.state == "interrupted" and j.steps["asr"].status == "pending"
+
+# ---------------------------------------------------------------- audio lane
+
+import threading
+import pytest
+from autosub import proc
+from autosub.models import AUDIO_STEPS
+
+GATES: dict[str, threading.Event] = {}
+
+@pytest.fixture
+def audio_flow(monkeypatch):
+    """A fake 'audio' flow whose first step blocks on a per-job gate (and honours cancel)."""
+    def block(ctx):
+        gate = GATES.setdefault(ctx.job.id, threading.Event())
+        while not gate.wait(0.05):
+            ctx.check()
+
+    def noop(ctx):
+        pass
+
+    flow = pipeline.Flow(steps=list(AUDIO_STEPS), runners={s: (block if s == "parse" else noop) for s in AUDIO_STEPS},
+                         step_hash=lambda ctx, step: f"h-{step}", inputs=lambda ctx, step: [],
+                         pushes=lambda ctx, step: [], outputs=lambda ctx, step: [],
+                         review_stop=None, overwrites=set())
+    monkeypatch.setitem(pipeline._FLOWS, "audio", flow)      # restored (removed) on teardown
+    GATES.clear()
+    yield flow
+    for g in GATES.values():
+        g.set()
+    GATES.clear()
+
+def audio_job(name="a"):
+    j = store.create(name, kind="audio")
+    GATES[j.id] = threading.Event()
+    return j
+
+def wait_for(cond, timeout=10):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if cond():
+            return
+        time.sleep(0.05)
+    raise AssertionError("timed out")
+
+def states(*jids):
+    return [store.load(j).state for j in jids]
+
+def test_audio_lane_runs_two_at_once(audio_flow):
+    q = jobs.JobQueue(engines)
+    a, b, c = audio_job("a"), audio_job("b"), audio_job("c")
+    for j in (a, b, c):
+        assert q.submit(j.id, "auto")
+    assert not q.submit(a.id, "auto")
+    wait_for(lambda: sorted(states(a.id, b.id, c.id)).count("running") == 2, timeout=2)
+    first = [j for j in (a, b, c) if store.load(j.id).state == "running"]
+    third = next(j for j in (a, b, c) if j not in first)
+    assert store.load(third.id).state == "queued"
+    assert q.running() == {j.id for j in first}
+    assert all(q.is_active(j.id) for j in (a, b, c))
+    GATES[first[0].id].set()
+    assert wait(first[0].id, {"done"}, timeout=10).state == "done"
+    wait_for(lambda: store.load(third.id).state == "running")
+    for j in (a, b, c):
+        GATES[j.id].set()
+    for j in (a, b, c):
+        assert wait(j.id, {"done"}, timeout=10).state == "done"
+    wait_for(lambda: q.running() == set())
+
+def test_cancel_one_audio_job_keeps_other(audio_flow, monkeypatch):
+    def boom():
+        raise AssertionError("audio lane must not kill every process")
+    monkeypatch.setattr(proc, "kill_all", boom)
+    q = jobs.JobQueue(engines)
+    a, b = audio_job("a"), audio_job("b")
+    q.submit(a.id, "auto"); q.submit(b.id, "auto")
+    wait_for(lambda: states(a.id, b.id) == ["running", "running"])
+    assert q.cancel(a.id)
+    assert wait(a.id, {"cancelled", "error"}, timeout=10).state == "cancelled"
+    assert store.load(b.id).state == "running"
+    GATES[b.id].set()
+    assert wait(b.id, {"done", "error", "cancelled"}, timeout=10).state == "done"
+
+def test_cancel_queued_audio_job_never_starts(audio_flow):
+    q = jobs.JobQueue(engines)
+    a, b, c = audio_job("a"), audio_job("b"), audio_job("c")
+    for j in (a, b, c):
+        q.submit(j.id, "auto")
+    wait_for(lambda: states(a.id, b.id).count("running") == 2)
+    assert store.load(c.id).state == "queued"
+    assert q.cancel(c.id)
+    assert store.load(c.id).state == "cancelled"
+    GATES[a.id].set(); GATES[b.id].set()
+    wait(a.id, {"done"}); wait(b.id, {"done"})
+    wait_for(lambda: q.running() == set())
+    assert store.load(c.id).state == "cancelled" and not q.is_active(c.id)
+
+def test_sub_job_not_blocked_by_audio_lane(audio_flow, tmp_path):
+    q = jobs.JobQueue(engines)
+    a, b = audio_job("a"), audio_job("b")
+    q.submit(a.id, "auto"); q.submit(b.id, "auto")
+    wait_for(lambda: states(a.id, b.id) == ["running", "running"])
+    s = new_job(make_video(tmp_path / "s.mp4", 3))
+    assert q.submit(s.id, "review")
+    assert wait(s.id, {"awaiting_review", "error"}).state == "awaiting_review"
+    assert states(a.id, b.id) == ["running", "running"]
+
+def test_submit_task_runs_in_audio_lane_and_cancels(audio_flow):
+    q = jobs.JobQueue(engines)
+    sub = q.subscribe()
+    started, release = threading.Event(), threading.Event()
+    seen = {}
+
+    def task(cancel, progress):
+        progress(0.5)
+        started.set()
+        while not release.wait(0.05):
+            if cancel.is_set():
+                seen["cancelled"] = True
+                raise proc.Cancelled()
+
+    assert q.submit_task("bg:p1", task)
+    assert started.wait(5)
+    assert not q.submit_task("bg:p1", task)                  # key unique while active
+    assert "bg:p1" in q.running() and q.is_active("bg:p1")
+    assert q.cancel("bg:p1")
+    wait_for(lambda: not q.is_active("bg:p1"))
+    assert seen.get("cancelled")
+    # a finished key can be submitted again; ok and error both reported
+    assert q.submit_task("bg:p1", lambda cancel, progress: progress(1.0))
+    wait_for(lambda: not q.is_active("bg:p1"))
+    assert q.submit_task("bg:p2", lambda cancel, progress: 1 / 0)
+    wait_for(lambda: not q.is_active("bg:p2"))
+    evs = []
+    while not sub.empty():
+        evs.append(sub.get())
+    tasks = [(e["key"], e["state"]) for e in evs if e["type"] == "task"]
+    assert tasks == [("bg:p1", "running"), ("bg:p1", "cancelled"), ("bg:p1", "running"), ("bg:p1", "done"),
+                     ("bg:p2", "running"), ("bg:p2", "error")]
+    assert any(e["type"] == "task_progress" and e["key"] == "bg:p1" and e["pct"] == 0.5 for e in evs)
+    assert next(e for e in evs if e["type"] == "task" and e["state"] == "error")["error"]

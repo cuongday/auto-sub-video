@@ -50,6 +50,7 @@ def test_create_audio_project_and_settings(client):
     a = r.json()["audio"]
     assert a["rev"] == 1 and a["voice"] == "vi-VN-HoaiMyNeural" and a["rate"] == 1.1 and a["music_volume"] == 0.3
     assert client.put(f"/api/projects/{p['id']}/audio", json={"music_volume": 2}).status_code == 422
+    assert client.put(f"/api/projects/{p['id']}/audio", json={}).json()["audio"]["rev"] == 1
     sub = client.post("/api/projects", json={"name": "Phụ đề"}).json()
     assert sub["kind"] == "sub"
     assert client.put(f"/api/projects/{sub['id']}/audio", json={"rate": 1.0}).status_code == 404
@@ -64,10 +65,11 @@ def test_chunked_background_upload(client, tmp_path):
     a = r.json()["audio"]
     assert a["background"] == projects.bg_key(pid, ".mp4") and a["rev"] == 1
     assert a["background_state"] in ("processing", "ready") and a["background_info"]["width"] == 320
-    assert get_store().get_bytes(projects.bg_key(pid, ".mp4")) == data
-    assert not list((config.WORK_DIR / "_uploads").iterdir())
     wait_for(lambda: projects.get(pid).audio.background_state != "processing", timeout=60)
     assert projects.get(pid).audio.background_state == "ready"
+    assert get_store().get_bytes(projects.bg_key(pid, ".mp4")) == data
+    assert not (config.WORK_DIR / "_uploads" / uid).exists()        # data gone once stored
+    assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").json()["audio"]["rev"] == 1  # idempotent
     # the preview streams bg_loop.mp4 with Range
     r = client.get(f"/api/projects/{pid}/audio/background", headers={"Range": "bytes=0-99"})
     assert r.status_code == 206 and len(r.content) == 100
@@ -75,9 +77,64 @@ def test_chunked_background_upload(client, tmp_path):
     # a new background in another format replaces the old original
     uid, _ = upload_bg(client, pid, data, name="nen2.mkv")
     assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code == 200
-    assert get_store().stat(projects.bg_key(pid, ".mp4")) is None
     assert projects.get(pid).audio.background == projects.bg_key(pid, ".mkv")
     wait_for(lambda: not api.QUEUE.is_active(background.task_key(pid)), timeout=60)
+    assert get_store().stat(projects.bg_key(pid, ".mp4")) is None
+    assert projects.get(pid).audio.background_state == "ready"
+
+def test_finish_returns_before_storing(client, tmp_path, audio_flow):  # noqa: F811
+    """finish only probes and queues: the 1 GB transfer to MinIO happens in the audio lane."""
+    pid = new_audio(client)["id"]
+    blockers = [script(client, pid, f"p{i}.txt", run=1).json()["id"] for i in range(2)]
+    wait_for(lambda: all(store.load(j).state == "running" for j in blockers))    # both audio slots taken
+    data = make_video(tmp_path / "bg.mp4", seconds=1, size=(160, 90), with_text=False).read_bytes()
+    uid, _ = upload_bg(client, pid, data)
+    r = client.post(f"/api/projects/{pid}/audio/background/{uid}/finish")
+    assert r.status_code == 200 and r.json()["audio"]["background_state"] == "processing"
+    assert get_store().stat(projects.bg_key(pid, ".mp4")) is None
+    assert (config.WORK_DIR / "_uploads" / uid).exists()
+    assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code == 200
+    assert client.put(f"/api/projects/{pid}/audio/background/{uid}?offset=0", content=b"x").status_code == 409
+    for j in blockers:
+        GATES.setdefault(j, threading.Event()).set()
+    wait_for(lambda: projects.get(pid).audio.background_state == "ready", timeout=60)
+    assert get_store().get_bytes(projects.bg_key(pid, ".mp4")) == data
+
+def test_store_failure_keeps_upload_and_retry_finishes(client, tmp_path, monkeypatch):
+    pid = new_audio(client)["id"]
+    data = make_video(tmp_path / "bg.mp4", seconds=1, size=(160, 90), with_text=False).read_bytes()
+    uid, _ = upload_bg(client, pid, data)
+    st = get_store()
+    real, fails = st.put_file, []
+
+    def flaky(key, path):
+        if key.endswith("/background.mp4") and not fails:
+            fails.append(key)
+            raise RuntimeError("MinIO tạm lỗi")
+        return real(key, path)
+    monkeypatch.setattr(st, "put_file", flaky)
+    assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code == 200
+    wait_for(lambda: projects.get(pid).audio.background_state != "processing", timeout=30)
+    a = projects.get(pid).audio
+    assert a.background_state == "error" and "MinIO" in a.background_error
+    assert (config.WORK_DIR / "_uploads" / uid).exists()
+    r = client.post(f"/api/projects/{pid}/audio/background/{uid}/finish")     # retry: no chunks sent again
+    assert r.status_code == 200
+    wait_for(lambda: projects.get(pid).audio.background_state != "processing", timeout=60)
+    assert projects.get(pid).audio.background_state == "ready"
+    assert st.get_bytes(projects.bg_key(pid, ".mp4")) == data and not (config.WORK_DIR / "_uploads" / uid).exists()
+
+def test_chunk_over_64mb_413(client):
+    pid = new_audio(client)["id"]
+    uid = client.post(f"/api/projects/{pid}/audio/background/start",
+                      json={"name": "a.mp4", "size": 100 << 20}).json()["upload_id"]
+
+    def body():                                   # no Content-Length: the limit is checked while streaming
+        piece = b"\0" * (1 << 20)
+        for _ in range(65):
+            yield piece
+    r = client.put(f"/api/projects/{pid}/audio/background/{uid}?offset=0", content=body())
+    assert r.status_code == 413
 
 def test_finish_missing_bytes_400(client):
     pid = new_audio(client)["id"]
@@ -180,16 +237,21 @@ def test_bulk_delete_refused_while_background_normalizes(client, monkeypatch):
 def test_startup_resumes_processing_background(monkeypatch, tmp_path):
     p = projects.create("T", kind="audio")
     q = projects.create("U", kind="audio")
+    r = projects.create("V", kind="audio")
     key = projects.bg_key(p.id, ".mp4")
     get_store().put_bytes(key, b"video")
-    projects.update(p.id, lambda x: (setattr(x.audio, "background", key), setattr(x.audio, "background_state", "processing")))
-    projects.update(q.id, lambda x: (setattr(x.audio, "background", projects.bg_key(q.id, ".mp4")),
-                                     setattr(x.audio, "background_state", "processing")))
+    for x, k in ((p, key), (q, projects.bg_key(q.id, ".mp4")), (r, projects.bg_key(r.id, ".mkv"))):
+        projects.update(x.id, lambda y, k=k: (setattr(y.audio, "background", k),
+                                              setattr(y.audio, "background_state", "processing")))
     started = []
-    monkeypatch.setattr(background, "start", lambda pid: started.append(pid) or True)
+    monkeypatch.setattr(background, "start", lambda pid, local=None: started.append((pid, local and local.name)) or True)
     up = config.WORK_DIR / "_uploads"
     up.mkdir(parents=True)
     (up / ("a" * 32)).write_bytes(b"x"); (up / ("a" * 32 + ".json")).write_text(json.dumps({}))
+    # r's finished upload, never stored in MinIO: resumed from disk and kept despite its age
+    (up / ("c" * 32)).write_bytes(b"local")
+    (up / ("c" * 32 + ".json")).write_text(json.dumps({"pid": r.id, "name": "n.mkv", "size": 5, "received": [[0, 5]],
+                                                       "finished": True, "key": projects.bg_key(r.id, ".mkv")}))
     t = time.time() - 25 * 3600
     for f in up.iterdir():
         os.utime(f, (t, t))
@@ -197,6 +259,6 @@ def test_startup_resumes_processing_background(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "QUEUE", jobs.JobQueue(engines))
     with TestClient(api.app):
         pass
-    assert started == [p.id]
+    assert sorted(started) == sorted([(p.id, None), (r.id, "c" * 32)])
     assert projects.get(q.id).audio.background_state == "error"
-    assert sorted(f.name for f in up.iterdir()) == ["b" * 32]
+    assert sorted(f.name for f in up.iterdir()) == ["b" * 32, "c" * 32, "c" * 32 + ".json"]

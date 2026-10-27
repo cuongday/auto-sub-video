@@ -3,6 +3,7 @@ once), the music, one script file per request, and running the parts. Shares the
 api.py (always read as api.X: tests swap QUEUE)."""
 import asyncio
 import json
+import os
 import re
 import shutil
 import threading
@@ -97,32 +98,54 @@ def _up_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+def _read(uid: str) -> dict | None:
+    try:
+        return json.loads((config.WORK_DIR / "_uploads" / f"{uid}.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+def _write(uid: str, st: dict) -> None:
+    """Atomic: a reader never sees a half-written state."""
+    d = _up_dir()
+    tmp = d / f".{uid}.{uuid.uuid4().hex[:6]}"
+    tmp.write_text(json.dumps(st))
+    os.replace(tmp, d / f"{uid}.json")
+
+def _in_use(st: dict) -> bool:
+    """A finished upload whose project is still storing/normalizing it (the task reads the file)."""
+    if not st.get("finished"):
+        return False
+    p = projects.get(st.get("pid", ""))
+    return bool(p and p.audio and p.audio.background_state == "processing" and p.audio.background == st.get("key"))
+
 def clean_uploads(pid: str | None = None) -> None:
-    """Remove unfinished uploads older than UPLOAD_TTL (or every upload of project `pid`)."""
+    """Remove uploads older than UPLOAD_TTL (but not one still being stored), or every upload of project `pid`."""
     d = config.WORK_DIR / "_uploads"
     if not d.exists():
         return
     now = time.time()
     with _UP_LOCK:
-        for f in d.iterdir():
-            uid = f.name.removesuffix(".json")
-            meta = d / f"{uid}.json"
-            try:
-                if pid is not None:
-                    gone = meta.exists() and json.loads(meta.read_text()).get("pid") == pid
-                else:
-                    gone = now - f.stat().st_mtime > UPLOAD_TTL
-            except (OSError, ValueError):
-                gone = pid is None
-            if gone:
+        uids = {f.name.removesuffix(".json") for f in d.iterdir() if not f.name.startswith(".")}
+        gone = []
+        for uid in uids:
+            st = _read(uid)
+            if pid is not None:
+                old = st is not None and st.get("pid") == pid
+            else:
+                times = [f.stat().st_mtime for f in (d / uid, d / f"{uid}.json") if f.exists()]
+                old = (not times or now - max(times) > UPLOAD_TTL) and not (st and _in_use(st))
+            if old:
+                gone.append(uid)
+        for uid in gone:                          # both files of each upload, chosen before deleting any
+            (d / uid).unlink(missing_ok=True)
+            (d / f"{uid}.json").unlink(missing_ok=True)
+        for f in d.glob(".*"):                    # temp state files of an interrupted write
+            if now - f.stat().st_mtime > 60:
                 f.unlink(missing_ok=True)
 
 def _state(pid: str, uid: str) -> dict:
-    meta = config.WORK_DIR / "_uploads" / f"{uid}.json"
-    if not _UID.match(uid) or not meta.exists():
-        raise HTTPException(404, "Không tìm thấy phiên tải lên (có thể đã quá 24 giờ)")
-    st = json.loads(meta.read_text())
-    if st.get("pid") != pid:
+    st = _read(uid) if _UID.match(uid) else None
+    if st is None or st.get("pid") != pid:
         raise HTTPException(404, "Không tìm thấy phiên tải lên (có thể đã quá 24 giờ)")
     return st
 
@@ -138,14 +161,31 @@ def _merge(ranges: list[list[int]], start: int, end: int) -> list[list[int]]:
             out.append([s, e])
     return out
 
+def _upload_of(p: Project) -> Path | None:
+    """The local file of the finished upload that became the project's background, if still on disk."""
+    d = config.WORK_DIR / "_uploads"
+    for f in d.glob("*.json") if d.exists() else []:
+        st = _read(f.stem)
+        if st and st.get("finished") and st.get("pid") == p.id and st.get("key") == p.audio.background \
+                and (d / f.stem).exists():
+            return d / f.stem
+    return None
+
+def _restart(p: Project) -> bool:
+    """Store (from the local upload) and normalize the project's background again; False if no copy is left."""
+    local = _upload_of(p)
+    if local is not None:
+        return background.start(p.id, local)
+    if p.audio.background and get_store().stat(p.audio.background) is not None:
+        return background.start(p.id)
+    return False
+
 def resume_backgrounds() -> None:
-    """At startup: a normalization cut off by the restart is started again (or marked failed)."""
+    """At startup: a background cut off by the restart is stored/normalized again (or marked failed)."""
     for p in projects.list_projects():
         if p.audio is None or p.audio.background_state != "processing":
             continue
-        if p.audio.background and get_store().stat(p.audio.background) is not None:
-            background.start(p.id)
-        else:
+        if not _restart(p):
             projects.update(p.id, lambda x: (setattr(x.audio, "background_state", "error"), setattr(
                 x.audio, "background_error", "Không tìm thấy video nền, hãy tải lên lại")))
 
@@ -161,6 +201,8 @@ class AudioSettingsIn(BaseModel):
 def put_audio_settings(pid: str, body: AudioSettingsIn):
     _audio(pid)
     fields = body.model_dump(exclude_none=True)
+    if not fields:
+        return api._project_view(api._project(pid))
     return _update(pid, lambda a: [setattr(a, k, v) for k, v in fields.items()])
 
 # ------------------------------------------------------------------ background (chunked upload)
@@ -182,59 +224,73 @@ def bg_start(pid: str, body: BgStartIn):
     d = _up_dir()
     with open(d / uid, "wb") as f:
         f.truncate(body.size)                       # sparse: chunks land at their offset
-    (d / f"{uid}.json").write_text(json.dumps({"pid": pid, "name": body.name, "size": body.size, "received": []}))
+    _write(uid, {"pid": pid, "name": body.name, "size": body.size, "received": []})
     return {"upload_id": uid, "chunk_size": CHUNK_MAX}
 
 @router.put("/api/projects/{pid}/audio/background/{upload_id}")
 async def bg_chunk(pid: str, upload_id: str, request: Request, offset: int = 0):
-    st = _state(pid, upload_id)
+    with _UP_LOCK:
+        st = _state(pid, upload_id)
+    if st.get("finished"):
+        raise HTTPException(409, "Phiên tải lên này đã hoàn tất")
     limit = min(CHUNK_MAX, st["size"] - offset)
     too_big = HTTPException(413, f"Mảnh quá lớn hoặc vượt kích thước file (tối đa {CHUNK_MAX >> 20} MB mỗi mảnh)")
     if offset < 0 or limit <= 0 or int(request.headers.get("content-length") or 0) > limit:
         raise too_big
     path = config.WORK_DIR / "_uploads" / upload_id
+    try:
+        f = await asyncio.to_thread(open, path, "r+b")
+    except FileNotFoundError:
+        raise HTTPException(404, "Không tìm thấy phiên tải lên (có thể đã quá 24 giờ)") from None
     n = 0
-    with open(path, "r+b") as f:                    # streamed straight to disk, never held in memory
-        f.seek(offset)
+    try:                                            # streamed straight to disk, never held in memory
+        await asyncio.to_thread(f.seek, offset)
         async for piece in request.stream():
             n += len(piece)
             if n > limit:
                 raise too_big
-            f.write(piece)
+            await asyncio.to_thread(f.write, piece)
+    finally:
+        await asyncio.to_thread(f.close)
     with _UP_LOCK:
         st = _state(pid, upload_id)
         if n:
             st["received"] = _merge(st["received"], offset, offset + n)
-        (path.parent / f"{upload_id}.json").write_text(json.dumps(st))
+            _write(upload_id, st)
     return {"received": _covered(st["received"])}
 
 @router.post("/api/projects/{pid}/audio/background/{upload_id}/finish")
 def bg_finish(pid: str, upload_id: str):
-    p = _audio(pid)
-    st = _state(pid, upload_id)
+    """Check the upload is complete, probe it, make it the project's background (state "processing") and queue
+    the task that stores it in MinIO and normalizes it. Quick (no 1 GB transfer in the request) and idempotent:
+    called again it re-queues that task if it failed."""
+    _audio(pid)
+    with _UP_LOCK:
+        st = _state(pid, upload_id)
+    path = config.WORK_DIR / "_uploads" / upload_id
+    if st.get("finished"):
+        p = api._project(pid)
+        if p.audio.background == st["key"] and p.audio.background_state == "error" \
+                and not api.QUEUE.is_active(background.task_key(pid)):
+            _restart(p)
+        return api._project_view(api._project(pid))
     if st["received"] != [[0, st["size"]]]:
         raise HTTPException(400, f"Video nền chưa tải lên đủ ({_covered(st['received'])}/{st['size']} byte)")
-    d = config.WORK_DIR / "_uploads"
-    path = d / upload_id
     try:
-        try:
-            info = media.probe(path)
-        except Exception:  # noqa: BLE001
-            raise HTTPException(400, "Không đọc được video nền, hãy kiểm tra lại file") from None
-        key = projects.bg_key(pid, Path(st["name"]).suffix.lower())
-        get_store().put_file(key, path)
-    finally:
-        path.unlink(missing_ok=True)
-        (d / f"{upload_id}.json").unlink(missing_ok=True)
-    old = p.audio.background
+        info = media.probe(path)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "Không đọc được video nền, hãy kiểm tra lại file") from None
+    key = projects.bg_key(pid, Path(st["name"]).suffix.lower())
+    with _UP_LOCK:
+        st = _state(pid, upload_id)
+        st.update(finished=True, key=key)
+        _write(upload_id, st)
 
     def apply(a):
         a.background, a.background_info = key, info
         a.background_state, a.background_error = "processing", None
     _update(pid, apply)
-    if old and old != key:
-        get_store().delete(old)
-    background.start(pid)
+    background.start(pid, path)
     return api._project_view(api._project(pid))
 
 @router.get("/api/projects/{pid}/audio/background")

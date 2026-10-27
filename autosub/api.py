@@ -29,10 +29,10 @@ async def lifespan(_app):
     except (StorageError, AttributeError) as e:
         print(f"[auto-sub] storage not ready at startup: {e}", flush=True)
     QUEUE.start()
-    audio_api.clean_uploads()
     try:
+        audio_api.clean_uploads()
         await asyncio.to_thread(audio_api.resume_backgrounds)   # normalizations cut off by the restart
-    except StorageError as e:
+    except Exception as e:  # noqa: BLE001  (never abort startup)
         print(f"[auto-sub] audio backgrounds not resumed: {e}", flush=True)
     yield
 

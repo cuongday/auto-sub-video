@@ -105,8 +105,31 @@ def local_etag(pid: str) -> str | None:
     tag = config.WORK_DIR / "_projects" / pid / "bg_loop.etag"
     return tag.read_text() if tag.exists() else None
 
-def start(pid: str) -> bool:
-    """Queue the normalization in the audio lane (state "processing"). A run already going is cancelled first."""
+def store_original(pid: str, key: str, local: Path) -> bool:
+    """Put the uploaded file `local` in storage as the original background `key`, drop originals with another
+    extension, then remove the local file. False when the project's
+    background was replaced meanwhile. On failure the state is "error" and the upload stays on disk, so a
+    retry needs no new upload."""
+    st = get_store()
+    try:
+        st.put_file(key, local)
+        cur = projects.get(pid)
+        if cur is None or cur.audio is None or cur.audio.background != key:
+            st.delete(key)
+            return False
+        for o in st.list(f"projects/{pid}/background"):
+            if o.key != key:
+                st.delete(o.key)
+    except Exception as e:
+        _set(pid, background_state="error", background_error=f"Lưu video nền vào kho lưu trữ lỗi: {e}")
+        raise
+    local.unlink(missing_ok=True)                        # only once stored
+    return True
+
+def start(pid: str, local_upload: Path | None = None) -> bool:
+    """Queue the normalization in the audio lane (state "processing"). A run already going is cancelled first.
+    With `local_upload` (a finished chunked upload), the task first stores it as the project's current
+    background key (store_original), so the HTTP request that finished the upload returns right away."""
     from ..api import QUEUE                              # lazy: api imports the flows
     key = task_key(pid)
     if QUEUE.is_active(key):
@@ -114,8 +137,15 @@ def start(pid: str) -> bool:
         deadline = time.time() + 15
         while QUEUE.is_active(key) and time.time() < deadline:
             time.sleep(0.1)
+    p = projects.get(pid)
+    bg = p.audio.background if p and p.audio else None
     _set(pid, background_state="processing", background_error=None)
-    ok = QUEUE.submit_task(key, lambda cancel, progress: normalize(pid, cancel, progress))
+
+    def task(cancel, progress):
+        if local_upload is not None and bg and not store_original(pid, bg, local_upload):
+            return
+        normalize(pid, cancel, progress)
+    ok = QUEUE.submit_task(key, task)
     if not ok:
         _set(pid, background_state="error", background_error="Không xếp hàng được việc chuẩn hoá video nền")
     return ok

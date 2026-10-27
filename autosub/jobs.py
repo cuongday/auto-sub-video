@@ -1,8 +1,10 @@
 """Job queue with two lanes; events fan out to SSE subscribers.
 
 - main lane: sub/film/review jobs, one at a time (CPU-bound); cancel kills every child process.
-- audio lane: audio-story jobs and background tasks (submit_task), AUDIO_WORKERS at a time; each has its own
-  cancel event, so cancelling one never touches the others' processes (proc.run kills only its own child)."""
+- audio lane: audio-story jobs, AUDIO_WORKERS at a time; each has its own cancel event, so cancelling one never
+  touches the others' processes (proc.run kills only its own child).
+- task lane: background tasks (submit_task), one at a time on their own worker, never behind the audio jobs
+  (an audio part waits for its project's background normalization: sharing workers could deadlock)."""
 import queue
 import sys
 import threading
@@ -23,7 +25,7 @@ class Request:
 
 @dataclass
 class Task:
-    """An arbitrary callable run in the audio lane: fn(cancel_event, progress(pct)). Not a stored job."""
+    """An arbitrary callable run in the task lane: fn(cancel_event, progress(pct)). Not a stored job."""
     key: str
     fn: Callable[[threading.Event, Callable[[float], None]], None]
 
@@ -40,12 +42,15 @@ class JobQueue:
         self._thread: threading.Thread | None = None
         # audio lane
         self.audio_workers = max(1, audio_workers if audio_workers is not None else config.AUDIO_WORKERS)
-        self._aq: "queue.Queue[Request | Task]" = queue.Queue()
+        self._aq: "queue.Queue[Request]" = queue.Queue()
         self._apending: list[str] = []
-        self._ptasks: set[str] = set()               # keys in _apending that are submit_task tasks, not jobs
         self._latest: dict[str, "Request | Task"] = {}   # newest queued item per id: older copies are stale
-        self._running: dict[str, threading.Event] = {}
+        self._running: dict[str, threading.Event] = {}  # audio jobs and tasks running now -> their cancel event
         self._athreads: list[threading.Thread] = []
+        # task lane (not counted in audio_workers)
+        self._tq: "queue.Queue[Task]" = queue.Queue()
+        self._tpending: list[str] = []
+        self._tthread: threading.Thread | None = None
 
     # ---- events
     def subscribe(self) -> queue.Queue:
@@ -81,9 +86,13 @@ class JobQueue:
                                      name=f"autosub-audio-{len(self._athreads)}")
                 self._athreads.append(t)
                 t.start()
+            if self._tthread is None or not self._tthread.is_alive():
+                self._tthread = threading.Thread(target=self._task_loop, daemon=True, name="autosub-tasks")
+                self._tthread.start()
 
     def _active_locked(self, key: str) -> bool:
-        return key == self.current or key in self._pending or key in self._apending or key in self._running
+        return (key == self.current or key in self._pending or key in self._apending or key in self._tpending
+                or key in self._running)
 
     def is_active(self, jid: str) -> bool:
         with self._lock:
@@ -111,28 +120,27 @@ class JobQueue:
         return True
 
     def submit_task(self, key: str, fn: Callable[[threading.Event, Callable[[float], None]], None]) -> bool:
-        """Run fn(cancel_event, progress) in the audio lane; False if `key` is already queued/running."""
+        """Run fn(cancel_event, progress) in the task lane; False if `key` is already queued/running."""
         with self._lock:
             if self._active_locked(key):
                 return False
             task = Task(key, fn)
-            self._apending.append(key)
-            self._ptasks.add(key)
+            self._tpending.append(key)
             self._latest[key] = task
-        self._aq.put(task)
-        self.emit({"type": "task", "key": key, "state": "queued"})
+        self.emit({"type": "task", "key": key, "state": "queued"})    # before put: an idle worker says "running"
+        self._tq.put(task)
         self.start()
         return True
 
     def cancel(self, jid: str) -> bool:
         with self._lock:
-            queued = jid in self._pending or jid in self._apending
-            is_task = jid in self._ptasks
+            lane = next((l for l in (self._pending, self._apending, self._tpending) if jid in l), None)
+            queued = lane is not None
+            is_task = lane is self._tpending
             ev = self._running.get(jid)
             spare = {e for e in self._running.values()}
             if queued:
-                (self._pending if jid in self._pending else self._apending).remove(jid)
-                self._ptasks.discard(jid)
+                lane.remove(jid)
                 self._latest.pop(jid, None)
             elif ev is None and jid != self.current:
                 return False
@@ -167,15 +175,14 @@ class JobQueue:
                 with self._lock:
                     self.current = None
 
-    def _audio_loop(self) -> None:
+    def _lane_loop(self, q: queue.Queue, pending: list[str], name: str) -> None:
         while True:
-            item = self._aq.get()
+            item = q.get()
             key = item.key if isinstance(item, Task) else item.jid
             with self._lock:
-                if key not in self._apending or self._latest.get(key) is not item:
+                if key not in pending or self._latest.get(key) is not item:
                     continue                      # cancelled while queued, or superseded by a resubmit
-                self._apending.remove(key)
-                self._ptasks.discard(key)
+                pending.remove(key)
                 del self._latest[key]
                 cancel = self._running[key] = threading.Event()
             try:
@@ -184,10 +191,16 @@ class JobQueue:
                 else:
                     self._run(item, cancel)
             except Exception:  # noqa: BLE001  (a worker thread must never die)
-                print(f"[auto-sub] audio lane: {key} failed:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+                print(f"[auto-sub] {name} lane: {key} failed:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
             finally:
                 with self._lock:
                     self._running.pop(key, None)
+
+    def _audio_loop(self) -> None:
+        self._lane_loop(self._aq, self._apending, "audio")
+
+    def _task_loop(self) -> None:
+        self._lane_loop(self._tq, self._tpending, "task")
 
     def _run_task(self, task: Task, cancel: threading.Event) -> None:
         key = task.key

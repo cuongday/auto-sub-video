@@ -82,11 +82,17 @@ def test_chunked_background_upload(client, tmp_path):
     assert get_store().stat(projects.bg_key(pid, ".mp4")) is None
     assert projects.get(pid).audio.background_state == "ready"
 
-def test_finish_returns_before_storing(client, tmp_path, audio_flow):  # noqa: F811
-    """finish only probes and queues: the 1 GB transfer to MinIO happens in the audio lane."""
+def test_finish_returns_before_storing(client, tmp_path, monkeypatch):
+    """finish only probes and queues: the 1 GB transfer to MinIO happens in the task lane."""
     pid = new_audio(client)["id"]
-    blockers = [script(client, pid, f"p{i}.txt", run=1).json()["id"] for i in range(2)]
-    wait_for(lambda: all(store.load(j).state == "running" for j in blockers))    # both audio slots taken
+    st, gate = get_store(), threading.Event()
+    real = st.put_file
+
+    def slow(key, path):
+        if key.endswith("/background.mp4"):
+            assert gate.wait(30)
+        return real(key, path)
+    monkeypatch.setattr(st, "put_file", slow)
     data = make_video(tmp_path / "bg.mp4", seconds=1, size=(160, 90), with_text=False).read_bytes()
     uid, _ = upload_bg(client, pid, data)
     r = client.post(f"/api/projects/{pid}/audio/background/{uid}/finish")
@@ -95,8 +101,7 @@ def test_finish_returns_before_storing(client, tmp_path, audio_flow):  # noqa: F
     assert (config.WORK_DIR / "_uploads" / uid).exists()
     assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code == 200
     assert client.put(f"/api/projects/{pid}/audio/background/{uid}?offset=0", content=b"x").status_code == 409
-    for j in blockers:
-        GATES.setdefault(j, threading.Event()).set()
+    gate.set()
     wait_for(lambda: projects.get(pid).audio.background_state == "ready", timeout=60)
     assert get_store().get_bytes(projects.bg_key(pid, ".mp4")) == data
 
@@ -261,3 +266,31 @@ def test_startup_resumes_processing_background(monkeypatch, tmp_path):
     assert sorted(started) == sorted([(p.id, None), (r.id, "c" * 32)])
     assert projects.get(q.id).audio.background_state == "error"
     assert sorted(f.name for f in up.iterdir()) == ["b" * 32, "c" * 32, "c" * 32 + ".json"]
+
+def test_background_task_not_starved_by_parts_waiting_for_it(client, audio_flow, monkeypatch):  # noqa: F811
+    """Both audio workers hold parts waiting in render for the background: its normalization must still run."""
+    from autosub.audio import flow as audio_flow_mod
+    pid = new_audio(client)["id"]
+    projects.update(pid, lambda p: (setattr(p.audio, "background", projects.bg_key(pid, ".mp4")),
+                                    setattr(p.audio, "background_state", "processing")))
+    monkeypatch.setattr(audio_flow_mod, "WAIT", 0.05)
+    waiting = []
+
+    def wait_bg(ctx):
+        waiting.append(ctx.job.id)
+        audio_flow_mod._wait_background(ctx)
+    monkeypatch.setitem(audio_flow.runners, "render", wait_bg)
+    for j in (a := [script(client, pid, f"p{i}.txt").json()["id"] for i in range(2)]):
+        GATES.setdefault(j, threading.Event()).set()
+        assert api.QUEUE.submit(j, "auto")
+    wait_for(lambda: sorted(waiting) == sorted(a), timeout=10)
+    assert api.QUEUE.running() == set(a)                       # both audio workers are busy waiting
+    ran = threading.Event()
+
+    def fake_normalize(p, cancel, progress):
+        ran.set()
+        background._set(p, background_state="ready")
+    monkeypatch.setattr(background, "normalize", fake_normalize)
+    assert background.start(pid)
+    assert ran.wait(10), "the background task never ran: the audio lane is deadlocked"
+    wait_for(lambda: all(store.load(j).state == "done" for j in a), timeout=10)

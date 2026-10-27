@@ -158,7 +158,7 @@ def test_sub_job_not_blocked_by_audio_lane(audio_flow, tmp_path):
     wait(a.id, {"done"}); wait(b.id, {"done"})
     wait_for(lambda: q.running() == set())
 
-def test_submit_task_runs_in_audio_lane_and_cancels(audio_flow):
+def test_submit_task_runs_and_cancels(audio_flow):
     q = jobs.JobQueue(engines)
     sub = q.subscribe()
     started, release = threading.Event(), threading.Event()
@@ -243,15 +243,14 @@ def test_main_lane_cancel_spares_audio_processes(audio_flow, monkeypatch):
 
 def test_resubmitted_task_runs_new_fn_not_stale_one(audio_flow):
     q = jobs.JobQueue(engines, audio_workers=1)
-    blocker = audio_job("blocker")
-    q.submit(blocker.id, "auto")
-    wait_for(lambda: store.load(blocker.id).state == "running")
+    release = threading.Event()
+    assert q.submit_task("bg:blocker", lambda cancel, progress: release.wait(10))   # the task worker is busy
+    wait_for(lambda: "bg:blocker" in q.running())
     ran = []
     assert q.submit_task("bg:x", lambda cancel, progress: ran.append("old"))
     assert q.cancel("bg:x")
     assert q.submit_task("bg:x", lambda cancel, progress: ran.append("new"))
-    GATES[blocker.id].set()
-    wait(blocker.id, {"done"})
+    release.set()
     wait_for(lambda: ran and not q.is_active("bg:x"))
     wait_for(lambda: q.running() == set())
     assert ran == ["new"]

@@ -399,3 +399,11 @@ def test_concurrent_finish_starts_one_task(client, tmp_path, monkeypatch):
     assert started == [uid], started
     assert sorted(codes) in ([200, 200], [200, 409])
     assert projects.get(pid).audio.rev == 1
+
+def test_single_delete_refused_for_audio_story(client):
+    pid = new_audio(client)["id"]
+    r = client.delete(f"/api/projects/{pid}")
+    assert r.status_code == 400 and r.json()["detail"] == "Dùng chức năng xoá truyện"
+    assert projects.get(pid) is not None
+    sub = client.post("/api/projects", json={"name": "Phụ đề"}).json()["id"]
+    assert client.delete(f"/api/projects/{sub}").status_code == 200

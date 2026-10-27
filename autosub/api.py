@@ -972,8 +972,10 @@ def update_project(pid: str, body: ProjectIn):
 
 @app.delete("/api/projects/{pid}")
 def delete_project(pid: str):
-    """Removes the project only; its videos stay, without a project."""
-    _project(pid)
+    """Removes the project only; its videos stay, without a project. Not for audio stories: their parts are
+    hidden outside the story and its assets would leak (POST /api/projects/delete removes everything)."""
+    if _project(pid).kind == "audio":
+        raise HTTPException(400, "Dùng chức năng xoá truyện")
     for j in store.list_jobs():
         if j.project == pid:
             j.project = None

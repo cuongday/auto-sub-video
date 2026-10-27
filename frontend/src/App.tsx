@@ -230,9 +230,9 @@ export default function App() {
       confirmLabel: "Xoá", danger: true,
     });
     if (!ok) return false;
-    ids.forEach(abortBgUpload);          // a background still uploading to a story being deleted
     try {
       await api.deleteProjects(ids);
+      ids.forEach(abortBgUpload);        // a background still uploading to a story now deleted (not on refusal)
     } catch (e) {
       const busy = e instanceof ApiError ? e.busy : [];
       await dialog.confirm({

@@ -172,8 +172,7 @@ class JobQueue:
             try:
                 self._run(req, cancel)
             finally:
-                with self._lock:
-                    self.current = None
+                self._release(req.jid, cancel)
 
     def _lane_loop(self, q: queue.Queue, pending: list[str], name: str) -> None:
         while True:
@@ -193,14 +192,48 @@ class JobQueue:
             except Exception:  # noqa: BLE001  (a worker thread must never die)
                 print(f"[auto-sub] {name} lane: {key} failed:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
             finally:
-                with self._lock:
-                    self._running.pop(key, None)
+                self._release(key, cancel)
 
     def _audio_loop(self) -> None:
         self._lane_loop(self._aq, self._apending, "audio")
 
     def _task_loop(self) -> None:
         self._lane_loop(self._tq, self._tpending, "task")
+
+    def _owner_locked(self, key: str, cancel: threading.Event) -> bool:
+        """The run started with `cancel` still holds `key` (not released yet: no resubmit can have started)."""
+        return self._running.get(key) is cancel or (key == self.current and self._cancel is cancel)
+
+    def _release_locked(self, key: str, cancel: threading.Event) -> None:
+        if self._running.get(key) is cancel:
+            del self._running[key]
+        elif key == self.current and self._cancel is cancel:
+            self.current = None
+
+    def _release(self, key: str, cancel: threading.Event) -> None:
+        """Mark the run idle; a no-op once done (by _commit) or when a resubmit already took the key."""
+        with self._lock:
+            self._release_locked(key, cancel)
+
+    def _commit(self, job, cancel: threading.Event) -> None:
+        """Save the job's terminal state and mark it idle in one step under the lock: whoever reads the terminal
+        state (an API poll) sees an idle job, and a submit() can only come after, so it never gets overwritten.
+        Skipped when the run no longer holds the job (already committed)."""
+        with self._lock:
+            if not self._owner_locked(job.id, cancel):
+                return
+            store.save(job)
+            self._release_locked(job.id, cancel)
+
+    def finish_task(self, key: str, cancel: threading.Event | None, apply: Callable[[], None]) -> None:
+        """Write a task's final outcome with apply(). Called from the running task (`cancel` is the event it was
+        given), the task is marked idle in the same step, so whoever reads that outcome sees no task running.
+        Called outside a queued run (cancel unknown to the queue), apply() just runs. apply must not call back
+        into the queue (it runs under the lock)."""
+        with self._lock:
+            apply()
+            if cancel is not None:
+                self._release_locked(key, cancel)
 
     def _run_task(self, task: Task, cancel: threading.Event) -> None:
         key = task.key
@@ -216,11 +249,13 @@ class JobQueue:
         try:
             task.fn(cancel, progress)
         except proc.Cancelled:
-            self.emit({"type": "task", "key": key, "state": "cancelled"})
+            ev = {"type": "task", "key": key, "state": "cancelled"}
         except Exception as e:  # noqa: BLE001
-            self.emit({"type": "task", "key": key, "state": "error", "error": str(e) or type(e).__name__})
+            ev = {"type": "task", "key": key, "state": "error", "error": str(e) or type(e).__name__}
         else:
-            self.emit({"type": "task", "key": key, "state": "cancelled" if cancel.is_set() else "done"})
+            ev = {"type": "task", "key": key, "state": "cancelled" if cancel.is_set() else "done"}
+        self._release(key, cancel)              # idle before anyone hears it finished
+        self.emit(ev)
 
     def _run(self, req: Request, cancel: threading.Event) -> None:
         jid = req.jid
@@ -235,21 +270,26 @@ class JobQueue:
         def log(msg):
             self.emit({"type": "log", "job": jid, "msg": msg})
 
+        def commit(job):
+            self._commit(job, cancel)
+
         self.emit({"type": "state", "job": jid, "state": "running"})
-        try:
+        try:                                    # every terminal save goes through commit (see _commit)
             job = pipeline.run(jid, mode=req.mode, from_step=req.from_step, confirm=req.confirm,
-                               engines=self.engines_factory(), progress=progress, log=log, cancel=cancel)
+                               engines=self.engines_factory(), progress=progress, log=log, cancel=cancel,
+                               commit=commit)
             self.emit({"type": "state", "job": jid, "state": job.state})
         except proc.Cancelled:
             self.emit({"type": "state", "job": jid, "state": "cancelled"})
         except pipeline.NeedsConfirm as e:
-            job = store.load(jid); job.state, job.error = "awaiting_review", str(e); store.save(job)
+            job = store.load(jid); job.state, job.error = "awaiting_review", str(e); commit(job)
             self.emit({"type": "state", "job": jid, "state": job.state, "error": str(e)})
         except Exception as e:  # noqa: BLE001
             try:
                 job = store.load(jid)
                 if job.state != "error":
-                    job.state, job.error = "error", str(e); store.save(job)
+                    job.state, job.error = "error", str(e)
+                commit(job)                     # a no-op if the pipeline already committed its error
             except Exception:  # noqa: BLE001
                 pass
             self.emit({"type": "state", "job": jid, "state": "error", "error": str(e)})

@@ -37,47 +37,60 @@ def _set(pid: str, **fields) -> None:
             setattr(p.audio, k, v)
     projects.update(pid, apply)
 
+def _finish(pid: str, cancel: threading.Event | None, **fields) -> None:
+    """Write the final background state. Run as the project's queued task (`cancel` is its event), the queue marks
+    the task idle in the same step: whoever reads "ready"/"error" never sees the task still active."""
+    from ..api import QUEUE                              # lazy: api imports the flows
+    QUEUE.finish_task(task_key(pid), cancel, lambda: _set(pid, **fields))
+
 def normalize(pid: str, cancel: threading.Event, progress: Callable[[float], None]) -> None:
     """Re-encode the uploaded background to bg_loop.mp4 (no audio, keyframe every second, same size and fps)
-    and store it; the project's background_state ends "ready", or "error" with a message."""
-    with workdir.pinned(pin_key(pid)):
-        d = project_dir(pid)
-        src = d / f".source-{uuid.uuid4().hex[:8]}"
-        out = d / f".bg_loop-{uuid.uuid4().hex[:8]}.mp4"
-        try:
-            p = projects.get(pid)
-            if p is None or p.audio is None or not p.audio.background:
-                raise RuntimeError(NO_BACKGROUND)
-            key = p.audio.background
-            if not get_store().get_file(key, src):
-                raise RuntimeError("Không tìm thấy video nền trong kho lưu trữ")
-            info = media.probe(src)
-            fps = str(max(1, round(info.fps)))
-            proc.run_ffmpeg(["-i", str(src), "-map", "0:v:0", "-an", "-c:v", "libx264",
-                             "-preset", config.FFMPEG_PRESET, "-crf", str(config.FFMPEG_CRF), "-pix_fmt", "yuv420p",
-                             "-g", fps, "-keyint_min", fps, "-sc_threshold", "0", "-movflags", "+faststart", str(out)],
-                            duration=info.duration, progress=progress, cancel=cancel)
-            cur = projects.get(pid)
-            if cur is None or cur.audio is None or cur.audio.background != key:
-                return                                   # replaced/removed meanwhile: its own run takes over
-            st = get_store()
-            st.put_file(projects.bg_loop_key(pid), out)
-            obj = st.stat(projects.bg_loop_key(pid))
-            etag = obj.etag if obj else None
-            with _pid_lock(pid):                         # becomes the shared local copy right away
-                os.replace(out, d / "bg_loop.mp4")
-                (d / "bg_loop.etag").write_text(etag or "")
-            _set(pid, background_state="ready", background_error=None, background_etag=etag, background_info=info)
-            progress(1.0)
-        except proc.Cancelled:
-            _set(pid, background_state="error", background_error=CANCELLED)
-            raise
-        except Exception as e:
-            _set(pid, background_state="error", background_error=f"Chuẩn hoá video nền lỗi: {e}")
-            raise
-        finally:
-            src.unlink(missing_ok=True)
-            out.unlink(missing_ok=True)
+    and store it; the project's background_state ends "ready", or "error" with a message (written last, after
+    unpinning, see _finish)."""
+    final: dict = {}
+    try:
+        with workdir.pinned(pin_key(pid)):
+            d = project_dir(pid)
+            src = d / f".source-{uuid.uuid4().hex[:8]}"
+            out = d / f".bg_loop-{uuid.uuid4().hex[:8]}.mp4"
+            try:
+                p = projects.get(pid)
+                if p is None or p.audio is None or not p.audio.background:
+                    raise RuntimeError(NO_BACKGROUND)
+                key = p.audio.background
+                if not get_store().get_file(key, src):
+                    raise RuntimeError("Không tìm thấy video nền trong kho lưu trữ")
+                info = media.probe(src)
+                fps = str(max(1, round(info.fps)))
+                proc.run_ffmpeg(["-i", str(src), "-map", "0:v:0", "-an", "-c:v", "libx264",
+                                 "-preset", config.FFMPEG_PRESET, "-crf", str(config.FFMPEG_CRF), "-pix_fmt", "yuv420p",
+                                 "-g", fps, "-keyint_min", fps, "-sc_threshold", "0", "-movflags", "+faststart", str(out)],
+                                duration=info.duration, progress=progress, cancel=cancel)
+                cur = projects.get(pid)
+                if cur is None or cur.audio is None or cur.audio.background != key:
+                    return                               # replaced/removed meanwhile: its own run takes over
+                st = get_store()
+                st.put_file(projects.bg_loop_key(pid), out)
+                obj = st.stat(projects.bg_loop_key(pid))
+                etag = obj.etag if obj else None
+                with _pid_lock(pid):                     # becomes the shared local copy right away
+                    os.replace(out, d / "bg_loop.mp4")
+                    (d / "bg_loop.etag").write_text(etag or "")
+                progress(1.0)
+                final.update(background_state="ready", background_error=None, background_etag=etag,
+                             background_info=info)
+            except proc.Cancelled:
+                final.update(background_state="error", background_error=CANCELLED)
+                raise
+            except Exception as e:
+                final.update(background_state="error", background_error=f"Chuẩn hoá video nền lỗi: {e}")
+                raise
+            finally:
+                src.unlink(missing_ok=True)
+                out.unlink(missing_ok=True)
+    finally:
+        if final:
+            _finish(pid, cancel, **final)
 
 def local_loop(pid: str) -> Path:
     """Local path of the project's bg_loop.mp4, shared by its parts; downloaded again when the stored object
@@ -106,7 +119,7 @@ def local_etag(pid: str) -> str | None:
     tag = config.WORK_DIR / "_projects" / pid / "bg_loop.etag"
     return tag.read_text() if tag.exists() else None
 
-def store_original(pid: str, key: str, local: Path) -> bool:
+def store_original(pid: str, key: str, local: Path, cancel: threading.Event | None = None) -> bool:
     """Put the uploaded file `local` (the project's background_upload) in storage as the original background
     `key`, drop originals with another extension, then remove the local file. False when the project's
     background was replaced meanwhile (another key or another upload). On failure the state is "error" and the
@@ -129,7 +142,7 @@ def store_original(pid: str, key: str, local: Path) -> bool:
             if o.key != key:
                 st.delete(o.key)
     except Exception as e:
-        _set(pid, background_state="error", background_error=f"Lưu video nền vào kho lưu trữ lỗi: {e}")
+        _finish(pid, cancel, background_state="error", background_error=f"Lưu video nền vào kho lưu trữ lỗi: {e}")
         raise
     local.unlink(missing_ok=True)                        # only once stored
     def clear(p):
@@ -154,7 +167,7 @@ def start(pid: str, local_upload: Path | None = None) -> bool:
     _set(pid, background_state="processing", background_error=None)
 
     def task(cancel, progress):
-        if local_upload is not None and bg and not store_original(pid, bg, local_upload):
+        if local_upload is not None and bg and not store_original(pid, bg, local_upload, cancel):
             return
         normalize(pid, cancel, progress)
     ok = QUEUE.submit_task(key, task)

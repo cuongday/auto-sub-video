@@ -53,7 +53,7 @@ def test_reset_interrupted():
 import sys
 import threading
 import pytest
-from autosub import proc
+from autosub import proc, workdir
 from autosub.models import AUDIO_STEPS, StepState
 
 GATES: dict[str, threading.Event] = {}
@@ -254,3 +254,72 @@ def test_resubmitted_task_runs_new_fn_not_stale_one(audio_flow):
     wait_for(lambda: ran and not q.is_active("bg:x"))
     wait_for(lambda: q.running() == set())
     assert ran == ["new"]
+
+# ---------------------------------------------------------------- terminal state visible => idle
+
+TERMINAL = {"done", "awaiting_review", "error", "cancelled"}
+
+def _watch_finish(monkeypatch, q, jid):
+    """Look from inside the worker at the window that follows a run: the scratch eviction on unpin and the
+    terminal state event. Records (where, stored state, is_active) at each point."""
+    seen = []
+    real_evict, real_emit = workdir.evict, q.emit
+
+    def evict(*a, **kw):
+        if threading.current_thread() is not threading.main_thread():
+            seen.append(("evict", store.load(jid).state, q.is_active(jid)))
+        return real_evict(*a, **kw)
+
+    def emit(ev):
+        if ev.get("type") == "state" and ev.get("job") == jid and ev.get("state") in TERMINAL:
+            seen.append(("emit", store.load(jid).state, q.is_active(jid)))
+        real_emit(ev)
+    monkeypatch.setattr(workdir, "evict", evict)
+    monkeypatch.setattr(q, "emit", emit)
+    return seen
+
+def _assert_never_terminal_and_active(seen, state):
+    assert [w for w, *_ in seen] == ["evict", "emit"], seen
+    assert not [s for s in seen if s[1] in TERMINAL and s[2]], seen   # a client polling here would get a 409
+    assert seen[-1][1:] == (state, False)
+
+@pytest.mark.parametrize("lane", ["main", "audio"])
+def test_terminal_state_implies_idle(audio_flow, monkeypatch, lane):
+    film = pipeline.Flow(steps=["a"], runners={"a": lambda ctx: None}, step_hash=lambda ctx, step: "h",
+                         inputs=lambda ctx, step: [], pushes=lambda ctx, step: [], outputs=lambda ctx, step: [],
+                         review_stop=None, overwrites=set())
+    monkeypatch.setitem(pipeline._FLOWS, "film", film)
+    if lane == "main":
+        j = store.create("m", kind="film"); j.steps = {"a": StepState()}; store.save(j)
+    else:
+        j = audio_job("a"); GATES[j.id].set()
+    q = jobs.JobQueue(engines)
+    seen = _watch_finish(monkeypatch, q, j.id)
+    assert q.submit(j.id, "auto")
+    wait_for(lambda: len(seen) == 2)
+    _assert_never_terminal_and_active(seen, "done")
+
+def test_cancelled_state_implies_idle(audio_flow, monkeypatch):
+    q = jobs.JobQueue(engines)
+    a = audio_job("a")
+    seen = _watch_finish(monkeypatch, q, a.id)
+    assert q.submit(a.id, "auto")
+    wait_for(lambda: store.load(a.id).state == "running")
+    assert q.cancel(a.id)
+    wait_for(lambda: len(seen) == 2)
+    _assert_never_terminal_and_active(seen, "cancelled")
+
+def test_task_outcome_visible_implies_idle(audio_flow):
+    q = jobs.JobQueue(engines)
+    outcome, release, seen = {}, threading.Event(), []
+
+    def task(cancel, progress):
+        q.finish_task("bg:p", cancel, lambda: outcome.update(state="ready"))
+        seen.append(q.is_active("bg:p"))
+        release.wait(10)                                # the rest of the task (cleanup, events) still running
+    assert q.submit_task("bg:p", task)
+    wait_for(lambda: seen)
+    assert outcome == {"state": "ready"} and seen == [False]
+    assert q.submit_task("bg:p", lambda cancel, progress: None)   # the key is free again
+    release.set()
+    wait_for(lambda: q.running() == set())

@@ -177,6 +177,43 @@ export default function App() {
     try { await api.remove(j.id); select(null); refresh(); } catch (e) { setFatal((e as Error).message); }
   };
 
+  const deleteProjects = async (ids: string[]): Promise<boolean> => {
+    const doomed = projects.filter((p) => ids.includes(p.id));
+    if (!doomed.length) return false;
+    const videos = jobs.filter((j) => j.project && ids.includes(j.project)).length;
+    const ok = await dialog.confirm({
+      title: `Xoá ${doomed.length} project?`,
+      message: (
+        <>
+          <ul>{doomed.map((p) => <li key={p.id}><strong>{p.name}</strong></li>)}</ul>
+          <p className="muted">Xoá luôn {videos} video của các project này cùng toàn bộ dữ liệu đã xử lý. File video gốc trên máy của bạn được giữ nguyên.</p>
+        </>
+      ),
+      confirmLabel: "Xoá", danger: true,
+    });
+    if (!ok) return false;
+    try {
+      await api.deleteProjects(ids);
+    } catch (e) {
+      const busy = e instanceof ApiError ? e.busy : [];
+      await dialog.confirm({
+        title: "Chưa xoá được",
+        message: (
+          <>
+            <p>{(e as Error).message}</p>
+            {busy.length > 0 && <ul>{busy.map((b) => <li key={b.id}><strong>{b.name}</strong></li>)}</ul>}
+          </>
+        ),
+        confirmLabel: "Đã hiểu",
+      });
+      return false;
+    }
+    const openJob = jobs.find((j) => j.id === sel);
+    if ((selProject && ids.includes(selProject)) || (openJob?.project && ids.includes(openJob.project))) select(null);
+    await Promise.all([refresh(), refreshProjects()]);
+    return true;
+  };
+
   if (authed === false) return <Login onDone={() => setAuthed(true)} />;
   if (fatal) return <div className="app"><p className="error">{fatal}</p></div>;
   if (!options) return <div className="app"><p className="muted pad">Đang tải…</p></div>;
@@ -191,7 +228,7 @@ export default function App() {
         }}
         onToggleJobs={toggleJobs} onExpand={expand} onNewVideo={() => select(null)} onSelectJob={(id) => select(id)}
         onNewProject={async () => { const p = await newProject(); if (p) openProject(p.id); }}
-        onOpenProject={openProject} onDouyin={() => openDouyin()} onReview={openReview} />
+        onDeleteProjects={deleteProjects} onOpenProject={openProject} onDouyin={() => openDouyin()} onReview={openReview} />
       {!side.mini && <SideResizer width={side.w} onWidth={setSideW} />}
       <main className="main">
         {/* kept mounted while hidden so downloads to a folder keep going when you switch screens */}

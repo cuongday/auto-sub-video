@@ -693,3 +693,8 @@ label.inline.split-n input[type="number"] { width: 90px; }
   .rl-stage { position: static; }
   .rl-frame.tall { width: min(100%, calc(70vh * 9 / 16)); }
 }
+
+.select-bar { align-items: center; flex-wrap: wrap; padding-top: 0; }
+.select-bar .small { margin-right: auto; color: var(--muted); }
+.tool.danger:not(:disabled) { color: var(--bad, #ff6b6b); }
+.proj-check { margin: 0 2px 0 6px; flex: none; accent-color: var(--amber); }

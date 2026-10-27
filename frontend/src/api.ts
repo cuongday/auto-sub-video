@@ -4,7 +4,7 @@ import type {
 } from "./types";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public busy: { id: string; name: string }[] = []) { super(message); }
 }
 
 async function j<T>(r: Promise<Response>): Promise<T> {
@@ -80,6 +80,13 @@ export const api = {
   createProject: (name: string, source_url = "") => j<Project>(post("/api/projects", { name, source_url })),
   updateProject: (id: string, name: string, source_url: string) => j<Project>(put(`/api/projects/${id}`, { name, source_url })),
   deleteProject: (id: string) => j<{ ok: boolean }>(fetch(`/api/projects/${id}`, { method: "DELETE" })),
+  deleteProjects: async (ids: string[]) => {
+    const res = await post("/api/projects/delete", { ids });
+    if (res.ok) return res.json() as Promise<{ deleted_projects: number; deleted_jobs: number }>;
+    const d = (await res.json().catch(() => ({}))).detail;
+    if (d && typeof d === "object" && !Array.isArray(d)) throw new ApiError(res.status, d.message || res.statusText, d.busy ?? []);
+    throw new ApiError(res.status, (typeof d === "string" && d) || res.statusText);
+  },
   saveProjectPreset: (id: string, jobId: string) => j<Project>(post(`/api/projects/${id}/preset`, { job_id: jobId })),
   clearProjectPreset: (id: string) => j<Project>(fetch(`/api/projects/${id}/preset`, { method: "DELETE" })),
   runProject: (id: string, states: string[] = ["new"]) => j<{ queued: string[]; skipped: string[] }>(post(`/api/projects/${id}/run`, { states })),

@@ -966,6 +966,38 @@ def delete_project(pid: str):
     projects.delete(pid)
     return {"ok": True}
 
+def delete_project_assets(p: "projects.Project") -> None:
+    """Everything the project keeps in the store under projects/{pid}/ (the music of a review project, ...)."""
+    get_store().delete_prefix(f"projects/{p.id}/")
+
+class ProjectsDeleteIn(BaseModel):
+    ids: list[str]
+
+@app.post("/api/projects/delete")
+def delete_projects(body: ProjectsDeleteIn):
+    """Several projects together with all their videos. Refused (409) while any of them is running or queued."""
+    ids = list(dict.fromkeys(body.ids))
+    ps = [_project(pid) for pid in ids]
+    with review_api._VS_LOCK:
+        mine = [j for j in store.list_jobs() if j.project in ids]
+        busy = [{"id": j.id, "name": j.name} for j in mine if QUEUE.is_active(j.id)]
+        by_id = {p.id: p for p in ps}
+        for pid in {t["project"] for t in review_api._VS_TASKS.values()
+                    if t["project"] in ids and t["state"] in ("queued", "running")}:
+            busy.append({"id": pid, "name": by_id[pid].name})
+        if busy:
+            raise HTTPException(409, detail={
+                "message": "Có việc đang chạy hoặc chờ, hãy chờ xong hoặc huỷ trước khi xoá", "busy": busy})
+        for k in [k for k, t in review_api._VS_TASKS.items() if t["project"] in ids]:
+            del review_api._VS_TASKS[k]
+    for j in mine:
+        store.delete(j.id)
+        workdir.remove(j.id)
+    for p in ps:
+        delete_project_assets(p)
+        projects.delete(p.id)
+    return {"deleted_projects": len(ps), "deleted_jobs": len(mine)}
+
 class ProjectPresetIn(BaseModel):
     job_id: str
 

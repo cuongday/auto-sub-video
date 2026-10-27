@@ -68,6 +68,7 @@ def _parse(ctx: Ctx):
     chars = sum(len(l.text) for l in lines)
     # the UI warns about very long scripts right away, not after hours of TTS (tts rewrites it with the duration)
     store.save_json(ctx.job.id, "meta.json", {"duration": None, "chars": chars, "lines": len(lines)})
+    ctx.job.audio_meta = {"duration": None, "chars": chars}      # saved with the job right after the step
     ctx.log(f"Kịch bản: {len(lines)} câu, {chars} ký tự")
 
 def _read_line(ctx: Ctx, engine, a: AudioProject, i: int, line: Line, out: Path) -> float:
@@ -122,8 +123,9 @@ def _tts(ctx: Ctx):
     starts, total = (timeline.timed if timed else timeline.sequential)(lines, durs)
     track = mix_mod.build_voice_track([(s, tts_dir / f"l{i:05d}.wav") for i, s in enumerate(starts)], total)
     sf.write(ctx.dir / "voice_raw.wav", track, SR, subtype="PCM_16")
-    store.save_json(job.id, "meta.json", {"duration": round(total, 3), "chars": sum(len(l.text) for l in lines),
-                                          "lines": len(lines)})
+    meta = {"duration": round(total, 3), "chars": sum(len(l.text) for l in lines)}
+    store.save_json(job.id, "meta.json", {**meta, "lines": len(lines)})
+    job.audio_meta = meta
     ctx.log(f"Lời đọc: {len(lines)} câu, {total:.1f}s")
 
 def _duration(job: Job) -> float:

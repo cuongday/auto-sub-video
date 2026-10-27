@@ -208,12 +208,18 @@ def test_run_project_queues_unfinished_and_stale_parts(client, audio_flow):  # n
     wait_for(lambda: all(store.load(j).state == "done" for j in (a, b)), timeout=20)
     assert client.post(f"/api/projects/{pid}/run", json={}).json()["queued"] == []
 
-def test_view_has_meta(client):
+def test_view_has_meta(client, monkeypatch):
     pid = new_audio(client)["id"]
     jid = script(client, pid, "a.txt").json()["id"]
     assert client.get(f"/api/jobs/{jid}").json()["meta"] is None
-    store.save_json(jid, "meta.json", {"duration": 12.5, "chars": 600000, "lines": []})
-    assert client.get(f"/api/jobs/{jid}").json()["meta"] == {"duration": 12.5, "chars": 600000}
+    j = store.load(jid); j.audio_meta = {"duration": 12.5, "chars": 600000}; store.save(j)
+    reads = []
+    real = store.load_json
+    monkeypatch.setattr(store, "load_json", lambda jid_, name, **kw: (reads.append(name), real(jid_, name, **kw))[1])
+    v = client.get(f"/api/jobs/{jid}").json()
+    assert v["meta"] == {"duration": 12.5, "chars": 600000} and "audio_meta" not in v
+    assert any(x["id"] == jid and x["meta"]["chars"] == 600000 for x in client.get("/api/jobs").json())
+    assert "meta.json" not in reads                    # no store GET per audio part on every listing
 
 def test_music_upload_and_delete(client):
     pid = new_audio(client)["id"]

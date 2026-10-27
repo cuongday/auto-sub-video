@@ -51,6 +51,7 @@ def test_audio_flow_txt_end_to_end(rig):
     assert out.width == 320 and out.has_audio
     assert abs(out.duration - meta["duration"]) <= 1.1
     assert meta["duration"] > 2      # longer than the 2 s background: it was looped
+    assert store.load(job.id).audio_meta == {"duration": meta["duration"], "chars": meta["chars"]}  # for the view
 
 def test_audio_flow_with_music(rig):
     with_background(rig)
@@ -212,4 +213,5 @@ def test_parse_writes_chars_before_tts(rig):
     j = store.load(job.id)
     assert j.steps["parse"].status == "done" and j.steps["tts"].status == "error"
     lines = store.load_json(job.id, "lines.json")
+    assert j.audio_meta == {"duration": None, "chars": sum(len(l["text"]) for l in lines)}
     assert api._view(j)["meta"] == {"duration": None, "chars": sum(len(l["text"]) for l in lines)}

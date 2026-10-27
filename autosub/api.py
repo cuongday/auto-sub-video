@@ -107,6 +107,7 @@ def _view(job: Job, all_jobs: list[Job] | None = None) -> dict:
         d.update(review_api.part_view(job, all_jobs))
     if job.kind == "audio":
         d.update(audio_api.part_view(job, all_jobs))
+    d.pop("audio_meta", None)                 # shown as "meta"
     return d
 
 @app.get("/api/jobs/{jid}/eta")

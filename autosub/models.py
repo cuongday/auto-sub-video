@@ -263,3 +263,4 @@ class Job(BaseModel):
     part: PartInfo | None = None          # kind "review": which part of the film this video covers
     review: ReviewSettings | None = None  # kind "review": settings of this video
     audio_part: AudioPart | None = None   # kind "audio": which script this part reads
+    audio_meta: dict | None = None        # kind "audio": {"chars", "duration"} of meta.json (no GET per listing)

@@ -56,7 +56,10 @@ def test_long_sentence_split_at_comma():
 
 
 def _docx(path: Path, body: str):
-    ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+          'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+          'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+          'xmlns:v="urn:schemas-microsoft-com:vml"')
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("word/document.xml", f"<w:document {ns}><w:body>{body}</w:body></w:document>")
         z.writestr("word/media/image1.png", b"\x89PNG" * 10)
@@ -68,6 +71,30 @@ def test_docx_reads_paragraphs(tmp_path: Path):
     lines = parse(p, "docx")
     assert [(l.text, l.para) for l in lines] == [("Xin chào.", 0), ("Tạm biệt.", 1)]
 
+
+def test_docx_text_box_read_once(tmp_path: Path):
+    """A Word text box (mc:AlternateContent: Choice + a Fallback copy) is read once, as its own paragraph."""
+    box = "<w:txbxContent><w:p><w:r><w:t>Hộp chữ.</w:t></w:r></w:p></w:txbxContent>"
+    p = tmp_path / "a.docx"
+    _docx(p, "<w:p><w:r><w:t>Mở đầu.</w:t></w:r><w:r><mc:AlternateContent>"
+             f"<mc:Choice Requires=\"wps\"><w:drawing><wps:wsp><wps:txbx>{box}</wps:txbx></wps:wsp></w:drawing></mc:Choice>"
+             f"<mc:Fallback><w:pict><v:shape><v:textbox>{box}</v:textbox></v:shape></w:pict></mc:Fallback>"
+             "</mc:AlternateContent></w:r><w:r><w:t> Tiếp theo.</w:t></w:r></w:p>"
+             "<w:p><w:r><w:t>Kết.</w:t></w:r></w:p>")
+    lines = parse(p, "docx")
+    assert [(l.text, l.para) for l in lines] == [("Mở đầu.", 0), ("Tiếp theo.", 0), ("Hộp chữ.", 1), ("Kết.", 2)]
+
+def test_docx_old_vml_text_box_read_once(tmp_path: Path):
+    p = tmp_path / "a.docx"
+    _docx(p, "<w:p><w:r><w:t>A.</w:t></w:r><w:r><w:pict><v:shape><v:textbox><w:txbxContent>"
+             "<w:p><w:r><w:t>B.</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>")
+    assert [(l.text, l.para) for l in parse(p, "docx")] == [("A.", 0), ("B.", 1)]
+
+def test_docx_table_cells_read(tmp_path: Path):
+    p = tmp_path / "a.docx"
+    _docx(p, "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Ô một.</w:t></w:r></w:p></w:tc>"
+             "<w:tc><w:p><w:r><w:t>Ô hai.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>")
+    assert [l.text for l in parse(p, "docx")] == ["Ô một.", "Ô hai."]
 
 def test_docx_not_zip_raises(tmp_path: Path):
     p = tmp_path / "a.docx"

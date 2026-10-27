@@ -8,6 +8,7 @@ from typing import Literal
 from xml.etree import ElementTree as ET
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
 _SENT = re.compile(r"(?<=[.!?…])[\"”’)]*\s+|(?<=[.!?…][\"”’)])\s+|\n+")
 _TS = r"(\d+):(\d{1,2}):(\d{2})[.,](\d{3})"
 _CUE = re.compile(rf"{_TS}\s*-->\s*{_TS}")
@@ -85,19 +86,40 @@ def _docx(path: Path) -> list[str]:
             root = ET.fromstring(z.read("word/document.xml"))
     except (zipfile.BadZipFile, KeyError, ET.ParseError):
         raise ScriptError("File .docx bị hỏng hoặc không đọc được") from None
-    out = []
-    for p in root.iter(f"{_W}p"):
-        buf = []
-        for el in p.iter():
-            if el.tag == f"{_W}t":
-                buf.append(el.text or "")
-            elif el.tag == f"{_W}tab":
-                buf.append(" ")
-            elif el.tag == f"{_W}br":
-                buf.append("\n")
-        out.append("".join(buf))
+    out: list[str] = []
+    _walk(root, out)
     return out
 
+def _walk(el, out: list[str]) -> None:
+    """Paragraphs in document order. mc:Fallback is the same content as its mc:Choice (skipped); a paragraph
+    holding a text box gives its own text, then the box's paragraphs, each as a paragraph of its own."""
+    for child in el:
+        if child.tag == _MC_FALLBACK:
+            continue
+        if child.tag == f"{_W}p":
+            buf: list[str] = []
+            nested: list[str] = []
+            _para(child, buf, nested)
+            out.append("".join(buf))
+            out.extend(nested)
+        else:
+            _walk(child, out)
+
+def _para(el, buf: list[str], nested: list[str]) -> None:
+    for child in el:
+        tag = child.tag
+        if tag == _MC_FALLBACK:
+            continue
+        if tag == f"{_W}p":                    # inside a text box: not part of this paragraph's sentence
+            _walk([child], nested)
+        elif tag == f"{_W}t":
+            buf.append(child.text or "")
+        elif tag == f"{_W}tab":
+            buf.append(" ")
+        elif tag == f"{_W}br":
+            buf.append("\n")
+        else:
+            _para(child, buf, nested)
 
 def _srt(text: str) -> list[Line]:
     lines: list[Line] = []

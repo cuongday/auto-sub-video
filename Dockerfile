@@ -71,6 +71,6 @@ COPY --from=web /web/dist frontend/dist
 RUN mkdir -p /data/models /data/home /work && chmod 777 /data /data/models /data/home /work
 EXPOSE 8020
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"AUTOSUB_PORT\"]}/api/options', timeout=4)"
+  CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"AUTOSUB_PORT\"]}/api/auth', timeout=4)"
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "-c", "mkdir -p $HOME && exec uvicorn autosub.api:app --host 0.0.0.0 --port $AUTOSUB_PORT"]

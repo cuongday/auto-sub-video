@@ -110,12 +110,13 @@ def _write(uid: str, st: dict) -> None:
     tmp.write_text(json.dumps(st))
     os.replace(tmp, d / f"{uid}.json")
 
-def _in_use(st: dict) -> bool:
+def _in_use(uid: str, st: dict) -> bool:
     """A finished upload whose project is still storing/normalizing it (the task reads the file)."""
-    if not st.get("finished"):
+    if not st.get("finished") and not st.get("finishing"):
         return False
     p = projects.get(st.get("pid", ""))
-    return bool(p and p.audio and p.audio.background_state == "processing" and p.audio.background == st.get("key"))
+    return bool(p and p.audio and p.audio.background_state == "processing" and p.audio.background_upload == uid) \
+        or bool(st.get("finishing"))
 
 def clean_uploads(pid: str | None = None) -> None:
     """Remove uploads older than UPLOAD_TTL (but not one still being stored), or every upload of project `pid`."""
@@ -132,7 +133,7 @@ def clean_uploads(pid: str | None = None) -> None:
                 old = st is not None and st.get("pid") == pid
             else:
                 times = [f.stat().st_mtime for f in (d / uid, d / f"{uid}.json") if f.exists()]
-                old = (not times or now - max(times) > UPLOAD_TTL) and not (st and _in_use(st))
+                old = (not times or now - max(times) > UPLOAD_TTL) and not (st and _in_use(uid, st))
             if old:
                 gone.append(uid)
         for uid in gone:                          # both files of each upload, chosen before deleting any
@@ -161,20 +162,22 @@ def _merge(ranges: list[list[int]], start: int, end: int) -> list[list[int]]:
     return out
 
 def _upload_of(p: Project) -> Path | None:
-    """The local file of the finished upload that became the project's background, if still on disk."""
-    d = config.WORK_DIR / "_uploads"
-    for f in d.glob("*.json") if d.exists() else []:
-        st = _read(f.stem)
-        if st and st.get("finished") and st.get("pid") == p.id and st.get("key") == p.audio.background \
-                and (d / f.stem).exists():
-            return d / f.stem
-    return None
+    """The local file of the finished upload that became the project's background (recorded by finish), if it
+    is still on disk: exactly that upload, never another finished upload of the same project and format."""
+    uid = p.audio.background_upload
+    if not uid or not _UID.match(uid):
+        return None
+    f = config.WORK_DIR / "_uploads" / uid
+    st = _read(uid)
+    return f if st and st.get("finished") and st.get("pid") == p.id and f.exists() else None
 
 def _restart(p: Project) -> bool:
     """Store (from the local upload) and normalize the project's background again; False if no copy is left."""
     local = _upload_of(p)
     if local is not None:
         return background.start(p.id, local)
+    if p.audio.background_upload:                 # never stored, and its file is gone: the stored object is older
+        return False
     if p.audio.background and get_store().stat(p.audio.background) is not None:
         return background.start(p.id)
     return False
@@ -230,7 +233,7 @@ def bg_start(pid: str, body: BgStartIn):
 async def bg_chunk(pid: str, upload_id: str, request: Request, offset: int = 0):
     with _UP_LOCK:
         st = _state(pid, upload_id)
-    if st.get("finished"):
+    if st.get("finished") or st.get("finishing"):
         raise HTTPException(409, "Phiên tải lên này đã hoàn tất")
     limit = min(CHUNK_MAX, st["size"] - offset)
     too_big = HTTPException(413, f"Mảnh quá lớn hoặc vượt kích thước file (tối đa {CHUNK_MAX >> 20} MB mỗi mảnh)")
@@ -262,33 +265,59 @@ async def bg_chunk(pid: str, upload_id: str, request: Request, offset: int = 0):
 def bg_finish(pid: str, upload_id: str):
     """Check the upload is complete, probe it, make it the project's background (state "processing") and queue
     the task that stores it in MinIO and normalizes it. Quick (no 1 GB transfer in the request) and idempotent:
-    called again it re-queues that task if it failed."""
+    called again it re-queues that task if it failed. The upload is claimed under _UP_LOCK first, so two
+    concurrent calls never start two tasks (the second gets 409 while the first is still probing)."""
     _audio(pid)
     with _UP_LOCK:
         st = _state(pid, upload_id)
+        if st.get("finishing"):
+            raise HTTPException(409, "Video nền này đang được hoàn tất, hãy chờ")
+        if not st.get("finished"):
+            if st["received"] != [[0, st["size"]]]:
+                raise HTTPException(400, f"Video nền chưa tải lên đủ ({_covered(st['received'])}/{st['size']} byte)")
+            st["finishing"] = True
+            _write(upload_id, st)
     path = config.WORK_DIR / "_uploads" / upload_id
     if st.get("finished"):
         p = api._project(pid)
-        if p.audio.background == st["key"] and p.audio.background_state == "error" \
+        if p.audio.background == st["key"] and p.audio.background_upload in (None, upload_id) \
+                and p.audio.background_state == "error" \
                 and not api.QUEUE.is_active(background.task_key(pid)):
             _restart(p)
         return api._project_view(api._project(pid))
-    if st["received"] != [[0, st["size"]]]:
-        raise HTTPException(400, f"Video nền chưa tải lên đủ ({_covered(st['received'])}/{st['size']} byte)")
+
+    def unclaim():
+        with _UP_LOCK:
+            cur = _read(upload_id)
+            if cur is not None:
+                cur.pop("finishing", None)
+                _write(upload_id, cur)
     try:
         info = media.probe(path)
     except Exception:  # noqa: BLE001
+        unclaim()
         raise HTTPException(400, "Không đọc được video nền, hãy kiểm tra lại file") from None
     key = projects.bg_key(pid, Path(st["name"]).suffix.lower())
-    with _UP_LOCK:
-        st = _state(pid, upload_id)
-        st.update(finished=True, key=key)
-        _write(upload_id, st)
 
     def apply(a):
-        a.background, a.background_info = key, info
+        a.background, a.background_info, a.background_upload = key, info, upload_id
         a.background_state, a.background_error = "processing", None
-    _update(pid, apply)
+    try:
+        _update(pid, apply)
+    except BaseException:
+        unclaim()
+        raise
+    d = config.WORK_DIR / "_uploads"
+    with _UP_LOCK:
+        st = _read(upload_id) or st
+        st.pop("finishing", None)
+        st.update(finished=True, key=key)
+        _write(upload_id, st)
+        for f in list(d.glob("*.json")):          # older finished uploads of this project: superseded now
+            other = _read(f.stem)                 # (a task still reading one keeps its open file)
+            if f.stem != upload_id and other and other.get("pid") == pid and other.get("finished"):
+                (d / f.stem).unlink(missing_ok=True)
+                f.unlink(missing_ok=True)
     background.start(pid, path)
     return api._project_view(api._project(pid))
 

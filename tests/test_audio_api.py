@@ -244,9 +244,10 @@ def test_startup_resumes_processing_background(monkeypatch, tmp_path):
     r = projects.create("V", kind="audio")
     key = projects.bg_key(p.id, ".mp4")
     get_store().put_bytes(key, b"video")
-    for x, k in ((p, key), (q, projects.bg_key(q.id, ".mp4")), (r, projects.bg_key(r.id, ".mkv"))):
-        projects.update(x.id, lambda y, k=k: (setattr(y.audio, "background", k),
-                                              setattr(y.audio, "background_state", "processing")))
+    for x, k, u in ((p, key, None), (q, projects.bg_key(q.id, ".mp4"), None),
+                    (r, projects.bg_key(r.id, ".mkv"), "c" * 32)):
+        projects.update(x.id, lambda y, k=k, u=u: (setattr(y.audio, "background", k), setattr(y.audio, "background_upload", u),
+                                                   setattr(y.audio, "background_state", "processing")))
     started = []
     monkeypatch.setattr(background, "start", lambda pid, local=None: started.append((pid, local and local.name)) or True)
     up = config.WORK_DIR / "_uploads"
@@ -334,3 +335,67 @@ def test_cancel_queued_background_task(client, monkeypatch):
     release.set()
     wait_for(lambda: api.QUEUE.running() == set())
     assert ran == [] and projects.get(pid).audio.background_error == "Đã huỷ chuẩn hoá video nền"
+
+def _finished_upload(pid: str, uid: str, data: bytes, name="nen.mp4"):
+    up = config.WORK_DIR / "_uploads"
+    up.mkdir(parents=True, exist_ok=True)
+    (up / uid).write_bytes(data)
+    (up / f"{uid}.json").write_text(json.dumps({"pid": pid, "name": name, "size": len(data), "received": [[0, len(data)]],
+                                                "finished": True, "key": projects.bg_key(pid, ".mp4")}))
+
+def test_restart_and_resume_use_the_recorded_upload_not_a_stale_one(client, tmp_path, monkeypatch):
+    """Two finished uploads of the same project and format share the key: only the one finish recorded counts."""
+    from autosub import audio_api
+    pid = new_audio(client)["id"]
+    _finished_upload(pid, "a" * 32, b"stale A")
+    data = make_video(tmp_path / "bg.mp4", seconds=1, size=(160, 90), with_text=False).read_bytes()
+    uid, _ = upload_bg(client, pid, data)
+    started = []
+    monkeypatch.setattr(background, "start", lambda p, local=None: started.append(local and local.name) or True)
+    assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code == 200
+    assert started == [uid] and projects.get(pid).audio.background_upload == uid
+    assert not (config.WORK_DIR / "_uploads" / ("a" * 32)).exists()        # superseded finished upload removed
+    _finished_upload(pid, "a" * 32, b"stale A")                              # (even if one is left behind)
+    p = projects.get(pid)
+    assert audio_api._upload_of(p).name == uid
+    audio_api.resume_backgrounds()
+    assert started == [uid, uid]
+
+def test_stale_upload_never_overwrites_newer_one(client, tmp_path):
+    """A task storing an upload that is no longer the project's background_upload stores nothing."""
+    pid = new_audio(client)["id"]
+    key = projects.bg_key(pid, ".mp4")
+    get_store().put_bytes(key, b"B")
+    projects.update(pid, lambda p: (setattr(p.audio, "background", key), setattr(p.audio, "background_upload", "b" * 32)))
+    _finished_upload(pid, "a" * 32, b"A")
+    assert not background.store_original(pid, key, config.WORK_DIR / "_uploads" / ("a" * 32))
+    assert get_store().get_bytes(key) == b"B"
+
+def test_concurrent_finish_starts_one_task(client, tmp_path, monkeypatch):
+    from autosub import media
+    pid = new_audio(client)["id"]
+    data = make_video(tmp_path / "bg.mp4", seconds=1, size=(160, 90), with_text=False).read_bytes()
+    uid, _ = upload_bg(client, pid, data)
+    real_probe, barrier = media.probe, threading.Barrier(2, timeout=2)
+
+    def slow_probe(path):                       # both requests are inside finish before either claims
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        return real_probe(path)
+    monkeypatch.setattr(media, "probe", slow_probe)
+    started = []
+    monkeypatch.setattr(background, "start", lambda p, local=None: started.append(local and local.name) or True)
+    codes = []
+
+    def finish():
+        codes.append(client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code)
+    ts = [threading.Thread(target=finish) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(15)
+    assert started == [uid], started
+    assert sorted(codes) in ([200, 200], [200, 409])
+    assert projects.get(pid).audio.rev == 1

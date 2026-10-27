@@ -107,16 +107,23 @@ def local_etag(pid: str) -> str | None:
     return tag.read_text() if tag.exists() else None
 
 def store_original(pid: str, key: str, local: Path) -> bool:
-    """Put the uploaded file `local` in storage as the original background `key`, drop originals with another
-    extension, then remove the local file. False when the project's
-    background was replaced meanwhile. On failure the state is "error" and the upload stays on disk, so a
-    retry needs no new upload."""
+    """Put the uploaded file `local` (the project's background_upload) in storage as the original background
+    `key`, drop originals with another extension, then remove the local file. False when the project's
+    background was replaced meanwhile (another key or another upload). On failure the state is "error" and the
+    upload stays on disk, so a retry needs no new upload."""
     st = get_store()
-    try:
-        st.put_file(key, local)
+
+    def current() -> bool:                               # still the project's background, from this very upload
         cur = projects.get(pid)
-        if cur is None or cur.audio is None or cur.audio.background != key:
-            st.delete(key)
+        return bool(cur and cur.audio and cur.audio.background == key and cur.audio.background_upload == local.name)
+    try:
+        if not current():                                # a newer upload took over: never overwrite its object
+            return False
+        st.put_file(key, local)
+        if not current():
+            cur = projects.get(pid)
+            if cur is None or cur.audio is None or cur.audio.background != key:
+                st.delete(key)                           # another key now: ours is an orphan
             return False
         for o in st.list(f"projects/{pid}/background"):
             if o.key != key:
@@ -125,6 +132,10 @@ def store_original(pid: str, key: str, local: Path) -> bool:
         _set(pid, background_state="error", background_error=f"Lưu video nền vào kho lưu trữ lỗi: {e}")
         raise
     local.unlink(missing_ok=True)                        # only once stored
+    def clear(p):
+        if p.audio.background_upload == local.name:
+            p.audio.background_upload = None
+    projects.update(pid, clear)
     return True
 
 def start(pid: str, local_upload: Path | None = None) -> bool:

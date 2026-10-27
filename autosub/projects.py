@@ -28,6 +28,7 @@ class AudioProject(BaseModel):
     """An audio story: shared background video, music and voice; each part (job) reads one script file."""
     background: str | None = None         # original background video key (projects/{pid}/background.<ext>)
     background_info: VideoInfo | None = None
+    background_upload: str | None = None  # id of the finished chunked upload not yet stored (_uploads/{id})
     background_state: Literal["none", "processing", "ready", "error"] = "none"   # the normalized bg_loop.mp4
     background_error: str | None = None
     background_etag: str | None = None    # ETag of bg_loop.mp4 in storage (parts re-render when it changes)

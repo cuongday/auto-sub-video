@@ -74,8 +74,7 @@ def part_view(job: Job, all_jobs: list[Job] | None = None) -> dict:
         ids = [j.id for j in _parts(job.project, all_jobs)]
         if job.id in ids:
             out["audio_part"] = {**job.audio_part.model_dump(mode="json"), "index": ids.index(job.id)}
-    tts = job.steps.get("tts")
-    meta = store.load_json(job.id, "meta.json", default=None) if tts and tts.status == "done" else None
+    meta = store.load_json(job.id, "meta.json", default=None)    # written by parse (chars), then by tts (+ duration)
     out["meta"] = {"duration": meta.get("duration"), "chars": meta.get("chars")} if isinstance(meta, dict) else None
     return out
 

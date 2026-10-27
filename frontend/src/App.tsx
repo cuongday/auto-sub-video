@@ -16,6 +16,7 @@ import ProjectView from "./views/ProjectView";
 import ReviewLayout from "./views/ReviewLayout";
 import ReviewProjectView from "./views/ReviewProjectView";
 import AudioProjectView, { AudioHome } from "./views/AudioProjectView";
+import { abortBgUpload } from "./components/AudioBackground";
 import Result from "./views/Result";
 import Review from "./views/Review";
 import ReviewSource from "./views/ReviewSource";
@@ -229,6 +230,7 @@ export default function App() {
       confirmLabel: "Xoá", danger: true,
     });
     if (!ok) return false;
+    ids.forEach(abortBgUpload);          // a background still uploading to a story being deleted
     try {
       await api.deleteProjects(ids);
     } catch (e) {
@@ -285,7 +287,7 @@ export default function App() {
         {section !== "subs" && section !== "audio" ? null : section === "audio" && !job && !(project && project.kind === "audio") ? (
           <AudioHome stories={projects.filter((p) => p.kind === "audio")} onOpen={(pid) => openProject(pid, "audio")} onNew={newStory} />
         ) : project && !job && project.kind === "audio" ? (
-          <AudioProjectView key={project.id} project={project} options={options} jobs={jobs} onOpenJob={(id) => select(id)} onChanged={putProject}
+          <AudioProjectView key={project.id} project={project} options={options} jobs={jobs} pct={pct} onOpenJob={(id) => select(id)} onChanged={putProject}
             onDelete={() => deleteProjects([project.id])} />
         ) : project && !job && project.kind === "review" ? (
           <ReviewProjectView key={project.id} project={project} options={options} onOpenJob={(id) => select(id)} onChanged={putProject}

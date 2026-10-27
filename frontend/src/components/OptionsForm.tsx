@@ -45,7 +45,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
 
   const llm = options.llm[s.llm_provider];
   return (
-    <div className={`opts ${voiceOnly ? "voice-only" : ""}`}>
+    <div className={voiceOnly ? "opts voice-only" : "opts"}>
       {!review && !voiceOnly && <fieldset>
         <legend>Lấy lời thoại</legend>
         <div className="seg" role="radiogroup" aria-label="Nguồn lời thoại">

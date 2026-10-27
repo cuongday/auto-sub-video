@@ -193,3 +193,23 @@ def test_render_does_not_reencode(rig, monkeypatch):
                                "stream=codec_name,profile,width,height", "-of", "csv=p=0", str(path)],
                               capture_output=True, text=True, check=True).stdout.strip()
     assert codec(WorkDir(job.id).fetch("output.mp4")) == codec(background.local_loop(rig["pid"]))
+
+
+def test_parse_writes_chars_before_tts(rig):
+    """The view shows the script length (and the > 500 000 chars warning) as soon as parse is done, even when
+    tts then fails."""
+    from autosub import api
+    job = part(rig)
+
+    class Broken:
+        def synth(self, *a, **k):
+            raise RuntimeError("mạng lỗi")
+        def __getattr__(self, name):
+            raise RuntimeError("mạng lỗi")
+    rig["engines"] = pipeline.Engines(tts=lambda name: Broken())
+    with pytest.raises(RuntimeError, match="TTS lỗi"):
+        run(rig, job.id)
+    j = store.load(job.id)
+    assert j.steps["parse"].status == "done" and j.steps["tts"].status == "error"
+    lines = store.load_json(job.id, "lines.json")
+    assert api._view(j)["meta"] == {"duration": None, "chars": sum(len(l["text"]) for l in lines)}

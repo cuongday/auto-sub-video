@@ -65,7 +65,10 @@ def _parse(ctx: Ctx):
     except script.ScriptError as e:
         raise RuntimeError(str(e)) from None
     store.save_json(ctx.job.id, "lines.json", [dataclasses.asdict(l) for l in lines])
-    ctx.log(f"Kịch bản: {len(lines)} câu, {sum(len(l.text) for l in lines)} ký tự")
+    chars = sum(len(l.text) for l in lines)
+    # the UI warns about very long scripts right away, not after hours of TTS (tts rewrites it with the duration)
+    store.save_json(ctx.job.id, "meta.json", {"duration": None, "chars": chars, "lines": len(lines)})
+    ctx.log(f"Kịch bản: {len(lines)} câu, {chars} ký tự")
 
 def _read_line(ctx: Ctx, engine, a: AudioProject, i: int, line: Line, out: Path) -> float:
     if line.start is not None and line.end is not None:      # .srt: fit the line into its cue

@@ -208,7 +208,6 @@ def test_view_has_meta(client):
     jid = script(client, pid, "a.txt").json()["id"]
     assert client.get(f"/api/jobs/{jid}").json()["meta"] is None
     store.save_json(jid, "meta.json", {"duration": 12.5, "chars": 600000, "lines": []})
-    j = store.load(jid); j.steps["tts"].status = "done"; store.save(j)
     assert client.get(f"/api/jobs/{jid}").json()["meta"] == {"duration": 12.5, "chars": 600000}
 
 def test_music_upload_and_delete(client):

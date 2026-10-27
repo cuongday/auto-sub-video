@@ -13,7 +13,7 @@ const nf = new Intl.NumberFormat("vi-VN");
 
 /** The parts of an audio story, in story order: state and progress, length, download, run again, cancel, delete. */
 export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
-  parts: Job[]; pct: Record<string, number>; onOpen: (id: string) => void; onChange: () => void; onRunAll: () => Promise<void>;
+  parts: Job[]; pct: Record<string, Record<string, number>>; onOpen: (id: string) => void; onChange: () => void; onRunAll: () => Promise<void>;
 }) {
   const dialog = useDialog();
   const [act, setAct] = useState("");
@@ -51,7 +51,7 @@ export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
       {parts.length ? (
         <ol className="ap-parts">
           {parts.map((j, i) => {
-            const p = j.current_step ? pct[j.id] : undefined;
+            const p = j.state === "running" && j.current_step ? pct[j.id]?.[j.current_step] : undefined;   // per step: no stale % after a step change
             const done = j.state === "done" || j.state === "approved";
             const chars = j.meta?.chars ?? null;
             const stepIdx = j.current_step ? j.flow.steps.indexOf(j.current_step) : -1;

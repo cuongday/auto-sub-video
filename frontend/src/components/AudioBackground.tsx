@@ -17,6 +17,8 @@ const uploads = new Map<string, Up>();
 const errors = new Map<string, string>();
 const subs = new Set<() => void>();
 const notify = () => subs.forEach((f) => f());
+/** Stop a background upload of a story (it is being deleted). */
+export const abortBgUpload = (pid: string) => uploads.get(pid)?.ctl.abort();
 const mb = (n: number) => n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(2)} GB` : `${Math.max(1, Math.round(n / (1 << 20)))} MB`;
 
 /** The story's background video: chunked upload (64 MB per request, under the tunnel's limit), then a one-time

@@ -3,6 +3,7 @@ import type { Project } from "./types";
 
 const RETRIES = 3;                 // per request, after the first try: waits 1, 2, 4 s
 const CHUNK_MAX = 64 << 20;        // Cloudflare Tunnel rejects bodies over 100 MB
+const TIMEOUT = 120_000;           // a stalled request (dropped LAN/Wi-Fi) is retried instead of hanging forever
 
 const aborted = () => new DOMException("Đã huỷ tải lên", "AbortError");
 const wait = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -29,9 +30,10 @@ function xhr<T>(method: string, url: string, body: Blob | string | null, onProgr
       else reject(new ApiError(x.status, typeof d.detail === "string" ? d.detail : x.statusText || `HTTP ${x.status}`));
     };
     x.onerror = () => { done(); reject(new ApiError(0, "Lỗi mạng khi tải lên")); };
-    x.ontimeout = x.onerror;
+    x.ontimeout = () => { done(); reject(new ApiError(0, "Hết thời gian chờ khi tải lên")); };
     x.onabort = () => { done(); reject(aborted()); };
     x.open(method, url);
+    x.timeout = TIMEOUT;
     if (typeof body === "string") x.setRequestHeader("Content-Type", "application/json");
     x.send(body);
   });
@@ -49,10 +51,11 @@ async function withRetry<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise
   }
 }
 
-/** Test hook: a smaller slice size so chunking can be exercised with a small file (never above the server's). */
+/** Test hook: a smaller slice size so chunking can be exercised with a small file. Never above the server's
+ *  size and never below 64 KB, so a stray value cannot turn one upload into thousands of requests. */
 const sliceSize = (server: number) => {
   const o = Number((globalThis as { __AUTOSUB_CHUNK?: number }).__AUTOSUB_CHUNK);
-  return Math.min(server || CHUNK_MAX, CHUNK_MAX, o > 0 ? o : Infinity);
+  return Math.min(server || CHUNK_MAX, CHUNK_MAX, o > 0 ? Math.max(o, 64 << 10) : Infinity);
 };
 
 /** Upload a large file to `${url}/start`, `${url}/{id}?offset=N` (one slice per request) and `${url}/{id}/finish`.

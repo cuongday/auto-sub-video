@@ -4,8 +4,7 @@ import AudioBackground from "../components/AudioBackground";
 import AudioParts from "../components/AudioParts";
 import Icon from "../components/Icon";
 import OptionsForm from "../components/OptionsForm";
-import type { Job, JobEvent, Options, Project, Settings } from "../types";
-import { useEvents } from "../useEvents";
+import type { Job, Options, Project, Settings } from "../types";
 
 const MUSIC_EXT = [".mp3", ".m4a", ".aac", ".wav", ".ogg"];
 const MUSIC_MAX = 50 << 20;
@@ -13,12 +12,13 @@ const SCRIPT_EXT = [".txt", ".docx", ".srt"];
 const SCRIPT_MAX = 20 << 20;
 const readRunNow = () => { try { return localStorage.getItem("autosub.audioRunNow") !== "0"; } catch { return true; } };
 const saveRunNow = (v: boolean) => { try { localStorage.setItem("autosub.audioRunNow", v ? "1" : "0"); } catch { /* private mode */ } };
+let uploadSeq = 0;
 type AudioPatch = { engine?: string; voice?: string; rate?: number; music_volume?: number };
 
 /** An audio story: shared background video, music and voice, the script files dropped in (one part each) and
  *  the parts with their progress. Parts come from the app's job list, kept fresh by its SSE handler. */
-export default function AudioProjectView({ project, options, jobs, onOpenJob, onChanged, onDelete }: {
-  project: Project; options: Options; jobs: Job[]; onOpenJob: (id: string) => void; onChanged: (p?: Project) => void; onDelete: () => void;
+export default function AudioProjectView({ project, options, jobs, pct, onOpenJob, onChanged, onDelete }: {
+  project: Project; options: Options; jobs: Job[]; pct: Record<string, Record<string, number>>; onOpenJob: (id: string) => void; onChanged: (p?: Project) => void; onDelete: () => void;
 }) {
   const pid = project.id;
   const a = project.audio!;
@@ -27,9 +27,8 @@ export default function AudioProjectView({ project, options, jobs, onOpenJob, on
   const [musicV, setMusicV] = useState(0);
   const [vol, setVol] = useState(a.music_volume);
   const [voice, setVoiceS] = useState({ tts_engine: a.engine, tts_voice: a.voice, tts_rate: a.rate });
-  const [pct, setPct] = useState<Record<string, number>>({});
   const [runNow, setRunNow] = useState(readRunNow);
-  const [uploads, setUploads] = useState<{ name: string; pct: number }[]>([]);
+  const [uploads, setUploads] = useState<{ id: number; name: string; pct: number }[]>([]);
   const [rejected, setRejected] = useState<{ name: string; reason: string }[]>([]);
   const [over, setOver] = useState(false);
   const pick = useRef<HTMLInputElement>(null);
@@ -51,11 +50,6 @@ export default function AudioProjectView({ project, options, jobs, onOpenJob, on
 
   const parts = jobs.filter((j) => j.project === pid && j.kind === "audio")
     .sort((x, y) => (x.audio_part?.index ?? 0) - (y.audio_part?.index ?? 0) || x.created - y.created);
-  const ids = new Set(parts.map((j) => j.id));
-  useEvents((e: JobEvent) => {
-    if (e.type === "progress" && ids.has(e.job)) setPct((p) => ({ ...p, [e.job]: e.pct }));
-    if (e.type === "state" && ids.has(e.job)) setPct((p) => { const n = { ...p }; delete n[e.job]; return n; });
-  });
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setAct(key); setMsg("");
@@ -76,14 +70,16 @@ export default function AudioProjectView({ project, options, jobs, onOpenJob, on
       return true;
     });
     setRejected(bad);
-    setUploads(ok.map((f) => ({ name: f.name, pct: 0 })));
-    for (const f of ok) {                 // one file per request, keeps each request far under the tunnel limit
+    const rows = ok.map((f) => ({ id: ++uploadSeq, name: f.name, pct: 0 }));
+    setUploads(rows);
+    for (const [k, f] of ok.entries()) {  // one file per request, keeps each request far under the tunnel limit
+      const id = rows[k].id;
       try {
-        await api.uploadScript(pid, f, runNow, (p) => setUploads((u) => u.map((x) => x.name === f.name ? { ...x, pct: p } : x)));
+        await api.uploadScript(pid, f, runNow, (p) => setUploads((u) => u.map((x) => x.id === id ? { ...x, pct: p } : x)));
       } catch (e) {
         bad.push({ name: f.name, reason: (e as Error).message }); setRejected([...bad]);
       }
-      setUploads((u) => u.filter((x) => x.name !== f.name));
+      setUploads((u) => u.filter((x) => x.id !== id));
       onChanged();
     }
   };
@@ -178,7 +174,7 @@ export default function AudioProjectView({ project, options, jobs, onOpenJob, on
         {uploads.length > 0 && (
           <ul className="ap-uploads">
             {uploads.map((u) => (
-              <li key={u.name}><span>{u.name}</span>
+              <li key={u.id}><span>{u.name}</span>
                 <span className="dy-bar" role="progressbar" aria-label={`Tải lên ${u.name}`} aria-valuemin={0} aria-valuemax={100}
                   aria-valuenow={Math.round(u.pct * 100)}><span style={{ width: `${Math.round(u.pct * 100)}%` }} /></span></li>
             ))}
@@ -187,7 +183,7 @@ export default function AudioProjectView({ project, options, jobs, onOpenJob, on
         {rejected.length > 0 && (
           <div className="error-box ap-rejected" role="alert">
             <strong>Không nhận {rejected.length} file:</strong>
-            <ul>{rejected.map((r) => <li key={r.name}><strong>{r.name}</strong>: {r.reason}</li>)}</ul>
+            <ul>{rejected.map((r, i) => <li key={i}><strong>{r.name}</strong>: {r.reason}</li>)}</ul>
             <button className="link small" onClick={() => setRejected([])}>Ẩn</button>
           </div>
         )}

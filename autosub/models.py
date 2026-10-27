@@ -235,6 +235,12 @@ class Notebook(BaseModel):
     shared_rev: int = 0
 
 
+class AudioPart(BaseModel):
+    """kind "audio": one part (chapter) of an audio story, read from its own script file."""
+    script_name: str                      # original file name, e.g. "chuong-03.docx"
+    script_kind: Literal["txt", "docx", "srt"]
+    index: int                            # order of the part in the story (natural sort of file names)
+
 class Job(BaseModel):
     id: str
     name: str
@@ -256,3 +262,4 @@ class Job(BaseModel):
     film: FilmInfo | None = None          # kind "film": the movie being analyzed
     part: PartInfo | None = None          # kind "review": which part of the film this video covers
     review: ReviewSettings | None = None  # kind "review": settings of this video
+    audio_part: AudioPart | None = None   # kind "audio": which script this part reads

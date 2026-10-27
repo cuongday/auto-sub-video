@@ -16,6 +16,9 @@ _MLOCK = threading.Lock()             # manifest read-modify-write
 # ponytail: one small lock per object key ever fetched, never freed; refcount them if keys grow without bound
 _FETCHING: dict[str, threading.Lock] = {}   # object key -> lock: one download at a time per key
 
+GROUPS = {"_projects"}                 # dirs holding one evictable subdir per project
+KEEP = {"_uploads"}                    # dirs evict() never touches
+
 def job_prefix(jid: str) -> str:
     return f"jobs/{jid}/"
 
@@ -137,22 +140,29 @@ def evict(max_bytes: int | None = None) -> list[str]:
     root = config.WORK_DIR
     if not root.exists():
         return []
-    dirs = []
+    dirs, total = [], 0
     for d in root.iterdir():
-        if d.is_dir():
-            used = d / ".used"
-            dirs.append((used.stat().st_mtime if used.exists() else 0.0, d, _size(d)))
-    total = sum(s for _, _, s in dirs)
+        if not d.is_dir():
+            continue
+        if d.name in KEEP:                     # in-progress uploads: cleaned by their own expiry, never here
+            total += _size(d)
+            continue
+        # shared per-project copies (_projects/<pid>) are evicted one by one, pinned as "_projects/<pid>"
+        for e in (sorted(x for x in d.iterdir() if x.is_dir()) if d.name in GROUPS else [d]):
+            used = e / ".used"
+            dirs.append((used.stat().st_mtime if used.exists() else 0.0, e, _size(e)))
+    total += sum(s for _, _, s in dirs)
     removed = []
-    for _, d, s in sorted(dirs):
+    for _, d, s in sorted(dirs, key=lambda t: t[0]):
         if total <= limit:
             break
+        name = d.relative_to(root).as_posix()
         with _LOCK:
-            if d.name in _PINNED:
+            if name in _PINNED:
                 continue
         shutil.rmtree(d, ignore_errors=True)
         total -= s
-        removed.append(d.name)
+        removed.append(name)
     return removed
 
 def clear_all() -> None:

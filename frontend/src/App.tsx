@@ -3,6 +3,7 @@ import { ApiError, api } from "./api";
 import ApiKeysDialog from "./components/ApiKeysDialog";
 import { useDialog } from "./components/Dialog";
 import Icon from "./components/Icon";
+import SideResizer from "./components/SideResizer";
 import Sidebar, { NO_PROJECT } from "./components/Sidebar";
 import { STEP_LABEL } from "./labels";
 import type { ApiKeyInfo, Job, JobEvent, Options, Project, Templates } from "./types";
@@ -25,6 +26,14 @@ type Section = "subs" | "douyin" | "review";
 
 const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
 const saveOpen = (v: boolean) => { try { localStorage.setItem("autosub.jobsOpen", v ? "1" : "0"); } catch { /* private mode */ } };
+const SIDE_MIN = 200, SIDE_MAX = 480, SIDE_DEF = 280;
+const readSide = (): { w: number; mini: boolean } => {
+  try {
+    const w = Number(localStorage.getItem("autosub.sideW")), m = localStorage.getItem("autosub.sideMini");
+    return { w: w >= SIDE_MIN && w <= SIDE_MAX ? w : SIDE_DEF, mini: m === null ? innerWidth < 900 : m === "1" };
+  } catch { return { w: SIDE_DEF, mini: innerWidth < 900 }; }
+};
+const saveSide = (k: "sideW" | "sideMini", v: string) => { try { localStorage.setItem(`autosub.${k}`, v); } catch { /* private mode */ } };
 const readExpanded = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem("autosub.projOpen") || "[]")); } catch { return new Set(); } };
 const saveExpanded = (v: Set<string>) => { try { localStorage.setItem("autosub.projOpen", JSON.stringify([...v])); } catch { /* private mode */ } };
 
@@ -46,6 +55,7 @@ export default function App() {
   });
   const [reviewSeen, setReviewSeen] = useState(section === "review");   // mounted on first visit, then kept (uploads)
   const [jobsOpen, setJobsOpen] = useState(readOpen);
+  const [side, setSide] = useState(readSide);
   const [dyActive, setDyActive] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selProject, setSelProject] = useState<string | null>(() => new URLSearchParams(location.search).get("project"));
@@ -107,6 +117,8 @@ export default function App() {
   const openDouyin = (pid?: string) => { if (pid !== undefined) setDyProject(pid); setSection("douyin"); history.replaceState(null, "", "?tab=douyin"); };
   const openReview = () => { setSection("review"); setReviewSeen(true); history.replaceState(null, "", "?tab=review"); };
   const toggleJobs = () => setJobsOpen((o) => { saveOpen(!o); return !o; });
+  const setSideW = (w: number) => { const v = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w))); saveSide("sideW", String(v)); setSide((s) => ({ ...s, w: v })); };
+  const toggleMini = () => setSide((s) => { saveSide("sideMini", s.mini ? "0" : "1"); return { ...s, mini: !s.mini }; });
   const onDyActive = useCallback((n: number) => setDyActive(n), []);
   const busyJobs = jobs.filter((j) => j.state === "running" || j.state === "queued").length;
   useEffect(() => {
@@ -171,16 +183,17 @@ export default function App() {
   if (!options) return <div className="app"><p className="muted pad">Đang tải…</p></div>;
 
   return (
-    <div className="shell">
-      <Sidebar jobs={jobs} projects={projects} section={section} sel={sel} selProject={selProject}
+    <div className="shell" style={{ "--side-w": side.mini ? "56px" : `${side.w}px` } as React.CSSProperties}>
+      <Sidebar mini={side.mini} onToggleMini={toggleMini} jobs={jobs} projects={projects} section={section} sel={sel} selProject={selProject}
         jobsOpen={jobsOpen} expanded={expanded} busyJobs={busyJobs} dyActive={dyActive} checks={checks} apiKeys={apiKeys} onApiKeys={() => setKeysOpen(true)}
         onSubs={() => {
           if (section !== "subs") { setSection("subs"); history.replaceState(null, "", sel ? `?job=${sel}` : selProject ? `?project=${selProject}` : location.pathname); }
-          if (!jobsOpen) toggleJobs();
+          if (!jobsOpen && !side.mini) toggleJobs();
         }}
         onToggleJobs={toggleJobs} onExpand={expand} onNewVideo={() => select(null)} onSelectJob={(id) => select(id)}
         onNewProject={async () => { const p = await newProject(); if (p) openProject(p.id); }}
         onOpenProject={openProject} onDouyin={() => openDouyin()} onReview={openReview} />
+      {!side.mini && <SideResizer width={side.w} onWidth={setSideW} />}
       <main className="main">
         {/* kept mounted while hidden so downloads to a folder keep going when you switch screens */}
         <div hidden={section !== "douyin"}>

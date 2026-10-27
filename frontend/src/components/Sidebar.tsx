@@ -8,9 +8,10 @@ const stateText = (j: Job) => (j.state === "running" && j.current_step ? STEP_LA
 /** Left navigation: the subtitle workspace (projects -> videos), the Douyin downloader and film reviews.
  *  Every row is one hover target; nested buttons inside a row never paint their own hover. */
 export default function Sidebar({
-  jobs, projects, section, sel, selProject, jobsOpen, expanded, busyJobs, dyActive, checks, apiKeys,
+  mini, onToggleMini, jobs, projects, section, sel, selProject, jobsOpen, expanded, busyJobs, dyActive, checks, apiKeys,
   onSubs, onToggleJobs, onExpand, onNewVideo, onNewProject, onOpenProject, onSelectJob, onDouyin, onReview, onApiKeys,
 }: {
+  mini: boolean; onToggleMini: () => void;
   jobs: Job[]; projects: Project[]; section: "subs" | "douyin" | "review"; sel: string | null; selProject: string | null;
   jobsOpen: boolean; expanded: Set<string>; busyJobs: number; dyActive: number;
   checks: { name: string; hint: string }[]; apiKeys: ApiKeyInfo[];
@@ -27,22 +28,29 @@ export default function Sidebar({
   const inSubs = section === "subs";
 
   return (
-    <aside className="side">
-      <div className="brand"><span className="logo" aria-hidden /> Auto-Sub</div>
+    <aside className={`side ${mini ? "mini" : ""}`}>
+      <div className="brand">
+        <span className="logo" aria-hidden /> <span className="srow-label">Auto-Sub</span>
+        <button className="side-toggle" onClick={onToggleMini} aria-expanded={!mini} aria-controls="side-nav" title={mini ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+          aria-label={mini ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}>
+          <Icon name="chevron" size={14} className={mini ? "" : "flip"} />
+        </button>
+      </div>
 
-      <nav className="side-nav" aria-label="Chức năng">
+      <nav id="side-nav" className="side-nav" aria-label="Chức năng">
         <div className={`srow top ${inSubs ? "on" : ""}`}>
-          <button className="srow-main" aria-current={inSubs ? "page" : undefined} onClick={onSubs}>
+          <button className="srow-main" aria-current={inSubs ? "page" : undefined} onClick={onSubs} title="Làm phụ đề video">
             <Icon name="film" /> <span className="srow-label">Làm phụ đề video</span>
             {busyJobs > 0 && <span className="pill busy" title="Video đang chạy hoặc đang chờ">{busyJobs}</span>}
+            {busyJobs > 0 && <i className="mini-dot" aria-hidden />}
           </button>
-          <button className="srow-chev" aria-expanded={jobsOpen} aria-controls="side-jobs"
+          <button className="srow-chev" hidden={mini} aria-expanded={jobsOpen} aria-controls="side-jobs"
             aria-label={jobsOpen ? "Thu gọn danh sách" : "Mở rộng danh sách"} onClick={onToggleJobs}>
             <Icon name="chevron" size={14} className={jobsOpen ? "rot" : ""} />
           </button>
         </div>
 
-        {jobsOpen && (
+        {jobsOpen && !mini && (
           <div id="side-jobs" className="side-tree">
             <div className="side-tools">
               <button className={`tool grow ${inSubs && !sel && !selProject ? "on" : ""}`} onClick={onNewVideo}>
@@ -98,21 +106,22 @@ export default function Sidebar({
         )}
 
         <div className={`srow top ${section === "douyin" ? "on" : ""}`}>
-          <button className="srow-main" aria-current={section === "douyin" ? "page" : undefined} onClick={onDouyin}>
+          <button className="srow-main" aria-current={section === "douyin" ? "page" : undefined} onClick={onDouyin} title="Tải video Douyin">
             <Icon name="download" /> <span className="srow-label">Tải video Douyin</span>
             {dyActive > 0 && <span className="pill busy" title="Video đang tải">{dyActive}</span>}
+            {dyActive > 0 && <i className="mini-dot" aria-hidden />}
           </button>
         </div>
 
         <div className={`srow top ${section === "review" ? "on" : ""}`}>
-          <button className="srow-main" aria-current={section === "review" ? "page" : undefined} onClick={onReview}>
+          <button className="srow-main" aria-current={section === "review" ? "page" : undefined} onClick={onReview} title="Review phim">
             <Icon name="clapper" /> <span className="srow-label">Review phim</span>
           </button>
         </div>
       </nav>
 
       <div className="side-foot">
-      {checks.length > 0 && (
+      {checks.length > 0 && !mini && (
         <div className="checks">
           <strong><Icon name="alert" size={14} /> Cần cấu hình</strong>
           {checks.map((c) => <p key={c.name} title={c.hint}>{c.name}: <span className="muted">{c.hint}</span></p>)}

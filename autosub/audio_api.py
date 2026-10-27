@@ -292,6 +292,14 @@ def bg_finish(pid: str, upload_id: str):
     background.start(pid, path)
     return api._project_view(api._project(pid))
 
+@router.post("/api/projects/{pid}/audio/background/cancel")
+def bg_cancel(pid: str):
+    """Stop storing/normalizing the background; its state becomes "error" ("Đã huỷ ..."), retried with finish."""
+    _audio(pid)
+    if not background.cancel(pid):
+        raise HTTPException(409, "Không có việc chuẩn hoá video nền nào đang chạy")
+    return api._project_view(api._project(pid))
+
 @router.get("/api/projects/{pid}/audio/background")
 def get_background(pid: str, request: Request):
     """The normalized background for the preview player (Range: it can be large); the original until ready."""

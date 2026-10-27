@@ -10,6 +10,7 @@ from .. import config, media, proc, projects, workdir
 from ..storage import get_store
 
 NO_BACKGROUND = "Project chưa có video nền"
+CANCELLED = "Đã huỷ chuẩn hoá video nền"
 _LOCK = threading.Lock()
 _PID_LOCKS: dict[str, threading.Lock] = {}     # one fetch of a project's loop at a time
 
@@ -69,7 +70,7 @@ def normalize(pid: str, cancel: threading.Event, progress: Callable[[float], Non
             _set(pid, background_state="ready", background_error=None, background_etag=etag, background_info=info)
             progress(1.0)
         except proc.Cancelled:
-            _set(pid, background_state="error", background_error="Đã huỷ chuẩn hoá video nền")
+            _set(pid, background_state="error", background_error=CANCELLED)
             raise
         except Exception as e:
             _set(pid, background_state="error", background_error=f"Chuẩn hoá video nền lỗi: {e}")
@@ -149,3 +150,19 @@ def start(pid: str, local_upload: Path | None = None) -> bool:
     if not ok:
         _set(pid, background_state="error", background_error="Không xếp hàng được việc chuẩn hoá video nền")
     return ok
+
+def cancel(pid: str) -> bool:
+    """Stop the project's store/normalize task (queued or running); the state becomes "error" (CANCELLED), so
+    parts waiting for it stop waiting and the user can retry. False if no task is queued or running."""
+    from ..api import QUEUE
+    key = task_key(pid)
+    if not QUEUE.cancel(key):
+        return False
+    deadline = time.time() + 15
+    while QUEUE.is_active(key) and time.time() < deadline:
+        time.sleep(0.1)
+    def apply(p):                                        # a queued task never ran: nothing else says it stopped
+        if p.audio.background_state == "processing":
+            p.audio.background_state, p.audio.background_error = "error", CANCELLED
+    projects.update(pid, apply)
+    return True

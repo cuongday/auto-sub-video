@@ -33,6 +33,7 @@ export default function AudioBackground({ project, onChanged }: { project: Proje
   const err = errors.get(pid) ?? "";
   const setErr = (m: string) => { if (m) errors.set(pid, m); else errors.delete(pid); notify(); };
   const [retrying, setRetrying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   useEffect(() => { if (a.background_state !== "processing") setNorm(null); }, [a.background_state]);
 
   useEvents((e: JobEvent) => {
@@ -63,6 +64,14 @@ export default function AudioBackground({ project, onChanged }: { project: Proje
       if (!id) throw new Error("Không còn phiên tải lên trước, hãy chọn lại file video nền");
       onChanged(await finishUpload(api.audioBgBase(pid), id));
     } catch (e) { setErr(`${(e as Error).message}. Nếu vẫn lỗi, hãy chọn lại file video nền.`); } finally { setRetrying(false); }
+  };
+
+  /** Stops the server-side store/normalize; the state becomes "error" ("Đã huỷ…") and "Thử lại" resumes it. */
+  const cancelNorm = async () => {
+    setCancelling(true); setErr("");
+    try { onChanged(await api.cancelAudioBg(pid)); }
+    catch (e) { setErr(`Huỷ chuẩn hoá lỗi: ${(e as Error).message}`); onChanged(); }
+    finally { setCancelling(false); }
   };
 
   const info = a.background_info;
@@ -101,6 +110,7 @@ export default function AudioBackground({ project, onChanged }: { project: Proje
             }} />
           </label>
         )}
+        {st === "processing" && !up && <button className="ghost small danger" disabled={cancelling} onClick={cancelNorm}>{cancelling ? "Đang huỷ…" : "Huỷ"}</button>}
         {st === "error" && !up && <button className="ghost small" disabled={retrying} onClick={retry}>{retrying ? "Đang thử lại…" : "Thử lại"}</button>}
         {!a.background && !up && <span className="muted small">{VIDEO_EXT.map((x) => x.slice(1)).join(", ")} · tối đa 1 GB · tự lặp nếu ngắn hơn giọng đọc</span>}
       </div>

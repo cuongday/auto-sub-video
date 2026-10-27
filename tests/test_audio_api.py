@@ -294,3 +294,43 @@ def test_background_task_not_starved_by_parts_waiting_for_it(client, audio_flow,
     assert background.start(pid)
     assert ran.wait(10), "the background task never ran: the audio lane is deadlocked"
     wait_for(lambda: all(store.load(j).state == "done" for j in a), timeout=10)
+
+def test_cancel_background_normalization(client, tmp_path, monkeypatch):
+    pid = new_audio(client)["id"]
+    assert client.post(f"/api/projects/{pid}/audio/background/cancel").status_code == 409     # nothing running
+    sub = client.post("/api/projects", json={"name": "Phụ đề"}).json()["id"]
+    assert client.post(f"/api/projects/{sub}/audio/background/cancel").status_code == 404
+    started = threading.Event()
+
+    def slow_normalize(p, cancel, progress):
+        started.set()
+        while not cancel.wait(0.05):
+            pass
+        raise jobs.proc.Cancelled()
+    monkeypatch.setattr(background, "normalize", slow_normalize)
+    data = make_video(tmp_path / "bg.mp4", seconds=1, size=(160, 90), with_text=False).read_bytes()
+    uid, _ = upload_bg(client, pid, data)
+    assert client.post(f"/api/projects/{pid}/audio/background/{uid}/finish").status_code == 200
+    assert started.wait(10)
+    r = client.post(f"/api/projects/{pid}/audio/background/cancel")
+    assert r.status_code == 200, r.text
+    a = r.json()["audio"]
+    assert a["background_state"] == "error" and a["background_error"] == "Đã huỷ chuẩn hoá video nền"
+    assert not api.QUEUE.is_active(background.task_key(pid))
+    assert client.post(f"/api/projects/{pid}/audio/background/cancel").status_code == 409
+
+def test_cancel_queued_background_task(client, monkeypatch):
+    pid = new_audio(client)["id"]
+    projects.update(pid, lambda p: (setattr(p.audio, "background", projects.bg_key(pid, ".mp4")),
+                                    setattr(p.audio, "background_state", "processing")))
+    release = threading.Event()
+    assert api.QUEUE.submit_task("bg:other", lambda cancel, progress: release.wait(10))   # the task worker is busy
+    wait_for(lambda: "bg:other" in api.QUEUE.running())
+    ran = []
+    monkeypatch.setattr(background, "normalize", lambda *a: ran.append(1))
+    assert background.start(pid)
+    r = client.post(f"/api/projects/{pid}/audio/background/cancel")
+    assert r.status_code == 200 and r.json()["audio"]["background_state"] == "error"
+    release.set()
+    wait_for(lambda: api.QUEUE.running() == set())
+    assert ran == [] and projects.get(pid).audio.background_error == "Đã huỷ chuẩn hoá video nền"

@@ -165,6 +165,7 @@ export const api = {
   // ---- truyện audio
   saveAudio: (pid: string, s: { engine?: string; voice?: string; rate?: number; music_volume?: number }) => j<Project>(put(`/api/projects/${pid}/audio`, s)),
   audioBgBase: (pid: string) => `/api/projects/${pid}/audio/background`,
+  cancelAudioBg: (pid: string) => j<Project>(post(`/api/projects/${pid}/audio/background/cancel`)),
   audioBgUrl: (pid: string, bust: string | number) => `/api/projects/${pid}/audio/background?v=${encodeURIComponent(bust)}`,
   uploadAudioMusic: (pid: string, file: File) => {
     const fd = new FormData(); fd.append("file", file);

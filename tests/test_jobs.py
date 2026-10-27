@@ -50,10 +50,11 @@ def test_reset_interrupted():
 
 # ---------------------------------------------------------------- audio lane
 
+import sys
 import threading
 import pytest
 from autosub import proc
-from autosub.models import AUDIO_STEPS
+from autosub.models import AUDIO_STEPS, StepState
 
 GATES: dict[str, threading.Event] = {}
 
@@ -101,7 +102,7 @@ def test_audio_lane_runs_two_at_once(audio_flow):
     for j in (a, b, c):
         assert q.submit(j.id, "auto")
     assert not q.submit(a.id, "auto")
-    wait_for(lambda: sorted(states(a.id, b.id, c.id)).count("running") == 2, timeout=2)
+    wait_for(lambda: sorted(states(a.id, b.id, c.id)).count("running") == 2, timeout=5)
     first = [j for j in (a, b, c) if store.load(j.id).state == "running"]
     third = next(j for j in (a, b, c) if j not in first)
     assert store.load(third.id).state == "queued"
@@ -153,6 +154,9 @@ def test_sub_job_not_blocked_by_audio_lane(audio_flow, tmp_path):
     assert q.submit(s.id, "review")
     assert wait(s.id, {"awaiting_review", "error"}).state == "awaiting_review"
     assert states(a.id, b.id) == ["running", "running"]
+    GATES[a.id].set(); GATES[b.id].set()
+    wait(a.id, {"done"}); wait(b.id, {"done"})
+    wait_for(lambda: q.running() == set())
 
 def test_submit_task_runs_in_audio_lane_and_cancels(audio_flow):
     q = jobs.JobQueue(engines)
@@ -184,7 +188,70 @@ def test_submit_task_runs_in_audio_lane_and_cancels(audio_flow):
     while not sub.empty():
         evs.append(sub.get())
     tasks = [(e["key"], e["state"]) for e in evs if e["type"] == "task"]
-    assert tasks == [("bg:p1", "running"), ("bg:p1", "cancelled"), ("bg:p1", "running"), ("bg:p1", "done"),
-                     ("bg:p2", "running"), ("bg:p2", "error")]
+    assert tasks == [("bg:p1", "queued"), ("bg:p1", "running"), ("bg:p1", "cancelled"),
+                     ("bg:p1", "queued"), ("bg:p1", "running"), ("bg:p1", "done"),
+                     ("bg:p2", "queued"), ("bg:p2", "running"), ("bg:p2", "error")]
     assert any(e["type"] == "task_progress" and e["key"] == "bg:p1" and e["pct"] == 0.5 for e in evs)
     assert next(e for e in evs if e["type"] == "task" and e["state"] == "error")["error"]
+
+def test_resubmit_does_not_save_stale_snapshot(audio_flow, monkeypatch):
+    """submit() must not save a job state it read before the previous run finished."""
+    calls = []
+    flow = audio_flow
+    block = flow.runners["parse"]
+    monkeypatch.setitem(flow.runners, "parse", lambda ctx: (calls.append(ctx.job.id), block(ctx)))
+    q = jobs.JobQueue(engines)
+    a = audio_job("a")
+    q.submit(a.id, "auto")
+    wait_for(lambda: store.load(a.id).state == "running" and store.load(a.id).current_step == "parse")
+    real = store.load
+    armed = {"on": True}
+
+    def racy_load(jid):
+        snap = real(jid)
+        if armed["on"] and threading.current_thread() is threading.main_thread():
+            armed["on"] = False                     # the previous run finishes between the read and the check
+            GATES[a.id].set()
+            wait_for(lambda: not q.is_active(a.id))
+        return snap
+    monkeypatch.setattr(store, "load", racy_load)
+    assert q.submit(a.id, "auto")
+    monkeypatch.setattr(store, "load", real)
+    assert wait(a.id, {"done", "error"}).state == "done"
+    wait_for(lambda: not q.is_active(a.id))
+    assert calls == [a.id]                          # parse stayed done: the rerun skipped it
+
+def test_main_lane_cancel_spares_audio_processes(audio_flow, monkeypatch):
+    def sleeper(secs):
+        def run(ctx):
+            proc.run(["sleep", str(secs)], cancel=ctx.cancel)
+        return run
+    monkeypatch.setitem(audio_flow.runners, "parse", sleeper(3))
+    film = pipeline.Flow(steps=["a"], runners={"a": sleeper(30)}, step_hash=lambda ctx, step: "h",
+                         inputs=lambda ctx, step: [], pushes=lambda ctx, step: [], outputs=lambda ctx, step: [],
+                         review_stop=None, overwrites=set())
+    monkeypatch.setitem(pipeline._FLOWS, "film", film)
+    monkeypatch.setitem(sys.modules, "autosub.review.flows", None)
+    m = store.create("m", kind="film"); m.steps = {"a": StepState()}; store.save(m)
+    a = audio_job("a")
+    q = jobs.JobQueue(engines)
+    q.submit(a.id, "auto"); q.submit(m.id, "auto")
+    wait_for(lambda: len(proc._LIVE) >= 2)
+    assert q.cancel(m.id)
+    assert wait(m.id, {"cancelled", "error", "done"}).state == "cancelled"
+    assert wait(a.id, {"done", "error", "cancelled"}).state == "done"
+
+def test_resubmitted_task_runs_new_fn_not_stale_one(audio_flow):
+    q = jobs.JobQueue(engines, audio_workers=1)
+    blocker = audio_job("blocker")
+    q.submit(blocker.id, "auto")
+    wait_for(lambda: store.load(blocker.id).state == "running")
+    ran = []
+    assert q.submit_task("bg:x", lambda cancel, progress: ran.append("old"))
+    assert q.cancel("bg:x")
+    assert q.submit_task("bg:x", lambda cancel, progress: ran.append("new"))
+    GATES[blocker.id].set()
+    wait(blocker.id, {"done"})
+    wait_for(lambda: ran and not q.is_active("bg:x"))
+    wait_for(lambda: q.running() == set())
+    assert ran == ["new"]

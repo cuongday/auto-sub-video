@@ -4,8 +4,10 @@
 - audio lane: audio-story jobs and background tasks (submit_task), AUDIO_WORKERS at a time; each has its own
   cancel event, so cancelling one never touches the others' processes (proc.run kills only its own child)."""
 import queue
+import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from typing import Callable
 from . import config, pipeline, proc, store
@@ -40,6 +42,8 @@ class JobQueue:
         self.audio_workers = max(1, audio_workers if audio_workers is not None else config.AUDIO_WORKERS)
         self._aq: "queue.Queue[Request | Task]" = queue.Queue()
         self._apending: list[str] = []
+        self._ptasks: set[str] = set()               # keys in _apending that are submit_task tasks, not jobs
+        self._latest: dict[str, "Request | Task"] = {}   # newest queued item per id: older copies are stale
         self._running: dict[str, threading.Event] = {}
         self._athreads: list[threading.Thread] = []
 
@@ -91,15 +95,17 @@ class JobQueue:
             return set(self._running) | ({self.current} if self.current else set())
 
     def submit(self, jid: str, mode: str, from_step: str | None = None, confirm: bool = False) -> bool:
-        job = store.load(jid)
-        audio = job.kind in AUDIO_KINDS
+        audio = store.load(jid).kind in AUDIO_KINDS          # only the kind: it never changes
+        req = Request(jid, mode, from_step, confirm)
         with self._lock:
             if self._active_locked(jid):
                 return False
             (self._apending if audio else self._pending).append(jid)
+            self._latest[jid] = req
+        job = store.load(jid)                                 # after the check: a finished run's last save is in
         job.state, job.mode, job.error = "queued", mode, None
         store.save(job)
-        (self._aq if audio else self._q).put(Request(jid, mode, from_step, confirm))
+        (self._aq if audio else self._q).put(req)
         self.emit({"type": "state", "job": jid, "state": "queued"})
         self.start()
         return True
@@ -109,44 +115,49 @@ class JobQueue:
         with self._lock:
             if self._active_locked(key):
                 return False
+            task = Task(key, fn)
             self._apending.append(key)
-        self._aq.put(Task(key, fn))
+            self._ptasks.add(key)
+            self._latest[key] = task
+        self._aq.put(task)
+        self.emit({"type": "task", "key": key, "state": "queued"})
         self.start()
         return True
 
     def cancel(self, jid: str) -> bool:
         with self._lock:
             queued = jid in self._pending or jid in self._apending
+            is_task = jid in self._ptasks
             ev = self._running.get(jid)
-            if jid in self._pending:
-                self._pending.remove(jid)
-            elif jid in self._apending:
-                self._apending.remove(jid)
+            spare = {e for e in self._running.values()}
+            if queued:
+                (self._pending if jid in self._pending else self._apending).remove(jid)
+                self._ptasks.discard(jid)
+                self._latest.pop(jid, None)
             elif ev is None and jid != self.current:
                 return False
         if queued:                               # emit() takes the lock: never call it while holding it
-            try:
-                job = store.load(jid)
-            except KeyError:                     # a submit_task key, not a stored job
+            if is_task:
                 self.emit({"type": "task", "key": jid, "state": "cancelled"})
                 return True
-            job.state = "cancelled"; store.save(job)
+            job = store.load(jid); job.state = "cancelled"; store.save(job)
             self.emit({"type": "state", "job": jid, "state": "cancelled"})
             return True
         if ev is not None:                       # audio lane: stop only this one (proc.run kills its own child)
             ev.set()
             return True
         self._cancel.set()
-        proc.kill_all()
+        proc.kill_all(spare=spare)               # the audio lane's children belong to other jobs: leave them
         return True
 
     def _loop(self) -> None:
         while True:
             req = self._q.get()
             with self._lock:
-                if req.jid not in self._pending:
-                    continue                      # cancelled while queued
+                if req.jid not in self._pending or self._latest.get(req.jid) is not req:
+                    continue                      # cancelled while queued, or superseded by a resubmit
                 self._pending.remove(req.jid)
+                del self._latest[req.jid]
                 self.current = req.jid
                 self._cancel = threading.Event()
                 cancel = self._cancel
@@ -161,9 +172,11 @@ class JobQueue:
             item = self._aq.get()
             key = item.key if isinstance(item, Task) else item.jid
             with self._lock:
-                if key not in self._apending:
-                    continue                      # cancelled while queued
+                if key not in self._apending or self._latest.get(key) is not item:
+                    continue                      # cancelled while queued, or superseded by a resubmit
                 self._apending.remove(key)
+                self._ptasks.discard(key)
+                del self._latest[key]
                 cancel = self._running[key] = threading.Event()
             try:
                 if isinstance(item, Task):
@@ -171,7 +184,7 @@ class JobQueue:
                 else:
                     self._run(item, cancel)
             except Exception:  # noqa: BLE001  (a worker thread must never die)
-                pass
+                print(f"[auto-sub] audio lane: {key} failed:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
             finally:
                 with self._lock:
                     self._running.pop(key, None)

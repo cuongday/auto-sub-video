@@ -50,7 +50,7 @@ def _frames(video: Path, region: Region, width: int, height: int, duration: floa
     cmd = ["ffmpeg", "-v", "error", "-nostdin", "-i", str(video), "-vf", f"fps=1/{step},crop={w}:{h}:{x}:{y}",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    proc._LIVE.add(p)
+    proc.track(p, cancel)
     try:
         n, size = 0, w * h * 3
         while True:
@@ -62,7 +62,7 @@ def _frames(video: Path, region: Region, width: int, height: int, duration: floa
             yield n * step, np.frombuffer(buf, np.uint8).reshape(h, w, 3)
             n += 1
     finally:
-        p.kill(); p.wait(); proc._LIVE.discard(p)
+        p.kill(); p.wait(); proc.untrack(p)
 
 _ENGINE: list = []
 

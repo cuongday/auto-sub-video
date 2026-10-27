@@ -41,10 +41,10 @@ export default function Sidebar({
         <div className={`srow top ${inSubs ? "on" : ""}`}>
           <button className="srow-main" aria-current={inSubs ? "page" : undefined} onClick={onSubs} title="Làm phụ đề video">
             <Icon name="film" /> <span className="srow-label">Làm phụ đề video</span>
-            {busyJobs > 0 && <span className="pill busy" title="Video đang chạy hoặc đang chờ">{busyJobs}</span>}
-            {busyJobs > 0 && <i className="mini-dot" aria-hidden />}
+            {busyJobs > 0 && (mini ? <i className="mini-dot" title="Video đang chạy hoặc đang chờ" />
+              : <span className="pill busy" title="Video đang chạy hoặc đang chờ">{busyJobs}</span>)}
           </button>
-          <button className="srow-chev" hidden={mini} aria-expanded={jobsOpen} aria-controls="side-jobs"
+          <button className="srow-chev" aria-expanded={jobsOpen} aria-controls="side-jobs"
             aria-label={jobsOpen ? "Thu gọn danh sách" : "Mở rộng danh sách"} onClick={onToggleJobs}>
             <Icon name="chevron" size={14} className={jobsOpen ? "rot" : ""} />
           </button>
@@ -108,8 +108,8 @@ export default function Sidebar({
         <div className={`srow top ${section === "douyin" ? "on" : ""}`}>
           <button className="srow-main" aria-current={section === "douyin" ? "page" : undefined} onClick={onDouyin} title="Tải video Douyin">
             <Icon name="download" /> <span className="srow-label">Tải video Douyin</span>
-            {dyActive > 0 && <span className="pill busy" title="Video đang tải">{dyActive}</span>}
-            {dyActive > 0 && <i className="mini-dot" aria-hidden />}
+            {dyActive > 0 && (mini ? <i className="mini-dot" title="Video đang tải" />
+              : <span className="pill busy" title="Video đang tải">{dyActive}</span>)}
           </button>
         </div>
 
@@ -130,6 +130,7 @@ export default function Sidebar({
 
       <button className="side-keys" onClick={onApiKeys} title="Cấu hình API key của các nhà cung cấp">
         <Icon name="key" size={15} />
+        {mini && (checks.length > 0 || apiKeys.some((k) => !k.source)) && <i className="mini-dot warn" title="Cần cấu hình" />}
         <span className="srow-label">API key</span>
         <span className="side-keys-status">
           {apiKeys.map((k) => <i key={k.id} className={`dot ${k.source ? "on" : ""}`} title={`${k.label}: ${k.source ? "đã có" : "chưa có"}`} />)}

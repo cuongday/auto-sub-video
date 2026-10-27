@@ -81,7 +81,8 @@ label.inline input[type="number"] { width: 120px; }
 .side.mini .srow-main, .side.mini .srow.top .srow-main { justify-content: center; padding: 0; position: relative; }
 .side.mini .srow-chev { display: none; }
 .side.mini .mini-dot { display: block; }
-.side.mini .side-keys { justify-content: center; padding: 8px 0; }
+.side.mini .side-keys { justify-content: center; padding: 8px 0; position: relative; }
+.mini-dot.warn { display: block; background: var(--warn, #F5B83D); top: 4px; right: 8px; }
 .brand { font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; padding: 4px 8px 10px; }
 .logo { width: 22px; height: 22px; border-radius: 5px; background: #2A2F3A; position: relative; }
 .logo::after { content: ""; position: absolute; left: 3px; right: 3px; bottom: 4px; height: 5px; border-radius: 2px; background: var(--amber); }

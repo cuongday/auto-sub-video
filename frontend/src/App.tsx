@@ -3,7 +3,7 @@ import { ApiError, api } from "./api";
 import ApiKeysDialog from "./components/ApiKeysDialog";
 import { useDialog } from "./components/Dialog";
 import Icon from "./components/Icon";
-import SideResizer from "./components/SideResizer";
+import SideResizer, { SIDE_DEF, SIDE_MAX, SIDE_MIN } from "./components/SideResizer";
 import Sidebar, { NO_PROJECT } from "./components/Sidebar";
 import { STEP_LABEL } from "./labels";
 import type { ApiKeyInfo, Job, JobEvent, Options, Project, Templates } from "./types";
@@ -26,7 +26,6 @@ type Section = "subs" | "douyin" | "review";
 
 const readOpen = (): boolean => { try { return localStorage.getItem("autosub.jobsOpen") !== "0"; } catch { return true; } };
 const saveOpen = (v: boolean) => { try { localStorage.setItem("autosub.jobsOpen", v ? "1" : "0"); } catch { /* private mode */ } };
-const SIDE_MIN = 200, SIDE_MAX = 480, SIDE_DEF = 280;
 const readSide = (): { w: number; mini: boolean } => {
   try {
     const w = Number(localStorage.getItem("autosub.sideW")), m = localStorage.getItem("autosub.sideMini");
@@ -117,7 +116,7 @@ export default function App() {
   const openDouyin = (pid?: string) => { if (pid !== undefined) setDyProject(pid); setSection("douyin"); history.replaceState(null, "", "?tab=douyin"); };
   const openReview = () => { setSection("review"); setReviewSeen(true); history.replaceState(null, "", "?tab=review"); };
   const toggleJobs = () => setJobsOpen((o) => { saveOpen(!o); return !o; });
-  const setSideW = (w: number) => { const v = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w))); saveSide("sideW", String(v)); setSide((s) => ({ ...s, w: v })); };
+  const setSideW = (w: number, save = true) => { const v = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w))); if (save) saveSide("sideW", String(v)); setSide((s) => ({ ...s, w: v })); };
   const toggleMini = () => setSide((s) => { saveSide("sideMini", s.mini ? "0" : "1"); return { ...s, mini: !s.mini }; });
   const onDyActive = useCallback((n: number) => setDyActive(n), []);
   const busyJobs = jobs.filter((j) => j.state === "running" || j.state === "queued").length;

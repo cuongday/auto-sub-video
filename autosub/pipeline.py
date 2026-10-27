@@ -398,10 +398,12 @@ def register(kind: str, flow: Flow) -> None:
 
 def flow_for(job: Job) -> Flow:
     if job.kind not in _FLOWS:
+        # registers the film/review flows, or the audio-story flow
+        mod = "autosub.audio.flow" if job.kind == "audio" else "autosub.review.flows"
         try:
-            importlib.import_module("autosub.review.flows")      # registers the film/review flows
+            importlib.import_module(mod)
         except ModuleNotFoundError as e:
-            if e.name not in ("autosub.review", "autosub.review.flows"):
+            if e.name not in (mod.rpartition(".")[0], mod):
                 raise
     if job.kind not in _FLOWS:
         raise LookupError(f"Chưa hỗ trợ loại job {job.kind}")

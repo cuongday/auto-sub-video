@@ -166,9 +166,12 @@ def evict(max_bytes: int | None = None) -> list[str]:
     return removed
 
 def clear_all() -> None:
-    """On startup nothing in scratch is trusted (it is only a cache)."""
+    """On startup nothing in scratch is trusted (it is only a cache), except unfinished uploads (KEEP: they
+    resume after a restart and are removed after 24 h by the audio API)."""
     if config.WORK_DIR.exists():
         for d in config.WORK_DIR.iterdir():
+            if d.name in KEEP:
+                continue
             shutil.rmtree(d, ignore_errors=True) if d.is_dir() else d.unlink(missing_ok=True)
 
 def touch(jid: str) -> None:

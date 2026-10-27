@@ -1,0 +1,308 @@
+"""Routes of audio-story projects: shared settings, the background video (uploaded in chunks, then normalized
+once), the music, one script file per request, and running the parts. Shares the helpers and the queue of
+api.py (always read as api.X: tests swap QUEUE)."""
+import asyncio
+import json
+import re
+import shutil
+import threading
+import time
+import uuid
+from pathlib import Path
+from typing import Literal
+from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
+from . import api, config, media, projects, store
+from .audio import background, flow
+from .models import Job
+from .projects import Project
+from .review_api import MUSIC_EXT, MUSIC_MAX
+from .storage import content_type, get_store
+
+router = APIRouter()
+
+CHUNK_MAX = 64 << 20                  # under Cloudflare's 100 MB request limit
+SCRIPT_MAX = 20 << 20
+SCRIPT_EXT = {".txt", ".docx", ".srt"}
+UPLOAD_TTL = 24 * 3600                # unfinished uploads older than this are removed
+_UID = re.compile(r"^[0-9a-f]{32}$")
+_UP_LOCK = threading.Lock()           # read-modify-write of the upload state files
+_PART_LOCK = threading.Lock()         # re-numbering of the parts
+
+# ------------------------------------------------------------------ helpers
+
+def _audio(pid: str) -> Project:
+    p = api._project(pid)
+    if p.audio is None:
+        raise HTTPException(404, "Không phải truyện audio")
+    return p
+
+def _update(pid: str, fn) -> dict:
+    """Change the project's audio settings under the projects lock and bump rev (parts know to rebuild)."""
+    def apply(p: Project):
+        fn(p.audio)
+        p.audio.rev += 1
+    p = projects.update(pid, apply)
+    if p is None:
+        raise HTTPException(404, "Không có project này")
+    return api._project_view(p)
+
+def _natural(name: str) -> list:
+    """Sort key: "chuong-2" before "chuong-10"."""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name.lower())]
+
+def _parts(pid: str, all_jobs: list[Job] | None = None) -> list[Job]:
+    """The project's parts in story order."""
+    mine = [j for j in (all_jobs if all_jobs is not None else store.list_jobs())
+            if j.project == pid and j.kind == "audio" and j.audio_part]
+    return sorted(mine, key=lambda j: (_natural(j.audio_part.script_name), j.created))
+
+def _renumber(pid: str) -> None:
+    with _PART_LOCK:
+        for i, j in enumerate(_parts(pid)):
+            if j.audio_part.index != i and not api.QUEUE.is_active(j.id):
+                j.audio_part.index = i
+                store.save(j)
+
+def part_view(job: Job, all_jobs: list[Job] | None = None) -> dict:
+    """Extra fields of an audio part's view: its index (computed, so a running part saving an old copy of the
+    job never shows a stale one) and the duration/characters measured by the tts step."""
+    out: dict = {}
+    if job.audio_part and job.project:
+        ids = [j.id for j in _parts(job.project, all_jobs)]
+        if job.id in ids:
+            out["audio_part"] = {**job.audio_part.model_dump(mode="json"), "index": ids.index(job.id)}
+    tts = job.steps.get("tts")
+    meta = store.load_json(job.id, "meta.json", default=None) if tts and tts.status == "done" else None
+    out["meta"] = {"duration": meta.get("duration"), "chars": meta.get("chars")} if isinstance(meta, dict) else None
+    return out
+
+def run_parts(pid: str) -> dict:
+    """Queue every part not finished, or finished but stale since a settings change, in story order."""
+    queued = []
+    for j in _parts(pid):
+        if api.QUEUE.is_active(j.id):
+            continue
+        if j.state in ("done", "approved") and api._stale_from(j, store.names(j.id)) is None:
+            continue
+        if api.QUEUE.submit(j.id, "auto", None, True):
+            queued.append(j.id)
+    return {"queued": queued, "skipped": []}
+
+# ------------------------------------------------------------------ uploads dir
+
+def _up_dir() -> Path:
+    d = config.WORK_DIR / "_uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+def clean_uploads(pid: str | None = None) -> None:
+    """Remove unfinished uploads older than UPLOAD_TTL (or every upload of project `pid`)."""
+    d = config.WORK_DIR / "_uploads"
+    if not d.exists():
+        return
+    now = time.time()
+    with _UP_LOCK:
+        for f in d.iterdir():
+            uid = f.name.removesuffix(".json")
+            meta = d / f"{uid}.json"
+            try:
+                if pid is not None:
+                    gone = meta.exists() and json.loads(meta.read_text()).get("pid") == pid
+                else:
+                    gone = now - f.stat().st_mtime > UPLOAD_TTL
+            except (OSError, ValueError):
+                gone = pid is None
+            if gone:
+                f.unlink(missing_ok=True)
+
+def _state(pid: str, uid: str) -> dict:
+    meta = config.WORK_DIR / "_uploads" / f"{uid}.json"
+    if not _UID.match(uid) or not meta.exists():
+        raise HTTPException(404, "Không tìm thấy phiên tải lên (có thể đã quá 24 giờ)")
+    st = json.loads(meta.read_text())
+    if st.get("pid") != pid:
+        raise HTTPException(404, "Không tìm thấy phiên tải lên (có thể đã quá 24 giờ)")
+    return st
+
+def _covered(ranges: list[list[int]]) -> int:
+    return sum(e - s for s, e in ranges)
+
+def _merge(ranges: list[list[int]], start: int, end: int) -> list[list[int]]:
+    out: list[list[int]] = []
+    for s, e in sorted([*ranges, [start, end]]):
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+def resume_backgrounds() -> None:
+    """At startup: a normalization cut off by the restart is started again (or marked failed)."""
+    for p in projects.list_projects():
+        if p.audio is None or p.audio.background_state != "processing":
+            continue
+        if p.audio.background and get_store().stat(p.audio.background) is not None:
+            background.start(p.id)
+        else:
+            projects.update(p.id, lambda x: (setattr(x.audio, "background_state", "error"), setattr(
+                x.audio, "background_error", "Không tìm thấy video nền, hãy tải lên lại")))
+
+# ------------------------------------------------------------------ settings
+
+class AudioSettingsIn(BaseModel):
+    engine: Literal["edge", "vieneu"] | None = None
+    voice: str | None = None
+    rate: float | None = Field(None, ge=0.5, le=2.0)
+    music_volume: float | None = Field(None, ge=0, le=1)
+
+@router.put("/api/projects/{pid}/audio")
+def put_audio_settings(pid: str, body: AudioSettingsIn):
+    _audio(pid)
+    fields = body.model_dump(exclude_none=True)
+    return _update(pid, lambda a: [setattr(a, k, v) for k, v in fields.items()])
+
+# ------------------------------------------------------------------ background (chunked upload)
+
+class BgStartIn(BaseModel):
+    name: str
+    size: int = Field(gt=0)
+
+@router.post("/api/projects/{pid}/audio/background/start")
+def bg_start(pid: str, body: BgStartIn):
+    _audio(pid)
+    ext = Path(body.name).suffix.lower()
+    if ext not in api.VIDEO_EXT:
+        raise HTTPException(400, f"Định dạng video không hỗ trợ ({', '.join(sorted(e[1:] for e in api.VIDEO_EXT))})")
+    if body.size > config.AUDIO_BG_MAX_BYTES:
+        raise HTTPException(413, f"Video nền quá lớn (tối đa {config.AUDIO_BG_MAX_BYTES / (1 << 30):g} GB)")
+    clean_uploads()
+    uid = uuid.uuid4().hex
+    d = _up_dir()
+    with open(d / uid, "wb") as f:
+        f.truncate(body.size)                       # sparse: chunks land at their offset
+    (d / f"{uid}.json").write_text(json.dumps({"pid": pid, "name": body.name, "size": body.size, "received": []}))
+    return {"upload_id": uid, "chunk_size": CHUNK_MAX}
+
+@router.put("/api/projects/{pid}/audio/background/{upload_id}")
+async def bg_chunk(pid: str, upload_id: str, request: Request, offset: int = 0):
+    st = _state(pid, upload_id)
+    limit = min(CHUNK_MAX, st["size"] - offset)
+    too_big = HTTPException(413, f"Mảnh quá lớn hoặc vượt kích thước file (tối đa {CHUNK_MAX >> 20} MB mỗi mảnh)")
+    if offset < 0 or limit <= 0 or int(request.headers.get("content-length") or 0) > limit:
+        raise too_big
+    path = config.WORK_DIR / "_uploads" / upload_id
+    n = 0
+    with open(path, "r+b") as f:                    # streamed straight to disk, never held in memory
+        f.seek(offset)
+        async for piece in request.stream():
+            n += len(piece)
+            if n > limit:
+                raise too_big
+            f.write(piece)
+    with _UP_LOCK:
+        st = _state(pid, upload_id)
+        if n:
+            st["received"] = _merge(st["received"], offset, offset + n)
+        (path.parent / f"{upload_id}.json").write_text(json.dumps(st))
+    return {"received": _covered(st["received"])}
+
+@router.post("/api/projects/{pid}/audio/background/{upload_id}/finish")
+def bg_finish(pid: str, upload_id: str):
+    p = _audio(pid)
+    st = _state(pid, upload_id)
+    if st["received"] != [[0, st["size"]]]:
+        raise HTTPException(400, f"Video nền chưa tải lên đủ ({_covered(st['received'])}/{st['size']} byte)")
+    d = config.WORK_DIR / "_uploads"
+    path = d / upload_id
+    try:
+        try:
+            info = media.probe(path)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, "Không đọc được video nền, hãy kiểm tra lại file") from None
+        key = projects.bg_key(pid, Path(st["name"]).suffix.lower())
+        get_store().put_file(key, path)
+    finally:
+        path.unlink(missing_ok=True)
+        (d / f"{upload_id}.json").unlink(missing_ok=True)
+    old = p.audio.background
+
+    def apply(a):
+        a.background, a.background_info = key, info
+        a.background_state, a.background_error = "processing", None
+    _update(pid, apply)
+    if old and old != key:
+        get_store().delete(old)
+    background.start(pid)
+    return api._project_view(api._project(pid))
+
+@router.get("/api/projects/{pid}/audio/background")
+def get_background(pid: str, request: Request):
+    """The normalized background for the preview player (Range: it can be large); the original until ready."""
+    a = _audio(pid).audio
+    st = get_store()
+    for key in ([projects.bg_loop_key(pid)] if a.background_state == "ready" else []) + [a.background]:
+        info = st.stat(key) if key else None
+        if info is not None:
+            return api.stream_object(key, info.size, content_type(key), request,
+                                     {"Cache-Control": "no-cache", "ETag": f'"{info.etag}"'})
+    raise HTTPException(404, "Chưa có video nền")
+
+# ------------------------------------------------------------------ music
+
+@router.post("/api/projects/{pid}/audio/music")
+async def upload_music(pid: str, file: UploadFile):
+    p = _audio(pid)
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in MUSIC_EXT:
+        raise HTTPException(400, "Định dạng nhạc không hỗ trợ (mp3, m4a, aac, wav, ogg)")
+    data = await file.read(MUSIC_MAX + 1)
+    if len(data) > MUSIC_MAX:
+        raise HTTPException(413, f"File nhạc quá lớn (tối đa {MUSIC_MAX >> 20} MB)")
+    key = projects.music_key(pid, ext)
+    await asyncio.to_thread(get_store().put_bytes, key, data)
+    if p.audio.music and p.audio.music != key:
+        get_store().delete(p.audio.music)
+    return _update(pid, lambda a: setattr(a, "music", key))
+
+@router.get("/api/projects/{pid}/audio/music")
+def get_music(pid: str):
+    key = _audio(pid).audio.music
+    data = get_store().get_bytes(key) if key else None
+    if data is None:
+        raise HTTPException(404, "Chưa có nhạc nền")
+    return Response(data, media_type=content_type(key), headers={"Cache-Control": "no-cache"})
+
+@router.delete("/api/projects/{pid}/audio/music")
+def delete_music(pid: str):
+    p = _audio(pid)
+    if p.audio.music:
+        get_store().delete(p.audio.music)
+    return _update(pid, lambda a: setattr(a, "music", None))
+
+# ------------------------------------------------------------------ scripts
+
+@router.post("/api/projects/{pid}/audio/scripts")
+async def upload_script(pid: str, file: UploadFile, run: int = 0):
+    """One script file -> one part (job). run=1 queues it right away."""
+    _audio(pid)
+    name = Path(file.filename or "").name
+    if Path(name).suffix.lower() not in SCRIPT_EXT:
+        raise HTTPException(400, f"Không nhận file {name or '?'}: chỉ nhận kịch bản .txt, .docx hoặc .srt")
+    data = await file.read(SCRIPT_MAX + 1)
+    if len(data) > SCRIPT_MAX:
+        raise HTTPException(413, f"Kịch bản {name} quá lớn (tối đa {SCRIPT_MAX >> 20} MB)")
+    try:
+        job = await asyncio.to_thread(flow.new_part, pid, name, data, 0)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    await asyncio.to_thread(_renumber, pid)
+    if run:
+        api.QUEUE.submit(job.id, "auto")
+    return api._view(store.load(job.id))
+
+def cleanup_project(pid: str) -> None:
+    """Local leftovers of a deleted project: the shared background copy and unfinished uploads."""
+    shutil.rmtree(config.WORK_DIR / "_projects" / pid, ignore_errors=True)
+    clean_uploads(pid)

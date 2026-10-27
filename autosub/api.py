@@ -29,6 +29,11 @@ async def lifespan(_app):
     except (StorageError, AttributeError) as e:
         print(f"[auto-sub] storage not ready at startup: {e}", flush=True)
     QUEUE.start()
+    audio_api.clean_uploads()
+    try:
+        await asyncio.to_thread(audio_api.resume_backgrounds)   # normalizations cut off by the restart
+    except StorageError as e:
+        print(f"[auto-sub] audio backgrounds not resumed: {e}", flush=True)
     yield
 
 app = FastAPI(title="Auto-Sub", lifespan=lifespan)
@@ -100,6 +105,8 @@ def _view(job: Job, all_jobs: list[Job] | None = None) -> dict:
     d["flow"] = {"steps": flow.steps, "review_stop": flow.review_stop}
     if job.kind == "review" and job.part:
         d.update(review_api.part_view(job, all_jobs))
+    if job.kind == "audio":
+        d.update(audio_api.part_view(job, all_jobs))
     return d
 
 @app.get("/api/jobs/{jid}/eta")
@@ -546,7 +553,12 @@ def get_file(jid: str, name: str, request: Request, download: bool = False):
         fname = f"{stem}.voice.wav" if name == "voice.wav" else f"{stem}.vi{Path(obj).suffix}"
         from urllib.parse import quote
         headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(fname)}"
-    ctype = content_type(obj)
+    return stream_object(k, size, content_type(obj), request, headers)
+
+def stream_object(k: str, size: int, ctype: str, request: Request, headers: dict) -> Response:
+    """Stream object `k` (size bytes) honouring a Range header, so players can seek without the whole file."""
+    st = get_store()
+    headers = {"Accept-Ranges": "bytes", **headers}
     rng = request.headers.get("range")
     m = _RANGE.match(rng.strip()) if rng else None
     if m and (m.group(1) or m.group(2)):
@@ -932,6 +944,7 @@ def _project_view(p: "projects.Project", all_jobs: list[Job] | None = None) -> d
 class ProjectIn(BaseModel):
     name: str
     source_url: str = ""
+    kind: Literal["sub", "audio"] = "sub"     # review projects are made by /api/review/projects
 
 @app.get("/api/projects")
 def list_projects():
@@ -942,6 +955,8 @@ def list_projects():
 def create_project(body: ProjectIn):
     if not body.name.strip():
         raise HTTPException(400, "Cần tên project")
+    if body.kind == "audio":
+        return _project_view(projects.create(body.name, kind="audio"))
     if body.source_url and (same := projects.find_by_source(body.source_url)):
         return _project_view(same)          # one project per channel
     return _project_view(projects.create(body.name, body.source_url))
@@ -981,6 +996,8 @@ def delete_projects(body: ProjectsDeleteIn):
     with review_api._VS_LOCK:
         mine = [j for j in store.list_jobs() if j.project in ids]
         busy = [{"id": j.id, "name": j.name} for j in mine if QUEUE.is_active(j.id)]
+        busy += [{"id": p.id, "name": f"{p.name} (video nền)"} for p in ps
+                 if QUEUE.is_active(audio_api.background.task_key(p.id))]   # normalizing the background
         by_id = {p.id: p for p in ps}
         for pid in {t["project"] for t in review_api._VS_TASKS.values()
                     if t["project"] in ids and t["state"] in ("queued", "running")}:
@@ -997,6 +1014,7 @@ def delete_projects(body: ProjectsDeleteIn):
         workdir.remove(j.id)
     for p in ps:
         delete_project_assets(p)
+        audio_api.cleanup_project(p.id)
     return {"deleted_projects": len(ps), "deleted_jobs": len(mine)}
 
 class ProjectPresetIn(BaseModel):
@@ -1028,6 +1046,8 @@ class ProjectRunIn(BaseModel):
 def run_project(pid: str, body: ProjectRunIn):
     """Queue every video of the project in one of `states` in auto mode (straight to the final video)."""
     p = _project(pid)
+    if p.kind == "audio":
+        return audio_api.run_parts(pid)
     queued, skipped = [], []
     for j in reversed(store.list_jobs()):  # oldest first
         if j.project != pid or j.state not in body.states or QUEUE.is_active(j.id):
@@ -1113,6 +1133,8 @@ async def _storage_down(_req, exc):
 
 from . import review_api  # noqa: E402  (its routes use the helpers above)
 app.include_router(review_api.router)
+from . import audio_api  # noqa: E402
+app.include_router(audio_api.router)
 
 # ------------------------------------------------------------------ frontend
 

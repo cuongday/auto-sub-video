@@ -1,5 +1,21 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { DialogProvider } from "./components/Dialog";
+// UI faces, self-hosted: Vietnamese text needs the latin, latin-ext and vietnamese ranges
+import "@fontsource/be-vietnam-pro/latin-400.css";
+import "@fontsource/be-vietnam-pro/latin-ext-400.css";
+import "@fontsource/be-vietnam-pro/vietnamese-400.css";
+import "@fontsource/be-vietnam-pro/latin-500.css";
+import "@fontsource/be-vietnam-pro/latin-ext-500.css";
+import "@fontsource/be-vietnam-pro/vietnamese-500.css";
+import "@fontsource/be-vietnam-pro/latin-600.css";
+import "@fontsource/be-vietnam-pro/latin-ext-600.css";
+import "@fontsource/be-vietnam-pro/vietnamese-600.css";
+import "@fontsource/be-vietnam-pro/latin-700.css";
+import "@fontsource/be-vietnam-pro/latin-ext-700.css";
+import "@fontsource/be-vietnam-pro/vietnamese-700.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
+import "@fontsource/jetbrains-mono/latin-ext-500.css";
+import "@fontsource/jetbrains-mono/vietnamese-500.css";
 import "./styles.css";
 createRoot(document.getElementById("root")!).render(<DialogProvider><App /></DialogProvider>);

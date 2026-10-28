@@ -13,6 +13,12 @@ const busy = (j: Job) => j.state === "running" || j.state === "queued";
 const nf = new Intl.NumberFormat("vi-VN");
 
 /** The parts of an audio story, in story order: state and progress, length, download, run again, cancel, delete. */
+/** A long file name cut in the middle: the end ("-p12.txt", "-full.txt") is what tells parts apart. */
+function MidName({ name }: { name: string }) {
+  const k = Math.max(0, name.length - 12);
+  return <><span className="mid-head">{name.slice(0, k)}</span><span className="mid-tail">{name.slice(k)}</span></>;
+}
+
 export default function AudioParts({ parts, pct, onOpen, onChange }: {
   parts: Job[]; pct: Record<string, Record<string, number>>; onOpen: (id: string) => void; onChange: () => void;
 }) {
@@ -42,7 +48,7 @@ export default function AudioParts({ parts, pct, onOpen, onChange }: {
       <header className="card-head">
         <div>
           <h2>Các phần</h2>
-          <p className="muted small">Mỗi file kịch bản là một phần, xếp theo tên file. Chạy 2 phần cùng lúc, phần sau tự chờ.</p>
+          <p className="muted small">Mỗi file kịch bản là một phần, xếp theo tên file. Chạy 2 phần cùng lúc, phần sau tự chờ. File tên kết thúc bằng “full” chạy sau cùng, dùng lại giọng đọc của các phần.</p>
         </div>
       </header>
       {msg && <p className="error" role="alert">{msg}</p>}
@@ -56,8 +62,8 @@ export default function AudioParts({ parts, pct, onOpen, onChange }: {
             const overall = j.state === "running" && stepIdx >= 0 ? (stepIdx + (p ?? 0)) / j.flow.steps.length : null;
             return (
               <li key={j.id} className="ap-part">
-                <span className="ap-no"><Serial n={(j.audio_part?.index ?? i) + 1} /></span>
-                <button className="link ap-name" title="Mở tiến độ và kết quả" onClick={() => onOpen(j.id)}>{j.audio_part?.script_name ?? j.name}</button>
+                <span className="ap-no"><Serial n={(j.audio_part?.index ?? i) + 1} full={j.audio_part?.full} /></span>
+                <button className="link ap-name" title={`${j.audio_part?.script_name ?? j.name} · mở tiến độ và kết quả`} onClick={() => onOpen(j.id)}><MidName name={j.audio_part?.script_name ?? j.name} /></button>
                 <span className="se-tag">{KIND[j.audio_part?.script_kind ?? ""] ?? "?"}</span>
                 <Stamp state={j.state} job={j.id} at={j.state_at}
                   label={j.state === "running" && j.current_step ? `${STEP_LABEL[j.current_step] ?? j.current_step}${p != null ? ` ${Math.round(p * 100)}%` : ""}` : STATE_LABEL[j.state]} />

@@ -53,11 +53,18 @@ def _natural(name: str) -> list:
     """Sort key: "chuong-2" before "chuong-10"."""
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name.lower())]
 
+_FULL = re.compile(r"(?:^|[-_ .])full$", re.IGNORECASE)
+
+def is_full(name: str) -> bool:
+    """The whole story in one script ("...-full.txt"): it goes after every part, so its lines are mostly
+    already in the shared TTS cache when it runs."""
+    return bool(_FULL.search(Path(name).stem))
+
 def _parts(pid: str, all_jobs: list[Job] | None = None) -> list[Job]:
-    """The project's parts in story order."""
+    """The project's parts in story order, the full script last."""
     mine = [j for j in (all_jobs if all_jobs is not None else store.list_jobs())
             if j.project == pid and j.kind == "audio" and j.audio_part]
-    return sorted(mine, key=lambda j: (_natural(j.audio_part.script_name), j.created))
+    return sorted(mine, key=lambda j: (is_full(j.audio_part.script_name), _natural(j.audio_part.script_name), j.created))
 
 def _renumber(pid: str) -> None:
     with _PART_LOCK:
@@ -73,7 +80,8 @@ def part_view(job: Job, all_jobs: list[Job] | None = None) -> dict:
     if job.audio_part and job.project:
         ids = [j.id for j in _parts(job.project, all_jobs)]
         if job.id in ids:
-            out["audio_part"] = {**job.audio_part.model_dump(mode="json"), "index": ids.index(job.id)}
+            out["audio_part"] = {**job.audio_part.model_dump(mode="json"), "index": ids.index(job.id),
+                                 "full": is_full(job.audio_part.script_name)}
     meta = job.audio_meta                     # set by parse (chars), then by tts (+ duration), with meta.json
     if meta is None and job.steps.get("parse") and job.steps["parse"].status == "done":
         meta = store.load_json(job.id, "meta.json", default=None)    # a part parsed before audio_meta existed

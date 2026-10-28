@@ -127,6 +127,8 @@ label.inline input[type="number"] { width: 120px; }
 @keyframes ink { 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .stamp.s-running, .stamp.s-queued { animation: none; } }
 .serial { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-2); letter-spacing: .01em; white-space: nowrap; margin-right: 8px; flex: none; }
+.serial.full { font-weight: 700; color: var(--ink); letter-spacing: .06em; }
+.srow.job .serial.full { color: var(--rail-ink); }
 .badge { font-size: var(--fs-xs); padding: 1px 7px; border-radius: 3px; border: 1px solid var(--rule); color: var(--ink-2); }
 
 /* ---------- shell ---------- */
@@ -814,11 +816,14 @@ label.inline.split-n input[type="number"] { width: 90px; }
 .ap-rejected { margin-top: 12px; }
 .ap-rejected ul { margin: 6px 0; padding-left: 20px; }
 .ap-parts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.ap-part { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 7px 0; border-top: 1px solid var(--rule-soft); }
+.ap-part { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 7px 0; border-top: 1px solid var(--rule-soft); }
 .ap-part:first-child { border-top: none; padding-top: 0; }
 .ap-no { width: 64px; flex: none; }
 .ap-no .serial { margin: 0; }
-.ap-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; text-align: left; color: var(--ink); }
+.ap-name { font-weight: 600; min-width: 8em; flex: 1 1 0; display: flex; gap: 0; white-space: pre; text-align: left; color: var(--ink); }
+.ap-name .mid-head { overflow: hidden; text-overflow: ellipsis; min-width: 1ch; }
+.ap-name .mid-tail { flex: none; }
+@media (max-width: 760px) { .ap-name { flex: 1 1 calc(100% - 76px); } }
 .ap-bar { flex: 1 1 100px; max-width: 200px; }
 .ap-meta { font-size: var(--fs-s); }
 .ap-acts { margin-left: auto; gap: 4px; }

@@ -10,6 +10,8 @@ const MUSIC_EXT = [".mp3", ".m4a", ".aac", ".wav", ".ogg"];
 const MUSIC_MAX = 50 << 20;
 const SCRIPT_EXT = [".txt", ".docx", ".srt"];
 const SCRIPT_MAX = 20 << 20;
+/** "…-full.txt": the whole story in one script (same rule as the server). */
+const isFull = (name: string) => /(?:^|[-_ .])full$/i.test(name.replace(/\.[^.]+$/, ""));
 const readRunNow = () => { try { return localStorage.getItem("autosub.audioRunNow") !== "0"; } catch { return true; } };
 const saveRunNow = (v: boolean) => { try { localStorage.setItem("autosub.audioRunNow", v ? "1" : "0"); } catch { /* private mode */ } };
 let uploadSeq = 0;
@@ -70,6 +72,8 @@ export default function AudioProjectView({ project, options, jobs, pct, onOpenJo
       return true;
     });
     setRejected(bad);
+    // parts in story order, the full script last: it then finds the parts' lines in the shared TTS cache
+    ok.sort((a, b) => Number(isFull(a.name)) - Number(isFull(b.name)) || a.name.localeCompare(b.name, "vi", { numeric: true }));
     const rows = ok.map((f) => ({ id: ++uploadSeq, name: f.name, pct: 0 }));
     setUploads(rows);
     for (const [k, f] of ok.entries()) {  // one file per request, keeps each request far under the tunnel limit

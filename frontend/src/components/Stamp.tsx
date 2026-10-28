@@ -31,6 +31,7 @@ export default function Stamp({ state, label, job, at, title, className = "" }: 
 
 /** "Số 0042": an item's number in its list. */
 export const serialText = (n: number) => `Số ${String(n).padStart(4, "0")}`;
-export function Serial({ n }: { n: number }) {
-  return <span className="serial">{serialText(n)}</span>;
+export function Serial({ n, full = false }: { n: number; full?: boolean }) {
+  return full ? <span className="serial full" title="Bản tổng: chạy sau mọi phần, dùng lại giọng đọc đã có">TOÀN BỘ</span>
+    : <span className="serial">{serialText(n)}</span>;
 }

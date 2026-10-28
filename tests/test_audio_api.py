@@ -177,7 +177,7 @@ def test_upload_scripts_rejects_bad_files(client):
     assert r.status_code == 200, r.text
     j = r.json()
     assert j["kind"] == "audio" and j["name"] == "chuong-1" and j["project"] == pid and j["state"] == "new"
-    assert j["audio_part"] == {"script_name": "chuong-1.txt", "script_kind": "txt", "index": 0}
+    assert j["audio_part"] == {"script_name": "chuong-1.txt", "script_kind": "txt", "index": 0, "full": False}
 
 def test_upload_three_scripts_two_run(client, audio_flow):  # noqa: F811
     pid = new_audio(client)["id"]
@@ -196,6 +196,33 @@ def test_natural_order(client):
     a = script(client, pid, "chuong-10.txt").json()["id"]
     b = script(client, pid, "chuong-2.txt").json()["id"]
     assert store.load(a).audio_part.index == 1 and store.load(b).audio_part.index == 0
+
+def test_full_script_goes_last(client):
+    pid = new_audio(client)["id"]
+    names = ["Chuong-Goi-Hon-full.txt", "Chuong-Goi-Hon-p10.txt", "Chuong-Goi-Hon-p2.txt", "Chuong-Goi-Hon-p1.txt"]
+    ids = {n: script(client, pid, n).json()["id"] for n in names}
+    order = sorted(names, key=lambda n: store.load(ids[n]).audio_part.index)
+    assert order == ["Chuong-Goi-Hon-p1.txt", "Chuong-Goi-Hon-p2.txt", "Chuong-Goi-Hon-p10.txt", "Chuong-Goi-Hon-full.txt"]
+    view = client.get(f"/api/jobs/{ids['Chuong-Goi-Hon-full.txt']}").json()
+    assert view["audio_part"]["index"] == 3 and view["audio_part"]["full"] is True
+    assert client.get(f"/api/jobs/{ids['Chuong-Goi-Hon-p1.txt']}").json()["audio_part"]["full"] is False
+
+def test_is_full_script_names():
+    from autosub.audio_api import is_full
+    for n in ["X-full.txt", "X_FULL.docx", "x full.srt", "Full.txt", "truyen-Full.TXT"]:
+        assert is_full(n), n
+    for n in ["X-p1.txt", "fullmoon.txt", "X-fullhouse.txt", "X-p1-full-notes.txt"]:
+        assert not is_full(n), n
+
+def test_run_project_queues_full_after_parts(client, audio_flow):  # noqa: F811
+    pid = new_audio(client)["id"]
+    full = script(client, pid, "T-full.txt").json()["id"]
+    p2 = script(client, pid, "T-p2.txt").json()["id"]
+    p1 = script(client, pid, "T-p1.txt").json()["id"]
+    assert client.post(f"/api/projects/{pid}/run", json={}).json()["queued"] == [p1, p2, full]
+    for j in (p1, p2, full):
+        GATES.setdefault(j, threading.Event()).set()
+    wait_for(lambda: all(store.load(j).state == "done" for j in (p1, p2, full)), timeout=20)
 
 def test_run_project_queues_unfinished_and_stale_parts(client, audio_flow):  # noqa: F811
     pid = new_audio(client)["id"]

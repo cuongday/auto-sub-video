@@ -77,7 +77,7 @@ function ProjectTree({ id, groups, tools, on, sel, selProject, expanded, unit, e
                   {g.jobs.map((j, k) => (
                     <li key={j.id}>
                       <button className={`srow job ${on && j.id === sel ? "on" : ""}`} onClick={() => onSelectJob(j.id)} title={`${j.name} · ${stateText(j)}`}>
-                        <span className="srow-label"><Serial n={(j.audio_part ? j.audio_part.index : k) + 1} />{j.audio_part ? j.audio_part.script_name : j.name}</span>
+                        <span className="srow-label"><Serial n={(j.audio_part ? j.audio_part.index : k) + 1} full={j.audio_part?.full} />{j.audio_part ? j.audio_part.script_name : j.name}</span>
                         <Stamp state={j.state} job={j.id} at={j.state_at} className="jstate" title={stateText(j)} />
                       </button>
                     </li>

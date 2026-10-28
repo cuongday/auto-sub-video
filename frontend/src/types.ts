@@ -48,7 +48,7 @@ export type Job = {
   notebook_stale?: boolean; film_state?: JobState | null; prev_approved?: boolean;   // review parts only
   audio_part?: AudioPart | null; meta?: { duration: number | null; chars: number | null } | null;   // audio parts only
 };
-export type AudioPart = { script_name: string; script_kind: "txt" | "docx" | "srt"; index: number };
+export type AudioPart = { script_name: string; script_kind: "txt" | "docx" | "srt"; index: number; full?: boolean };
 export type Segment = { id: number; start: number; end: number; source: string; vi: string; flags: string[]; speed: number | null; speaker?: number | null };
 export type Character = { name: string; vi_name: string; addressing: string };
 export type Context = { summary: string; genre_tone: string; characters: Character[]; glossary: { source: string; vi: string }[] };

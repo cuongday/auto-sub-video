@@ -98,25 +98,34 @@ export default function AudioParts({ parts, pct, onOpen, onChange }: {
 
   return (
     <section className="card">
-      <header className="card-head">
+      <header className="card-head ap-parts-head">
         <div>
           <h2>Các phần</h2>
           <p className="muted small">Mỗi file kịch bản là một phần, xếp theo tên file. Chạy 2 phần cùng lúc, phần sau tự chờ. File tên kết thúc bằng “full” chạy sau cùng, dùng lại giọng đọc của các phần.</p>
         </div>
         {bulk ? (
-          <div className="ap-bulk row" role="status">
-            <span className="meta">Đã xong {bulk.done}/{bulk.total}</span>
-            <span className="dy-bar ap-bar" role="progressbar" aria-label="Tiến độ tải tất cả" aria-valuemin={0} aria-valuemax={100}
+          <div className="ap-bulk" role="status" aria-live="polite">
+            <span className="ap-bulk-count">Đã lưu <strong>{bulk.done}</strong>/{bulk.total}</span>
+            <span className="dy-bar ap-bulk-bar" role="progressbar" aria-label="Tiến độ tải tất cả" aria-valuemin={0} aria-valuemax={100}
               aria-valuenow={Math.round(bulkPct * 100)}><span style={{ width: `${Math.round(bulkPct * 100)}%` }} /></span>
-            <button className="ghost small danger" onClick={() => stop.current?.abort()}>Huỷ</button>
+            <button className="small danger" onClick={() => stop.current?.abort()}><Icon name="x" size={14} /> Huỷ</button>
           </div>
         ) : (
-          <button className="ghost" disabled={!ready.length}
+          <button className="ap-dl-all" disabled={!ready.length}
             title={ready.length ? (canPickFolder() ? "Chọn một thư mục trên máy, lưu video của mọi phần đã xong vào đó" : "Tải lần lượt từng video về thư mục Tải về của trình duyệt") : "Chưa có phần nào xong"}
-            onClick={downloadAll}><Icon name="download" size={16} /> {canPickFolder() ? "Tải tất cả về thư mục…" : "Tải tất cả"}{ready.length ? ` (${ready.length})` : ""}</button>
+            onClick={downloadAll}>
+            <Icon name="download" size={16} />
+            <span>{canPickFolder() ? "Tải về thư mục" : "Tải tất cả"}</span>
+            <span className="ap-dl-n" aria-label={`${ready.length} video`}>{ready.length}</span>
+          </button>
         )}
       </header>
-      {bulkMsg && <p className="ok-text small" role="status">{bulkMsg}</p>}
+      {bulkMsg && (
+        <p className="ap-dl-done" role="status">
+          <Icon name="check" size={16} /><span>{bulkMsg}</span>
+          <button className="icon" aria-label="Đóng thông báo" onClick={() => setBulkMsg("")}><Icon name="x" size={14} /></button>
+        </p>
+      )}
       {msg && <p className="error" role="alert">{msg}</p>}
       {parts.length ? (
         <ol className="ap-parts">

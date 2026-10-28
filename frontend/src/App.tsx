@@ -308,7 +308,7 @@ export default function App() {
                 {job.project && projects.some((p) => p.id === job.project) && (
                   <button className="link small crumb" onClick={() => openProject(job.project!)}><Icon name="folder" size={13} /> {projects.find((p) => p.id === job.project)!.name} /</button>
                 )}
-                <h1 className="job-title">{job.name}<Stamp state={job.state} job={job.id}
+                <h1 className="job-title">{job.name}<Stamp state={job.state} job={job.id} at={job.state_at}
                   label={job.state === "running" && job.current_step ? STEP_LABEL[job.current_step] ?? job.current_step : undefined} /></h1>
                 <span className="muted small">{job.source}</span>
               </div>
@@ -359,7 +359,7 @@ export default function App() {
           </>
         )}
       </main>
-      {keysOpen && <ApiKeysDialog keys={apiKeys} onClose={() => setKeysOpen(false)} onChange={(k) => {
+      {keysOpen && <ApiKeysDialog keys={apiKeys} checks={checks} onClose={() => setKeysOpen(false)} onChange={(k) => {
         // a new key turns its provider on in every options form and clears the "Cần cấu hình" warning
         setApiKeys(k);
         api.options().then(setOptions).catch(() => {});

@@ -157,7 +157,7 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
             return (
               <li key={f.id} className="rp-film">
                 <span className="rp-film-name">{filmName(f)}</span>
-                <Stamp state={f.state} job={f.id} />
+                <Stamp state={f.state} job={f.id} at={f.state_at} />
                 {f.state === "running" && f.current_step && (
                   <span className="small muted">{STEP_LABEL[f.current_step] ?? f.current_step}{pct[f.id] ? ` · ${Math.round(pct[f.id] * 100)}%` : ""}</span>
                 )}
@@ -254,7 +254,7 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
                     <span className="rp-part-name"><Serial n={i} /><strong>Phần {i}</strong></span>
                     <span className="meta">{series && f ? `${filmName(f)} · ` : ""}{fmtClock(p.part!.start)} – {fmtClock(p.part!.end)}</span>
                     <span className="rp-part-tags">
-                      <Stamp state={p.state} job={p.id} label={p.state === "running" && p.current_step ? STEP_LABEL[p.current_step] : STATE_LABEL[p.state]} />
+                      <Stamp state={p.state} job={p.id} at={p.state_at} label={p.state === "running" && p.current_step ? STEP_LABEL[p.current_step] : STATE_LABEL[p.state]} />
                       {wait && <Stamp state="wait" label={`Chờ phần ${i - 1} duyệt`} />}
                       {p.notebook_stale && <span className="rp-stale"><Icon name="alert" size={13} /> Sổ tay đã thay đổi sau khi viết kịch bản</span>}
                     </span>

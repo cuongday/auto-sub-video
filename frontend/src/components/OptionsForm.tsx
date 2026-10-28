@@ -106,7 +106,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
       </fieldset>}
 
       <fieldset>
-        <legend>{review || voiceOnly ? "Giọng đọc" : "Thuyết minh"}</legend>
+        {voiceOnly ? <legend className="sr-only">Giọng đọc</legend> : <legend>{review ? "Giọng đọc" : "Thuyết minh"}</legend>}
         <label>Engine
           <select value={s.tts_engine} onChange={(e) => set({ tts_engine: e.target.value as Settings["tts_engine"], tts_voice: "" })}>
             <option value="edge">Edge TTS (online)</option>

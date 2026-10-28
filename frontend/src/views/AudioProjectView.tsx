@@ -85,23 +85,77 @@ export default function AudioProjectView({ project, options, jobs, pct, onOpenJo
   };
 
   const voiceSettings: Settings = { ...options.defaults, ...voice, ref_audio: null };
+  const busyParts = parts.some((j) => j.state === "running" || j.state === "queued");
+  const todo = parts.filter((j) => !(j.state === "running" || j.state === "queued") && (!(j.state === "done" || j.state === "approved") || j.stale_from)).length;
   return (
     <div className="rp ap">
-      <section className="card rp-head ap-head">
-        <div className="ap-icon"><Icon name="headphones" size={34} /></div>
+      <section className="card ap-head">
+        <div className="ap-icon"><Icon name="headphones" size={28} /></div>
         <div className="rp-title">
           <h1>{project.name}</h1>
           <p className="muted">Truyện audio · {parts.length} phần</p>
         </div>
         <div className="rp-nb row">
-          <button className="ghost danger" disabled={parts.some((j) => j.state === "running" || j.state === "queued")}
-            title={parts.some((j) => j.state === "running" || j.state === "queued") ? "Huỷ các phần đang chạy trước khi xoá" : undefined}
+          <button className="ghost danger" disabled={busyParts}
+            title={busyParts ? "Huỷ các phần đang chạy trước khi xoá" : undefined}
             onClick={onDelete}>Xoá truyện</button>
+          <button className="primary" disabled={!todo || !!act} onClick={() => run("all", () => api.runProject(pid).then(() => onChanged()))}
+            title={todo ? undefined : "Không có phần nào cần chạy"}>{act === "all" ? "Đang xếp hàng…" : `Chạy tất cả${todo ? ` (${todo})` : ""}`}</button>
         </div>
       </section>
       {msg && <p className="error" role="alert">{msg}</p>}
 
-      <div className="rp-grid">
+      <div className="ap-grid">
+        <div className="ap-work">
+          <AudioParts parts={parts} pct={pct} onOpen={onOpenJob} onChange={() => onChanged()} />
+
+          <section className="card">
+            <header className="card-head">
+              <div>
+                    <h2>Thêm kịch bản</h2>
+                    <p className="muted small">Mỗi file là một phần: .txt, .docx hoặc .srt, tối đa 20 MB. Chọn nhiều file cùng lúc được.</p>
+              </div>
+              <label className="inline check">
+                    <input type="checkbox" checked={runNow} onChange={(e) => { setRunNow(e.target.checked); saveRunNow(e.target.checked); }} />
+                    Chạy ngay sau khi tải lên
+              </label>
+            </header>
+            <div className={`drop ap-drop ${over ? "over" : ""} ${uploads.length ? "busy" : ""}`} role="button" tabIndex={0}
+              aria-label="Chọn file kịch bản để tải lên" aria-disabled={!!uploads.length}
+              onClick={() => !uploads.length && pick.current?.click()}
+              onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !uploads.length) { e.preventDefault(); pick.current?.click(); } }}
+              onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+              onDrop={(e) => { e.preventDefault(); setOver(false); if (!uploads.length) addScripts([...e.dataTransfer.files]); }}>
+              <Icon name="upload" size={22} />
+              <strong>{uploads.length ? `Đang tải lên ${uploads.length} file…` : "Kéo thả file kịch bản vào đây"}</strong>
+              <span className="muted small">hoặc bấm để chọn</span>
+              <input ref={pick} type="file" multiple accept={SCRIPT_EXT.join(",")} hidden onChange={(e) => {
+                    const fs = [...(e.target.files ?? [])]; e.target.value = "";
+                    if (fs.length) addScripts(fs);
+              }} />
+            </div>
+            {uploads.length > 0 && (
+              <ul className="ap-uploads">
+                    {uploads.map((u) => (
+                      <li key={u.id}><span>{u.name}</span>
+                        <span className="dy-bar" role="progressbar" aria-label={`Tải lên ${u.name}`} aria-valuemin={0} aria-valuemax={100}
+                              aria-valuenow={Math.round(u.pct * 100)}><span style={{ width: `${Math.round(u.pct * 100)}%` }} /></span></li>
+                    ))}
+              </ul>
+            )}
+            {rejected.length > 0 && (
+              <div className="error-box ap-rejected" role="alert">
+                    <strong>Không nhận {rejected.length} file:</strong>
+                    <ul>{rejected.map((r, i) => <li key={i}><strong>{r.name}</strong>: {r.reason}</li>)}</ul>
+                    <button className="link small" onClick={() => setRejected([])}>Ẩn</button>
+              </div>
+            )}
+            {a.background_state !== "ready" && a.background_state !== "processing" && (
+              <p className="warn small">Chưa có video nền: các phần vẫn đọc giọng được nhưng sẽ báo lỗi ở bước ghép video. Tải video nền lên trước khi chạy.</p>
+            )}
+          </section>
+        </div>
+        <aside className="ap-side">
         <section className="card">
           <header className="card-head">
             <div>
@@ -144,56 +198,8 @@ export default function AudioProjectView({ project, options, jobs, pct, onOpenJo
           </header>
           <OptionsForm options={options} s={voiceSettings} set={setVoice} voiceOnly />
         </section>
+        </aside>
       </div>
-
-      <section className="card">
-        <header className="card-head">
-          <div>
-            <h2>Thêm kịch bản</h2>
-            <p className="muted small">Mỗi file là một phần: .txt, .docx hoặc .srt, tối đa 20 MB. Chọn nhiều file cùng lúc được.</p>
-          </div>
-          <label className="inline check">
-            <input type="checkbox" checked={runNow} onChange={(e) => { setRunNow(e.target.checked); saveRunNow(e.target.checked); }} />
-            Chạy ngay sau khi tải lên
-          </label>
-        </header>
-        <div className={`drop ap-drop ${over ? "over" : ""} ${uploads.length ? "busy" : ""}`} role="button" tabIndex={0}
-          aria-label="Chọn file kịch bản để tải lên" aria-disabled={!!uploads.length}
-          onClick={() => !uploads.length && pick.current?.click()}
-          onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !uploads.length) { e.preventDefault(); pick.current?.click(); } }}
-          onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); if (!uploads.length) addScripts([...e.dataTransfer.files]); }}>
-          <Icon name="upload" size={22} />
-          <strong>{uploads.length ? `Đang tải lên ${uploads.length} file…` : "Kéo thả file kịch bản vào đây"}</strong>
-          <span className="muted small">hoặc bấm để chọn</span>
-          <input ref={pick} type="file" multiple accept={SCRIPT_EXT.join(",")} hidden onChange={(e) => {
-            const fs = [...(e.target.files ?? [])]; e.target.value = "";
-            if (fs.length) addScripts(fs);
-          }} />
-        </div>
-        {uploads.length > 0 && (
-          <ul className="ap-uploads">
-            {uploads.map((u) => (
-              <li key={u.id}><span>{u.name}</span>
-                <span className="dy-bar" role="progressbar" aria-label={`Tải lên ${u.name}`} aria-valuemin={0} aria-valuemax={100}
-                  aria-valuenow={Math.round(u.pct * 100)}><span style={{ width: `${Math.round(u.pct * 100)}%` }} /></span></li>
-            ))}
-          </ul>
-        )}
-        {rejected.length > 0 && (
-          <div className="error-box ap-rejected" role="alert">
-            <strong>Không nhận {rejected.length} file:</strong>
-            <ul>{rejected.map((r, i) => <li key={i}><strong>{r.name}</strong>: {r.reason}</li>)}</ul>
-            <button className="link small" onClick={() => setRejected([])}>Ẩn</button>
-          </div>
-        )}
-        {a.background_state !== "ready" && a.background_state !== "processing" && (
-          <p className="warn small">Chưa có video nền: các phần vẫn đọc giọng được nhưng sẽ báo lỗi ở bước ghép video. Tải video nền lên trước khi chạy.</p>
-        )}
-      </section>
-
-      <AudioParts parts={parts} pct={pct} onOpen={onOpenJob} onChange={() => onChanged()}
-        onRunAll={async () => { await api.runProject(pid); }} />
     </div>
   );
 }

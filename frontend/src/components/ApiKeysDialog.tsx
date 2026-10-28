@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ApiKeyInfo } from "../types";
+import Icon from "./Icon";
 
 /** Every provider's API key in one place. The server keeps them encrypted and only returns the last 4 characters. */
-export default function ApiKeysDialog({ keys, onChange, onClose }: {
-  keys: ApiKeyInfo[]; onChange: (k: ApiKeyInfo[]) => void; onClose: () => void;
+export default function ApiKeysDialog({ keys, checks = [], onChange, onClose }: {
+  keys: ApiKeyInfo[]; checks?: { name: string; hint: string }[]; onChange: (k: ApiKeyInfo[]) => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { ref.current?.showModal(); }, []);
@@ -13,6 +14,12 @@ export default function ApiKeysDialog({ keys, onChange, onClose }: {
       onClick={(e) => { if (e.target === ref.current) onClose(); }}>
       <form method="dialog" onSubmit={(e) => e.preventDefault()}>
         <h3 id="keys-title">API key</h3>
+        {checks.length > 0 && (
+          <div className="checks-list" role="note">
+            <strong className="with-icon"><Icon name="alert" size={15} /> Cần cấu hình</strong>
+            <ul>{checks.map((c) => <li key={c.name}><strong>{c.name}</strong>: {c.hint}</li>)}</ul>
+          </div>
+        )}
         <p className="muted small">Lưu mã hoá trên server, dùng chung cho cả máy. Key nhập ở đây được ưu tiên hơn file .env.</p>
         {keys.map((k) => <KeyRow key={k.id} k={k} onChange={onChange} />)}
         <div className="modal-actions">

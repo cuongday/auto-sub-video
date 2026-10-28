@@ -41,7 +41,7 @@ export type Template = { id: string; label: string; prompt: string };
 export type Templates = { styles: Template[]; hooks: Template[]; openings: Template[] };
 export type Job = {
   id: string; name: string; created: number; source: string; uploaded: boolean; info: VideoInfo | null; kind: JobKind;
-  settings: Settings; steps: Record<string, StepState>; state: JobState; mode: "review" | "auto";
+  settings: Settings; steps: Record<string, StepState>; state: JobState; state_at?: number | null; mode: "review" | "auto";
   current_step: string | null; error: string | null; segments_edited: boolean; warnings: string[];
   frames: string[]; files: Record<string, boolean>; stale_from: string | null; pruned: string[]; project: string | null;
   film: FilmInfo | null; part: PartInfo | null; review: ReviewSettings | null; flow: { steps: string[]; review_stop: string | null };

@@ -13,8 +13,8 @@ const busy = (j: Job) => j.state === "running" || j.state === "queued";
 const nf = new Intl.NumberFormat("vi-VN");
 
 /** The parts of an audio story, in story order: state and progress, length, download, run again, cancel, delete. */
-export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
-  parts: Job[]; pct: Record<string, Record<string, number>>; onOpen: (id: string) => void; onChange: () => void; onRunAll: () => Promise<void>;
+export default function AudioParts({ parts, pct, onOpen, onChange }: {
+  parts: Job[]; pct: Record<string, Record<string, number>>; onOpen: (id: string) => void; onChange: () => void;
 }) {
   const dialog = useDialog();
   const [act, setAct] = useState("");
@@ -36,7 +36,6 @@ export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
     catch (e) { setMsg(`Lưu ${stem}.mp4 thất bại: ${(e as Error).message}`); }
     finally { setDl((d) => { const n = { ...d }; delete n[j.id]; return n; }); }
   };
-  const todo = parts.filter((j) => !busy(j) && (!(j.state === "done" || j.state === "approved") || j.stale_from)).length;
 
   return (
     <section className="card">
@@ -45,8 +44,6 @@ export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
           <h2>Các phần</h2>
           <p className="muted small">Mỗi file kịch bản là một phần, xếp theo tên file. Chạy 2 phần cùng lúc, phần sau tự chờ.</p>
         </div>
-        <button className="primary" disabled={!todo || !!act} onClick={() => run("all", onRunAll)}
-          title={todo ? undefined : "Không có phần nào cần chạy"}>{act === "all" ? "Đang xếp hàng…" : `Chạy tất cả${todo ? ` (${todo})` : ""}`}</button>
       </header>
       {msg && <p className="error" role="alert">{msg}</p>}
       {parts.length ? (
@@ -62,7 +59,7 @@ export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
                 <span className="ap-no"><Serial n={(j.audio_part?.index ?? i) + 1} /></span>
                 <button className="link ap-name" title="Mở tiến độ và kết quả" onClick={() => onOpen(j.id)}>{j.audio_part?.script_name ?? j.name}</button>
                 <span className="se-tag">{KIND[j.audio_part?.script_kind ?? ""] ?? "?"}</span>
-                <Stamp state={j.state} job={j.id}
+                <Stamp state={j.state} job={j.id} at={j.state_at}
                   label={j.state === "running" && j.current_step ? `${STEP_LABEL[j.current_step] ?? j.current_step}${p != null ? ` ${Math.round(p * 100)}%` : ""}` : STATE_LABEL[j.state]} />
                 {done && j.stale_from && <span className="rp-stale"><Icon name="alert" size={13} /> Cần dựng lại</span>}
                 {overall != null && (

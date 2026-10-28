@@ -6,21 +6,25 @@ import type { JobState } from "../types";
 const seen = new Map<string, { state: string; t: number }>();
 export const noteState = (job: string, state: string, t: number) => { seen.set(job, { state, t }); };
 
-const hhmm = (t: number) => {
-  const d = new Date(t * 1000);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+const p2 = (n: number) => String(n).padStart(2, "0");
+/** "14:02" today, "27/10 14:02" on another day (local time, 24h). */
+export const stampTime = (t: number) => {
+  const d = new Date(t * 1000), now = new Date();
+  const hm = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  return d.toDateString() === now.toDateString() ? hm : `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${hm}`;
 };
 
-/** A job / part / download state, drawn as a postmark. Shows the time it changed when this tab saw it happen. */
-export default function Stamp({ state, label, job, title, className = "" }: {
-  state: string; label?: ReactNode; job?: string; title?: string; className?: string;
+/** A job / part / download state, drawn as a postmark, with the time it changed (`at`, else when this tab saw it). */
+export default function Stamp({ state, label, job, at, title, className = "" }: {
+  state: string; label?: ReactNode; job?: string; at?: number | null; title?: string; className?: string;
 }) {
   const s = job ? seen.get(job) : undefined;
-  const at = s && s.state === state ? hhmm(s.t) : null;
+  const t = at ?? (s && s.state === state ? s.t : null);
+  const when = t ? stampTime(t) : null;
   return (
     <span className={`stamp s-${state} ${className}`} title={title}>
       {label ?? STATE_LABEL[state as JobState] ?? state}
-      {at && <span className="stamp-at"> · <time>{at}</time></span>}
+      {when && <span className="stamp-at"> · <time dateTime={new Date(t! * 1000).toISOString()}>{when}</time></span>}
     </span>
   );
 }

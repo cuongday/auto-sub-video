@@ -76,9 +76,9 @@ function ProjectTree({ id, groups, tools, on, sel, selProject, expanded, unit, e
                 <ul className="tree-jobs">
                   {g.jobs.map((j, k) => (
                     <li key={j.id}>
-                      <button className={`srow job ${on && j.id === sel ? "on" : ""}`} onClick={() => onSelectJob(j.id)} title={j.name}>
+                      <button className={`srow job ${on && j.id === sel ? "on" : ""}`} onClick={() => onSelectJob(j.id)} title={`${j.name} · ${stateText(j)}`}>
                         <span className="srow-label"><Serial n={(j.audio_part ? j.audio_part.index : k) + 1} />{j.audio_part ? j.audio_part.script_name : j.name}</span>
-                        <Stamp state={j.state} job={j.id} label={stateText(j)} className="jstate" />
+                        <Stamp state={j.state} job={j.id} at={j.state_at} className="jstate" title={stateText(j)} />
                       </button>
                     </li>
                   ))}
@@ -208,10 +208,10 @@ export default function Sidebar({
 
       <div className="side-foot">
       {checks.length > 0 && !mini && (
-        <div className="checks">
-          <strong><Icon name="alert" size={14} /> Cần cấu hình</strong>
-          {checks.map((c) => <p key={c.name} title={c.hint}>{c.name}: <span className="muted">{c.hint}</span></p>)}
-        </div>
+        <button className="checks" onClick={onApiKeys} title={checks.map((c) => `${c.name}: ${c.hint}`).join("\n")}>
+          <Icon name="alert" size={14} /> <span className="srow-label">Cần cấu hình {checks.length} mục</span>
+          <Icon name="chevron" size={13} />
+        </button>
       )}
 
       <button className="side-keys" onClick={onApiKeys} title="Cấu hình API key của các nhà cung cấp">

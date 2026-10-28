@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useDialog } from "../components/Dialog";
 import Icon from "../components/Icon";
 import Stamp, { Serial } from "../components/Stamp";
-import { STATE_LABEL, STEP_LABEL } from "../labels";
+import { STATE_LABEL, STEP_LABEL, fmtClock } from "../labels";
 import type { Job, JobState, Project } from "../types";
 
 const COVER: Record<string, string> = { blur: "làm mờ", blur_dim: "mờ + nền tối", solid: "dải màu" };
@@ -72,27 +72,68 @@ export default function ProjectView({ project, jobs, onOpenJob, onChanged, onDel
     await api.deleteProject(project.id); onDeleted();
   });
 
+  const kindOf = (j: Job) => j.info ? `${j.info.width}×${j.info.height}` : "";
   return (
     <>
       <section className="card project-head">
-        <header className="card-head">
-          <div>
-            <h2 className="with-icon"><Icon name="folder" size={18} /> {project.name}</h2>
+        <header className="page-head">
+          <div className="page-title">
+            <h1 className="with-icon"><Icon name="folder" size={20} /> {project.name}</h1>
             {project.source_url && <a className="small src-link" href={project.source_url} target="_blank" rel="noreferrer">{project.source_url}</a>}
           </div>
           <div className="row">
             <button className="ghost small" onClick={onAddVideos}><Icon name="plus" size={14} /> Thêm video từ Douyin</button>
             <button className="ghost small" disabled={!!busy} onClick={edit}>Đổi tên</button>
             <button className="ghost small danger" disabled={!!busy} onClick={remove}>Xoá project</button>
+            <button className="primary" disabled={!fresh || !!busy} onClick={runNew}
+              title={fresh ? "Chạy thẳng đến video thành phẩm, lần lượt từng video." : "Không còn video nào chưa chạy."}>
+              {busy === "run" ? "Đang xếp hàng…" : `Chạy hàng loạt ${fresh} video chưa chạy`}
+            </button>
           </div>
         </header>
-        <div className="stat-row">
-          {FILTERS.slice(1).map((f) => (
-            <button key={f.id} className={`stat ${filter === f.id ? "on" : ""}`} onClick={() => setFilter(filter === f.id ? "all" : f.id)}>
+        <nav className="tallies" aria-label="Lọc theo trạng thái">
+          {FILTERS.map((f) => (
+            <button key={f.id} className={`tally t-${f.id} ${filter === f.id ? "on" : ""}`} aria-pressed={filter === f.id}
+              onClick={() => setFilter(filter === f.id && f.id !== "all" ? "all" : f.id)}>
               <strong>{count(f.states)}</strong><span>{f.label}</span>
             </button>
           ))}
-        </div>
+        </nav>
+        {msg && <p className={msg.kind === "ok" ? "ok-msg" : "error"} role={msg.kind === "err" ? "alert" : undefined}>{msg.text}</p>}
+      </section>
+
+      <section className="card">
+        <header className="card-head">
+          <h2>Video trong project</h2>
+          <span className="muted small">{shown.length} / {mine.length} video</span>
+        </header>
+        {shown.length ? (
+          <ul className="project-jobs">
+            {shown.map((j) => {
+              const idle = j.state === "new" || j.state === "error" || j.state === "interrupted" || j.state === "cancelled";
+              return (
+                <li key={j.id}>
+                  <Serial n={mine.indexOf(j) + 1} />
+                  <button className="pj-open" onClick={() => onOpenJob(j.id)} title="Mở video">
+                    {j.frames[0] ? <img src={api.file(j.id, `frames/${j.frames[Math.min(2, j.frames.length - 1)]}`)} alt="" loading="lazy" /> : <span className="noimg" />}
+                    <span className="pj-name">{j.name}</span>
+                  </button>
+                  <span className="pj-kind muted small">{kindOf(j)}</span>
+                  <span className="pj-dur meta">{j.info ? fmtClock(j.info.duration) : ""}</span>
+                  <Stamp state={j.state} job={j.id} at={j.state_at} label={j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]} />
+                  <span className="pj-acts row">
+                    {j.state === "done" && <button className="ghost small" disabled={!!busy}
+                      onClick={() => act(`ap-${j.id}`, async () => { await api.approve(j.id); onChanged(); })}><Icon name="check" size={14} /> Duyệt</button>}
+                    {idle && <button className="ghost small" disabled={!!busy}
+                      onClick={() => act(`run-${j.id}`, async () => { await api.run(j.id, "auto", null, false); onChanged(); })}>
+                      {busy === `run-${j.id}` ? "Đang gửi…" : j.state === "new" ? "Chạy" : "Chạy tiếp"}</button>}
+                    <button className="ghost small" onClick={() => onOpenJob(j.id)}>Mở</button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : <p className="muted pad">{mine.length ? "Không có video nào ở trạng thái này." : "Project chưa có video. Tải video từ Douyin hoặc chọn project khi tạo video mới."}</p>}
       </section>
 
       <section className="card">
@@ -123,41 +164,6 @@ export default function ProjectView({ project, jobs, onOpenJob, onChanged, onDel
             <button className="link small danger" disabled={!!busy} onClick={() => act("clear", async () => onChanged(await api.clearProjectPreset(project.id)))}>Bỏ preset</button>
           </div>
         ) : <p className="muted">Chưa có preset. Làm xong một video (chỉnh vùng phụ đề, vùng che, giọng…) rồi chọn nó ở trên.</p>}
-        <div className="actions project-run">
-          <button className="primary" disabled={!fresh || !!busy} onClick={runNew}>
-            {busy === "run" ? "Đang xếp hàng…" : `Chạy hàng loạt ${fresh} video chưa chạy`}
-          </button>
-          <span className="muted small">{fresh ? "Chạy thẳng đến video thành phẩm, lần lượt từng video." : "Không còn video nào chưa chạy."}</span>
-        </div>
-        {msg && <p className={msg.kind === "ok" ? "ok-msg" : "error"} role={msg.kind === "err" ? "alert" : undefined}>{msg.text}</p>}
-      </section>
-
-      <section className="card">
-        <header className="card-head">
-          <h2>Video trong project</h2>
-          <nav className="tabs filter-tabs" aria-label="Lọc theo trạng thái">
-            {FILTERS.map((f) => (
-              <button key={f.id} className={filter === f.id ? "on" : ""} onClick={() => setFilter(f.id)}>
-                {f.label} <span className="muted">{count(f.states)}</span>
-              </button>
-            ))}
-          </nav>
-        </header>
-        {shown.length ? (
-          <ul className="project-jobs">
-            {shown.map((j) => (
-              <li key={j.id}>
-                <Serial n={mine.indexOf(j) + 1} />
-                <button className="pj-open" onClick={() => onOpenJob(j.id)}>
-                  {j.frames[0] ? <img src={api.file(j.id, `frames/${j.frames[Math.min(2, j.frames.length - 1)]}`)} alt="" loading="lazy" /> : <span className="noimg" />}
-                  <span className="pj-name">{j.name}</span>
-                </button>
-                <Stamp state={j.state} job={j.id} label={j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]} />
-                {j.state === "done" && <button className="ghost small" onClick={() => act(`ap-${j.id}`, async () => { await api.approve(j.id); onChanged(); })}><Icon name="check" size={14} /> Duyệt</button>}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="muted pad">{mine.length ? "Không có video nào ở trạng thái này." : "Project chưa có video. Tải video từ Douyin hoặc chọn project khi tạo video mới."}</p>}
       </section>
     </>
   );

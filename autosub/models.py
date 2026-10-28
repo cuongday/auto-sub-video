@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 Lang = Literal["zh", "en", "ko", "vi"]   # "vi": a film dubbed in Vietnamese ("Thuyết minh"), transcribed as is
 STEPS = ["probe", "extract", "separate", "asr", "segment", "translate", "tts", "fit", "mix", "render"]
@@ -252,6 +252,8 @@ class Job(BaseModel):
     settings: JobSettings = Field(default_factory=JobSettings)
     steps: dict[str, StepState] = Field(default_factory=lambda: {s: StepState() for s in STEPS})
     state: JobState = "new"
+    state_at: float | None = None         # when `state` last changed (set by store.save)
+    _saved_state: str | None = PrivateAttr(default=None)   # state as last loaded/saved, to spot a change on save
     mode: Literal["review", "auto"] = "review"
     current_step: str | None = None
     error: str | None = None

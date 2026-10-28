@@ -5,6 +5,7 @@ import { saveFile } from "../save";
 import type { Job } from "../types";
 import { useDialog } from "./Dialog";
 import Icon from "./Icon";
+import Stamp, { Serial } from "./Stamp";
 
 export const CHARS_WARN = 500_000;
 const KIND: Record<string, string> = { txt: "TXT", docx: "DOCX", srt: "SRT" };
@@ -58,12 +59,11 @@ export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
             const overall = j.state === "running" && stepIdx >= 0 ? (stepIdx + (p ?? 0)) / j.flow.steps.length : null;
             return (
               <li key={j.id} className="ap-part">
-                <span className="ap-no">{(j.audio_part?.index ?? i) + 1}</span>
+                <span className="ap-no"><Serial n={(j.audio_part?.index ?? i) + 1} /></span>
                 <button className="link ap-name" title="Mở tiến độ và kết quả" onClick={() => onOpen(j.id)}>{j.audio_part?.script_name ?? j.name}</button>
                 <span className="se-tag">{KIND[j.audio_part?.script_kind ?? ""] ?? "?"}</span>
-                <span className={`badge s-${j.state}`}>
-                  {j.state === "running" && j.current_step ? `${STEP_LABEL[j.current_step] ?? j.current_step}${p != null ? ` ${Math.round(p * 100)}%` : ""}` : STATE_LABEL[j.state]}
-                </span>
+                <Stamp state={j.state} job={j.id}
+                  label={j.state === "running" && j.current_step ? `${STEP_LABEL[j.current_step] ?? j.current_step}${p != null ? ` ${Math.round(p * 100)}%` : ""}` : STATE_LABEL[j.state]} />
                 {done && j.stale_from && <span className="rp-stale"><Icon name="alert" size={13} /> Cần dựng lại</span>}
                 {overall != null && (
                   <span className="dy-bar ap-bar" role="progressbar" aria-label={`Tiến độ ${j.audio_part?.script_name ?? j.name}`}
@@ -86,7 +86,7 @@ export default function AudioParts({ parts, pct, onOpen, onChange, onRunAll }: {
                       {act === `run-${j.id}` ? "Đang gửi…" : j.state === "new" ? "Chạy" : done && !j.stale_from ? "Chạy lại" : done ? "Dựng lại" : "Chạy tiếp"}</button>
                   )}
                   <button className="icon danger" title="Xoá phần" aria-label={`Xoá ${j.audio_part?.script_name ?? j.name}`} disabled={busy(j) || !!act}
-                    onClick={() => remove(j)}>🗑</button>
+                    onClick={() => remove(j)}><Icon name="trash" size={16} /></button>
                 </span>
                 {chars != null && chars > CHARS_WARN && (
                   <p className="warn small ap-note">Kịch bản rất dài ({nf.format(chars)} ký tự): đọc TTS có thể mất nhiều giờ.</p>

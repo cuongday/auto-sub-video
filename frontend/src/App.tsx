@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "./api";
 import ApiKeysDialog from "./components/ApiKeysDialog";
 import { useDialog } from "./components/Dialog";
+import Stamp, { noteState } from "./components/Stamp";
 import Icon from "./components/Icon";
 import SideResizer, { SIDE_DEF, SIDE_MAX, SIDE_MIN } from "./components/SideResizer";
 import Sidebar, { NO_PROJECT } from "./components/Sidebar";
@@ -161,6 +162,7 @@ export default function App() {
   useEvents((e: JobEvent) => {
     if (e.type === "progress") setPct((p) => ({ ...p, [e.job]: { ...p[e.job], [e.step]: e.pct } }));
     if (e.type === "log") setLogs((l) => ({ ...l, [e.job]: [...(l[e.job] ?? []), e.msg] }));
+    if (e.type === "state") noteState(e.job, e.state, e.t);
     if (e.type === "state" || (e.type === "progress" && (e.pct === 0 || e.pct === 1))) {
       api.job(e.job).then((j) => {
         replace(j);
@@ -306,7 +308,8 @@ export default function App() {
                 {job.project && projects.some((p) => p.id === job.project) && (
                   <button className="link small crumb" onClick={() => openProject(job.project!)}><Icon name="folder" size={13} /> {projects.find((p) => p.id === job.project)!.name} /</button>
                 )}
-                <h1>{job.name}</h1>
+                <h1 className="job-title">{job.name}<Stamp state={job.state} job={job.id}
+                  label={job.state === "running" && job.current_step ? STEP_LABEL[job.current_step] ?? job.current_step : undefined} /></h1>
                 <span className="muted small">{job.source}</span>
               </div>
               {!isReview && !isAudio && <label className="inline small job-proj">Project
@@ -334,7 +337,7 @@ export default function App() {
                 <button className={view === "result" ? "on" : ""} disabled={!job.files["output.mp4"]} onClick={() => setView("result")}>Kết quả</button>
               </nav>
               <button className="icon danger" title="Xoá job" aria-label="Xoá job" disabled={job.state === "running" || job.state === "queued"}
-                onClick={() => removeJob(job)}>🗑</button>
+                onClick={() => removeJob(job)}><Icon name="trash" size={17} /></button>
             </header>
             {view === "setup" && !isReview && !isAudio && <Setup job={job} options={options} onJob={replace} onRun={(m) => run(m)} />}
             {view === "script" && isReview && <ScriptEditor key={job.id} job={job} film={projects.find((p) => p.id === job.project)?.review?.movie.name} templates={templates} onJob={replace} onRun={(m) => run(m)} />}

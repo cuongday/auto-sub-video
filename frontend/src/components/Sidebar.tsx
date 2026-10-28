@@ -2,6 +2,7 @@ import { useState } from "react";
 import { STATE_LABEL, STEP_LABEL } from "../labels";
 import type { ApiKeyInfo, Job, Project } from "../types";
 import Icon, { type IconName } from "./Icon";
+import Stamp, { Serial } from "./Stamp";
 
 export const NO_PROJECT = "_none";
 const stateText = (j: Job) => (j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]);
@@ -73,11 +74,11 @@ function ProjectTree({ id, groups, tools, on, sel, selProject, expanded, unit, e
               </div>
               {open && (
                 <ul className="tree-jobs">
-                  {g.jobs.map((j) => (
+                  {g.jobs.map((j, k) => (
                     <li key={j.id}>
                       <button className={`srow job ${on && j.id === sel ? "on" : ""}`} onClick={() => onSelectJob(j.id)} title={j.name}>
-                        <span className="srow-label">{j.audio_part ? `${j.audio_part.index + 1}. ${j.audio_part.script_name}` : j.name}</span>
-                        <span className={`jstate s-${j.state}`}><i className="dot" />{stateText(j)}</span>
+                        <span className="srow-label"><Serial n={(j.audio_part ? j.audio_part.index : k) + 1} />{j.audio_part ? j.audio_part.script_name : j.name}</span>
+                        <Stamp state={j.state} job={j.id} label={stateText(j)} className="jstate" />
                       </button>
                     </li>
                   ))}

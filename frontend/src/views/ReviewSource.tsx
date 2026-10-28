@@ -120,9 +120,9 @@ function VsmovSearch({ onCreated }: { onCreated: (p: Project) => void }) {
         )}
         {data && data.total_pages > 1 && (
           <nav className="row vs-pages" aria-label="Phân trang">
-            <button disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>← Trước</button>
+            <button disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}><Icon name="arrowLeft" size={15} /> Trước</button>
             <span className="muted small">Trang {page} / {data.total_pages}</span>
-            <button disabled={page >= data.total_pages || loading} onClick={() => setPage(page + 1)}>Sau →</button>
+            <button disabled={page >= data.total_pages || loading} onClick={() => setPage(page + 1)}>Sau <Icon name="arrowRight" size={15} /></button>
           </nav>
         )}
       </div>
@@ -160,7 +160,7 @@ function MovieDetail({ slug, onBack, onCreated }: { slug: string; onBack: () => 
 
   return (
     <div className="vs-detail" ref={top}>
-      <button className="link small" onClick={onBack}>← Quay lại danh sách</button>
+      <button className="link small" onClick={onBack}><Icon name="arrowLeft" size={14} className="inline-ic" /> Quay lại danh sách</button>
       {!m && !err && <p className="muted" role="status">Đang tải thông tin phim…</p>}
       {err && <p className="error" role="alert">{err}</p>}
       {meta && m && (

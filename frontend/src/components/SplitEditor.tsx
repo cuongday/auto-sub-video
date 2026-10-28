@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as RPE } from "react";
 import { fmtClock, parseClock } from "../labels";
 import type { Job } from "../types";
+import Icon from "./Icon";
 
 const MIN_PART = 60;                         // seconds, same as autosub/review/split.py
 type By = { parts?: number; minutes?: number };
@@ -124,7 +125,7 @@ export default function SplitEditor({ film, cuts, locked, onPropose, onSave }: {
                   onBlur={() => typed(i)} onKeyDown={(e) => { if (e.key === "Enter") typed(i); }} />
               </label>
               <button type="button" className="icon" disabled={!!locked} aria-label={`Bỏ điểm cắt ${i + 1}`} title="Bỏ điểm cắt này (gộp hai phần)"
-                onClick={() => put(draft.filter((__, k) => k !== i))}>×</button>
+                onClick={() => put(draft.filter((__, k) => k !== i))}><Icon name="x" size={15} /></button>
             </li>
           ))}
         </ol>

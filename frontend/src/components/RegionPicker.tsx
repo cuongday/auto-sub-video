@@ -1,5 +1,6 @@
 import { useRef, type PointerEvent as RPE, type ReactNode } from "react";
 import type { Region } from "../types";
+import Icon from "./Icon";
 
 type Mode = "new" | "move" | "nw" | "ne" | "sw" | "se";
 type Drag = { mode: Mode; idx: number; x0: number; y0: number; start: Region };
@@ -62,7 +63,7 @@ export default function RegionPicker({ src, aspect, regions, active, onActive, o
           <span className="tag">{tags?.[i] ?? (sub ? "Phụ đề" : `Che ${n}`)}</span>
           {!sub && !tags && (
             <button type="button" className="remove" aria-label={`Xoá vùng che ${n}`}
-              onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemove(i); }}>×</button>
+              onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemove(i); }}><Icon name="x" size={13} /></button>
           )}
           {i === active && (["nw", "ne", "sw", "se"] as const).map((c) => <span key={c} className={`handle ${c}`} onPointerDown={down(c, i)} />)}
         </div>

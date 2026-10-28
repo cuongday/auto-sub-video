@@ -111,7 +111,7 @@ export default function AudioProjectView({ project, options, jobs, pct, onOpenJo
           </header>
           <AudioBackground project={project} onChanged={onChanged} />
           <div className="ap-music">
-            <div className="ap-label"><strong>Nhạc nền</strong>{!a.music && <span className="badge">Không có</span>}</div>
+            <div className="ap-label"><strong>Nhạc nền</strong>{!a.music && <span className="stamp s-new">Không có</span>}</div>
             {a.music && <audio className="rp-music" controls preload="none" src={api.audioMusicUrl(pid, `${a.music}-${musicV}`)} />}
             <div className="row">
               <label className="btn ghost small rp-file">
@@ -139,7 +139,7 @@ export default function AudioProjectView({ project, options, jobs, pct, onOpenJo
           <header className="card-head">
             <div>
               <h2>Giọng đọc</h2>
-              <p className="muted small">Bấm 🔊 để nghe thử ở tốc độ đang chọn.</p>
+              <p className="muted small">Bấm <Icon name="volume" size={14} className="inline-ic" /> để nghe thử ở tốc độ đang chọn.</p>
             </div>
           </header>
           <OptionsForm options={options} s={voiceSettings} set={setVoice} voiceOnly />

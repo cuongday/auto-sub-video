@@ -5,6 +5,7 @@ import SpeakerVoices, { speakerColor } from "../components/SpeakerVoices";
 import SubOverlay from "../components/SubOverlay";
 import { FLAG_LABEL, fmtTime, parseTime } from "../labels";
 import type { FontOption, Job, Segment } from "../types";
+import Icon from "../components/Icon";
 
 const CPS = 15, MAX_SPEED = 1.35, GAP = 0.05;
 
@@ -122,7 +123,7 @@ export default function Review({ job, fonts, onRender, onJob }: { job: Job; font
       {job.error && <p className="warn">{job.error}</p>}
       {lyricCount > 0 && (
         <div className="notice row">
-          <span>🎵 {lyricCount} câu có vẻ là lời bài hát trong nhạc nền (giọng nghe lẫn vào nhạc). Thường không cần dịch và thuyết minh các câu này.</span>
+          <span className="with-icon"><Icon name="music" size={16} /> {lyricCount} câu có vẻ là lời bài hát trong nhạc nền (giọng nghe lẫn vào nhạc). Thường không cần dịch và thuyết minh các câu này.</span>
           <button className="ghost" onClick={() => update(segs.filter((s) => !s.flags.includes("lyrics")))}>Xoá {lyricCount} câu này</button>
         </div>
       )}
@@ -149,7 +150,7 @@ export default function Review({ job, fonts, onRender, onJob }: { job: Job; font
                       <td className="tc">
                         <TimeInput value={s.start} onChange={(v) => patch(s.id, { start: v })} />
                         <TimeInput value={s.end} onChange={(v) => patch(s.id, { end: v })} />
-                        <button className="link small" onClick={() => seek(s)}>▶ xem</button>
+                        <button className="link small" onClick={() => seek(s)}><Icon name="play" size={12} className="inline-ic" /> xem</button>
                         {speakerIds.length > 1 && (
                           <select className="spk-pick" value={s.speaker ?? ""} aria-label="Người nói"
                             style={{ color: s.speaker != null ? speakerColor(s.speaker) : undefined }}
@@ -164,14 +165,14 @@ export default function Review({ job, fonts, onRender, onJob }: { job: Job; font
                         <div className={`len ${lvl}`} title={`Cần đọc nhanh ×${r.toFixed(2)} so với tốc độ thường`}>
                           <i style={{ width: `${Math.min(100, (r / MAX_SPEED) * 100)}%` }} />
                         </div>
-                        {s.flags.map((f) => <span key={f} className={`flag ${f}`}>{f === "lyrics" ? "🎵" : "⚠"} {FLAG_LABEL[f] ?? f}</span>)}
+                        {s.flags.map((f) => <span key={f} className={`flag ${f}`}><Icon name={f === "lyrics" ? "music" : "alert"} size={12} className="inline-ic" /> {FLAG_LABEL[f] ?? f}</span>)}
                       </td>
                       <td className="acts">
-                        <button className="icon" title="Nghe thử (Ctrl+Enter)" aria-label="Nghe thử" disabled={!s.vi || !!busy} onClick={() => listen(s)}>{busy === `tts-${s.id}` ? "…" : "🔊"}</button>
-                        <button className="icon" title="Dịch lại câu này" aria-label="Dịch lại" disabled={!s.source || !!busy} onClick={() => retranslate([s.id])}>{busy === `tr-${s.id}` ? "…" : "↻"}</button>
-                        <button className="icon" title="Gộp với câu sau" aria-label="Gộp" disabled={i === segs.length - 1} onClick={() => merge(i)}>⤓</button>
-                        <button className="icon" title="Tách đôi" aria-label="Tách" onClick={() => split(i)}>✂</button>
-                        <button className="icon danger" title="Xoá" aria-label="Xoá" onClick={() => remove(i)}>×</button>
+                        <button className="icon" title="Nghe thử (Ctrl+Enter)" aria-label="Nghe thử" disabled={!s.vi || !!busy} onClick={() => listen(s)}>{busy === `tts-${s.id}` ? <span className="spin" aria-hidden /> : <Icon name="volume" size={16} />}</button>
+                        <button className="icon" title="Dịch lại câu này" aria-label="Dịch lại" disabled={!s.source || !!busy} onClick={() => retranslate([s.id])}>{busy === `tr-${s.id}` ? <span className="spin" aria-hidden /> : <Icon name="refresh" size={16} />}</button>
+                        <button className="icon" title="Gộp với câu sau" aria-label="Gộp" disabled={i === segs.length - 1} onClick={() => merge(i)}><Icon name="merge" size={16} /></button>
+                        <button className="icon" title="Tách đôi" aria-label="Tách" onClick={() => split(i)}><Icon name="scissors" size={16} /></button>
+                        <button className="icon danger" title="Xoá" aria-label="Xoá" onClick={() => remove(i)}><Icon name="x" size={16} /></button>
                       </td>
                     </tr>
                   );

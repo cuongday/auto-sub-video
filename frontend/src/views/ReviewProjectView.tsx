@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useDialog } from "../components/Dialog";
 import Icon from "../components/Icon";
+import Stamp, { Serial } from "../components/Stamp";
 import NotebookDialog from "../components/NotebookDialog";
 import OptionsForm from "../components/OptionsForm";
 import RegionPicker from "../components/RegionPicker";
@@ -138,8 +139,8 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
           {tasks.map((t) => (
             <li key={t.id} className={`rp-film ${t.state === "error" ? "bad" : ""}`}>
               <span className="rp-film-name">{t.name}</span>
-              {t.state === "error" ? <span className="badge s-error">Lỗi tải</span> : <>
-                <span className="badge s-running">{t.state === "queued" ? "Đang chờ tải" : `Đang tải ${Math.round(t.pct * 100)}%`}</span>
+              {t.state === "error" ? <Stamp state="error" label="Lỗi tải" /> : <>
+                <Stamp state={t.state === "queued" ? "queued" : "running"} label={t.state === "queued" ? "Đang chờ tải" : `Đang tải ${Math.round(t.pct * 100)}%`} />
                 <span className="dy-bar rp-bar" role="progressbar" aria-label={`Tải ${t.name}`} aria-valuemin={0} aria-valuemax={100}
                   aria-valuenow={Math.round(t.pct * 100)}><span style={{ width: `${Math.round(t.pct * 100)}%` }} /></span>
               </>}
@@ -156,7 +157,7 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
             return (
               <li key={f.id} className="rp-film">
                 <span className="rp-film-name">{filmName(f)}</span>
-                <span className={`badge s-${f.state}`}>{STATE_LABEL[f.state]}</span>
+                <Stamp state={f.state} job={f.id} />
                 {f.state === "running" && f.current_step && (
                   <span className="small muted">{STEP_LABEL[f.current_step] ?? f.current_step}{pct[f.id] ? ` · ${Math.round(pct[f.id] * 100)}%` : ""}</span>
                 )}
@@ -250,11 +251,11 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
               return (
                 <li key={p.id}>
                   <button className="rp-part" onClick={() => onOpenJob(p.id)}>
-                    <strong>Phần {i}</strong>
+                    <span className="rp-part-name"><Serial n={i} /><strong>Phần {i}</strong></span>
                     <span className="meta">{series && f ? `${filmName(f)} · ` : ""}{fmtClock(p.part!.start)} – {fmtClock(p.part!.end)}</span>
                     <span className="rp-part-tags">
-                      <span className={`badge s-${p.state}`}>{p.state === "running" && p.current_step ? STEP_LABEL[p.current_step] : STATE_LABEL[p.state]}</span>
-                      {wait && <span className="badge s-wait">Chờ phần {i - 1} duyệt</span>}
+                      <Stamp state={p.state} job={p.id} label={p.state === "running" && p.current_step ? STEP_LABEL[p.current_step] : STATE_LABEL[p.state]} />
+                      {wait && <Stamp state="wait" label={`Chờ phần ${i - 1} duyệt`} />}
                       {p.notebook_stale && <span className="rp-stale"><Icon name="alert" size={13} /> Sổ tay đã thay đổi sau khi viết kịch bản</span>}
                     </span>
                     <Icon name="chevron" size={15} />

@@ -5,6 +5,7 @@ import CoverControls from "./CoverControls";
 import { useDialog } from "./Dialog";
 import VieneuDevice from "./VieneuDevice";
 import type { Job, Options, Settings, Voice } from "../types";
+import Icon from "./Icon";
 
 const GENDER: Record<string, string> = { custom: "Giọng nhân bản", female: "Giọng nữ", male: "Giọng nam" };
 
@@ -125,7 +126,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
             </select>
             <button type="button" className="ghost" title="Nghe thử giọng ở tốc độ đang chọn" aria-label="Nghe thử giọng"
               disabled={sampling || loadingVoices || (s.tts_engine === "vieneu" && !!s.ref_audio)} onClick={sample}>
-              {sampling ? "…" : "🔊"}
+              {sampling ? <span className="spin" aria-hidden /> : <Icon name="volume" size={16} />}
             </button>
           </span>
         </label>

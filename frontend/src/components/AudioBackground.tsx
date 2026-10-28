@@ -76,11 +76,11 @@ export default function AudioBackground({ project, onChanged }: { project: Proje
 
   const info = a.background_info;
   const st = a.background_state;
-  const badge = up ? <span className="badge s-running">Đang tải lên {Math.round(up.pct * 100)}%</span>
-    : st === "processing" ? <span className="badge s-running">Đang chuẩn hoá{norm != null ? ` ${Math.round(norm * 100)}%` : "…"}</span>
-    : st === "ready" ? <span className="badge s-done">Sẵn sàng</span>
-    : st === "error" ? <span className="badge s-error">Lỗi</span>
-    : <span className="badge">Chưa có</span>;
+  const badge = up ? <span className="stamp s-running">Đang tải lên {Math.round(up.pct * 100)}%</span>
+    : st === "processing" ? <span className="stamp s-running">Đang chuẩn hoá{norm != null ? ` ${Math.round(norm * 100)}%` : "…"}</span>
+    : st === "ready" ? <span className="stamp s-done">Sẵn sàng</span>
+    : st === "error" ? <span className="stamp s-error">Lỗi</span>
+    : <span className="stamp s-new">Chưa có</span>;
   const bar = up ? up.pct : st === "processing" ? norm ?? 0 : null;
 
   return (

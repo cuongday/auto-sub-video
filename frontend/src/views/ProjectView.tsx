@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useDialog } from "../components/Dialog";
 import Icon from "../components/Icon";
+import Stamp, { Serial } from "../components/Stamp";
 import { STATE_LABEL, STEP_LABEL } from "../labels";
 import type { Job, JobState, Project } from "../types";
 
@@ -80,7 +81,7 @@ export default function ProjectView({ project, jobs, onOpenJob, onChanged, onDel
             {project.source_url && <a className="small src-link" href={project.source_url} target="_blank" rel="noreferrer">{project.source_url}</a>}
           </div>
           <div className="row">
-            <button className="ghost small" onClick={onAddVideos}>+ Thêm video từ Douyin</button>
+            <button className="ghost small" onClick={onAddVideos}><Icon name="plus" size={14} /> Thêm video từ Douyin</button>
             <button className="ghost small" disabled={!!busy} onClick={edit}>Đổi tên</button>
             <button className="ghost small danger" disabled={!!busy} onClick={remove}>Xoá project</button>
           </div>
@@ -146,14 +147,13 @@ export default function ProjectView({ project, jobs, onOpenJob, onChanged, onDel
           <ul className="project-jobs">
             {shown.map((j) => (
               <li key={j.id}>
+                <Serial n={mine.indexOf(j) + 1} />
                 <button className="pj-open" onClick={() => onOpenJob(j.id)}>
                   {j.frames[0] ? <img src={api.file(j.id, `frames/${j.frames[Math.min(2, j.frames.length - 1)]}`)} alt="" loading="lazy" /> : <span className="noimg" />}
                   <span className="pj-name">{j.name}</span>
                 </button>
-                <span className={`badge s-${j.state}`}>
-                  {j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]}
-                </span>
-                {j.state === "done" && <button className="ghost small" onClick={() => act(`ap-${j.id}`, async () => { await api.approve(j.id); onChanged(); })}>✓ Duyệt</button>}
+                <Stamp state={j.state} job={j.id} label={j.state === "running" && j.current_step ? STEP_LABEL[j.current_step] : STATE_LABEL[j.state]} />
+                {j.state === "done" && <button className="ghost small" onClick={() => act(`ap-${j.id}`, async () => { await api.approve(j.id); onChanged(); })}><Icon name="check" size={14} /> Duyệt</button>}
               </li>
             ))}
           </ul>

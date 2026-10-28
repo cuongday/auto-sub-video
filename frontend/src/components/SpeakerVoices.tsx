@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Job, Segment, Voice } from "../types";
 
-export const SPEAKER_COLORS = ["#F5B83D", "#6EA8FF", "#3CCB8C", "#FF9EC4", "#B48CFF", "#FF7A59"];
+export const SPEAKER_COLORS = [1, 2, 3, 4, 5, 6].map((n) => `var(--spk-${n})`);
 export const speakerColor = (n: number) => SPEAKER_COLORS[n % SPEAKER_COLORS.length];
 
 /** Pick a TTS voice per detected speaker. Saved into job settings (speaker_voices). */

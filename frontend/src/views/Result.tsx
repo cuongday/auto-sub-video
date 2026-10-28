@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { canPickLocation, saveFile } from "../save";
 import type { Job, Project } from "../types";
+import Icon from "../components/Icon";
 
 const FILES = [
   { name: "output.mp4", label: "Tải video (.mp4)", suffix: ".vi.mp4", primary: true },
@@ -61,7 +62,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
       {!audio && <div className={`approve-bar ${job.state === "approved" ? "on" : ""}`}>
         {job.state === "approved" ? (
           <>
-            <span><strong>✓ Đã duyệt</strong> <span className="muted small">Bạn đã xem và chấp nhận video này.</span></span>
+            <span><strong className="with-icon"><Icon name="check" size={15} /> Đã duyệt</strong> <span className="muted small">Bạn đã xem và chấp nhận video này.</span></span>
             <span className="grow" />
             <button className="ghost small" disabled={!!busy} onClick={async () => onJob?.(await api.approve(job.id, false))}>Bỏ duyệt</button>
           </>
@@ -74,7 +75,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
             <button className="primary" disabled={!!busy} onClick={async () => {
               setBusy("approve"); setMsg(null);
               try { onJob?.(await api.approve(job.id)); } catch (e) { setMsg({ kind: "err", text: (e as Error).message }); } finally { setBusy(null); }
-            }}>{busy === "approve" ? <><span className="spin" aria-hidden /> {review ? "Đang cập nhật sổ tay…" : "Đang duyệt…"}</> : "✓ Duyệt video"}</button>
+            }}>{busy === "approve" ? <><span className="spin" aria-hidden /> {review ? "Đang cập nhật sổ tay…" : "Đang duyệt…"}</> : <><Icon name="check" size={15} /> Duyệt video</>}</button>
           </>
         ) : <span className="muted small">Video đang được cập nhật, duyệt sau khi chạy xong.</span>}
         {project && onProject && !review && (
@@ -82,7 +83,7 @@ export default function Result({ job, onEdit, onSetup, onRefresh, onJob, project
             onClick={async () => {
               try { onProject(await api.saveProjectPreset(project.id, job.id)); setMsg({ kind: "ok", text: `Đã lưu làm preset của project “${project.name}”` }); }
               catch (e) { setMsg({ kind: "err", text: (e as Error).message }); }
-            }}>{project.preset_from === job.name ? "✓ Là preset của project" : "Lưu làm preset của project"}</button>
+            }}>{project.preset_from === job.name ? <><Icon name="check" size={14} /> Là preset của project</> : "Lưu làm preset của project"}</button>
         )}
       </div>}
       {job.warnings.map((w) => <p key={w} className="warn">{w}</p>)}

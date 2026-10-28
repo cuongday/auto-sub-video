@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { SharedGlossary } from "../types";
+import Icon from "./Icon";
 
 /** Edit the glossary shared by every job: it overrides each job's automatic context for the same entries. */
 export default function SharedGlossaryDialog({ onClose }: { onClose: () => void }) {
@@ -23,7 +24,7 @@ export default function SharedGlossaryDialog({ onClose }: { onClose: () => void 
                   <input value={c.name} aria-label="Tên gốc" onChange={(e) => setG({ ...g, characters: g.characters.map((x, k) => k === i ? { ...x, name: e.target.value } : x) })} />
                   <input value={c.vi_name} aria-label="Tên tiếng Việt" onChange={(e) => setG({ ...g, characters: g.characters.map((x, k) => k === i ? { ...x, vi_name: e.target.value } : x) })} />
                   <input value={c.addressing} aria-label="Xưng hô" placeholder="xưng hô" onChange={(e) => setG({ ...g, characters: g.characters.map((x, k) => k === i ? { ...x, addressing: e.target.value } : x) })} />
-                  <button type="button" className="icon" aria-label="Xoá" onClick={() => setG({ ...g, characters: g.characters.filter((_, k) => k !== i) })}>×</button>
+                  <button type="button" className="icon" aria-label="Xoá" onClick={() => setG({ ...g, characters: g.characters.filter((_, k) => k !== i) })}><Icon name="x" size={15} /></button>
                 </div>
               ))}
               <button type="button" className="link" onClick={() => setG({ ...g, characters: [...g.characters, { name: "", vi_name: "", addressing: "" }] })}>+ Thêm nhân vật</button>
@@ -34,7 +35,7 @@ export default function SharedGlossaryDialog({ onClose }: { onClose: () => void 
                 <div className="ctx-row" key={i}>
                   <input value={t.source} aria-label="Gốc" onChange={(e) => setG({ ...g, terms: g.terms.map((x, k) => k === i ? { ...x, source: e.target.value } : x) })} />
                   <input value={t.vi} aria-label="Tiếng Việt" onChange={(e) => setG({ ...g, terms: g.terms.map((x, k) => k === i ? { ...x, vi: e.target.value } : x) })} />
-                  <button type="button" className="icon" aria-label="Xoá" onClick={() => setG({ ...g, terms: g.terms.filter((_, k) => k !== i) })}>×</button>
+                  <button type="button" className="icon" aria-label="Xoá" onClick={() => setG({ ...g, terms: g.terms.filter((_, k) => k !== i) })}><Icon name="x" size={15} /></button>
                 </div>
               ))}
               <button type="button" className="link" onClick={() => setG({ ...g, terms: [...g.terms, { source: "", vi: "" }] })}>+ Thêm thuật ngữ</button>

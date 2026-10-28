@@ -302,7 +302,9 @@ table.segs { width: 100%; border-collapse: collapse; }
 .segs th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-weight: 600; font-size: var(--fs-s); color: var(--ink-2); padding: 7px 10px; z-index: 1; border-bottom: 1px solid var(--rule); }
 .segs td { padding: 7px 10px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
 .segs tr.cur td { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
-.segs tr.playing td:first-child { box-shadow: inset 3px 0 var(--accent-hover); }
+.segs tr.playing td { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.segs tr.playing td:first-child { position: relative; }
+.segs tr.playing td:first-child::before { content: ""; position: absolute; left: 2px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--ink); }
 .segs .tc { width: 100px; display: flex; flex-direction: column; gap: 3px; }
 .segs input.time { font-family: var(--mono); font-size: var(--fs-xs); padding: 3px 5px; }
 .segs .src { width: 26%; color: var(--ink-2); font-size: var(--fs-s); }
@@ -818,4 +820,11 @@ label.inline.split-n input[type="number"] { width: 90px; }
   .side.mini .srow.top { width: 40px; }
   .side.mini .side-foot { margin-top: 0; }
   .side.mini .side-keys { width: 40px; }
+}
+@media (max-width: 760px) {
+  .job-head > div:first-child { flex-basis: 100%; }
+  .job-proj { flex: 1 1 100%; }
+  .job-proj select { flex: 1; max-width: none; }
+  .step { grid-template-columns: 14px minmax(0, 1fr) auto; row-gap: 4px; }
+  .step .bar { grid-column: 2 / 4; grid-row: 2; }
 }

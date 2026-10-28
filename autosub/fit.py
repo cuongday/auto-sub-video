@@ -22,7 +22,7 @@ def _load(path: Path):
     return pcm, len(pcm) / SR
 
 def fit_segment(engine: TTSEngine, seg: Segment, slot: float, voice: str, base_rate: float,
-                ref_audio: Path | None, out_wav: Path, cache_dir: Path | None = None) -> FitResult:
+                ref_audio: Path | None, out_wav: Path, cache_dir: Path | None = None, cancel=None) -> FitResult:
     out_wav = Path(out_wav); out_wav.parent.mkdir(parents=True, exist_ok=True)
     raw = cached_synthesize(engine, seg.vi, voice, base_rate, ref_audio, cache_dir)
     pcm, d0 = _load(raw)
@@ -42,7 +42,7 @@ def fit_segment(engine: TTSEngine, seg: Segment, slot: float, voice: str, base_r
         r = min(d1 / slot, tempo_left)
         if r > 1.0 + 1e-3:
             tmp = out_wav.with_name(out_wav.stem + ".tempo.wav")
-            media.atempo(out_wav, tmp, r)
+            media.atempo(out_wav, tmp, r, cancel=cancel)
             tmp.replace(out_wav)
     final = sf.info(out_wav).duration
     return FitResult(out_wav, final, round(d0 / max(final, 1e-6), 3), final > slot + TOLERANCE)

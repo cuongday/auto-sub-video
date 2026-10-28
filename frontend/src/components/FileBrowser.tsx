@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { BrowseFile, BrowseListing } from "../types";
+import Icon from "./Icon";
 
 const fmtSize = (n: number) => n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GB` : n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(0)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 const fmtDate = (t: number) => new Date(t * 1000).toLocaleDateString("vi-VN");
@@ -37,23 +38,23 @@ export default function FileBrowser({ start, onPick, onSetDefault, busy, selecte
         </nav>
         <span className="grow" />
         {listing.path === saved
-          ? <span className="muted small">✓ Thư mục video mặc định</span>
+          ? <span className="muted small with-icon"><Icon name="check" size={14} /> Thư mục video mặc định</span>
           : <button className="ghost small" onClick={async () => { await onSetDefault(listing.path); setSaved(listing.path); }}>Đặt làm thư mục mặc định</button>}
       </div>
       {err && <p className="warn">{err}</p>}
       <ul className="browser-list">
         {listing.parent !== null && (
-          <li><button className="entry dir" onClick={() => open(listing.parent!)}><span aria-hidden>↩</span> ..</button></li>
+          <li><button className="entry dir" onClick={() => open(listing.parent!)}><Icon name="up" size={15} /> ..</button></li>
         )}
         {listing.dirs.map((d) => (
-          <li key={d.path}><button className="entry dir" onClick={() => open(d.path)}><span aria-hidden>📁</span> {d.name}</button></li>
+          <li key={d.path}><button className="entry dir" onClick={() => open(d.path)}><Icon name="folder" size={15} /> {d.name}</button></li>
         ))}
         {listing.files.map((f) => (
           <li key={f.path} className="file-row">
             {onToggle && <input type="checkbox" aria-label={`Chọn ${f.name} để chạy hàng loạt`} checked={!!selected?.has(f.path)}
               disabled={busy} onChange={() => onToggle(f)} />}
             <button className="entry file" disabled={busy} onClick={() => onPick(f)} title="Mở video này">
-              <span aria-hidden>🎬</span> <span className="fname">{f.name}</span>
+              <Icon name="film" size={15} /> <span className="fname">{f.name}</span>
               <span className="muted small">{fmtSize(f.size)} · {fmtDate(f.mtime)}</span>
             </button>
           </li>

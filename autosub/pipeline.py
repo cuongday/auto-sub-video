@@ -398,10 +398,12 @@ def register(kind: str, flow: Flow) -> None:
 
 def flow_for(job: Job) -> Flow:
     if job.kind not in _FLOWS:
+        # registers the film/review flows, or the audio-story flow
+        mod = "autosub.audio.flow" if job.kind == "audio" else "autosub.review.flows"
         try:
-            importlib.import_module("autosub.review.flows")      # registers the film/review flows
+            importlib.import_module(mod)
         except ModuleNotFoundError as e:
-            if e.name not in ("autosub.review", "autosub.review.flows"):
+            if e.name not in (mod.rpartition(".")[0], mod):
                 raise
     if job.kind not in _FLOWS:
         raise LookupError(f"Chưa hỗ trợ loại job {job.kind}")
@@ -439,17 +441,27 @@ def invalidate_from(job: Job, step: str) -> None:
         job.steps[s].status = "pending"; job.steps[s].hash = None
 
 def run(jid: str, mode: str = "review", from_step: str | None = None, confirm: bool = False,
-        engines: Engines | None = None, progress=None, log=None, cancel: threading.Event | None = None) -> Job:
+        engines: Engines | None = None, progress=None, log=None, cancel: threading.Event | None = None,
+        commit: Callable[[Job], None] | None = None) -> Job:
     """Run the job's steps in order, skipping fresh ones. mode=review stops after the flow's review step
-    (subtitles: translation), unless the job is already past it (from_step after that step)."""
-    with contextlib.ExitStack() as stack:
-        stack.enter_context(pinned(jid))
-        job = store.load(jid)
-        for other in flow_for(job).pins(job):
-            stack.enter_context(pinned(other))
-        return _run(job, mode, from_step, confirm, engines, progress, log, cancel)
+    (subtitles: translation), unless the job is already past it (from_step after that step).
+    The terminal state (done / awaiting_review / cancelled / error) is saved last, by `commit` (default store.save),
+    once nothing else is left to do (log pushed, auto-prune, scratch dirs unpinned and evicted): the job queue
+    marks the job idle in that same step, so whoever sees the terminal state sees an idle job."""
+    final: list[Job] = []
+    try:
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(pinned(jid))
+            job = store.load(jid)
+            for other in flow_for(job).pins(job):
+                stack.enter_context(pinned(other))
+            return _run(job, mode, from_step, confirm, engines, progress, log, cancel, final.append)
+    finally:
+        if final:
+            (commit or store.save)(final[-1])
 
-def _run(job, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
+def _run(job, mode, from_step, confirm, engines, progress, log, cancel, end) -> Job:
+    """`end(job)` records the terminal state; run() saves it after everything else."""
     jid, flow = job.id, flow_for(job)
     ctx = make_ctx(job, engines)
     ctx.cancel = cancel or threading.Event()
@@ -483,7 +495,7 @@ def _run(job, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
     for step in flow.steps:
         if ctx.cancel.is_set():
             job.state, job.current_step = "cancelled", None
-            store.save(job); _log("Đã huỷ"); _flush_log()
+            end(job); _log("Đã huỷ"); _flush_log()
             raise Cancelled()
         h = flow.step_hash(ctx, step)
         if _fresh(ctx, step, h, present):
@@ -504,12 +516,12 @@ def _run(job, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
             _run_step(ctx, step)
         except Cancelled:
             st.status = "pending"; job.state = "cancelled"; job.current_step = None
-            store.save(job); _log("Đã huỷ"); _flush_log()
+            end(job); _log("Đã huỷ"); _flush_log()
             raise
         except Exception as e:
             st.status, st.error = "error", str(e)
             job.state, job.error, job.current_step = "error", f"Bước {step}: {e}", None
-            store.save(job); _log(f"Lỗi bước {step}: {e}"); _flush_log()
+            end(job); _log(f"Lỗi bước {step}: {e}"); _flush_log()
             raise
         st.status, st.seconds = "done", round(time.time() - t0, 1)
         st.hash = flow.step_hash(ctx, step)
@@ -519,22 +531,22 @@ def _run(job, mode, from_step, confirm, engines, progress, log, cancel) -> Job:
         _log(f"Xong bước {step} ({st.seconds}s)"); _flush_log()
         if step == flow.review_stop and stop_at_review:
             job.state, job.current_step = "awaiting_review", None
-            store.save(job)
+            end(job)
             return job
         if mode == "review" and (warning := flow.after_step(ctx, step)):
             job.state, job.current_step = "awaiting_review", None
             job.warnings = [warning]
-            store.save(job)
+            end(job)
             return job
-    job.state, job.current_step = "done", None
-    store.save(job)
-    _flush_log()
-    if store.load_app_settings().get("auto_prune"):
+    if store.load_app_settings().get("auto_prune"):    # before "done": a done job is idle, open to a rerun
         from . import prune
-        freed = prune.prune(jid)
+        freed = prune.prune(jid)                          # records job.pruned in the stored job
         if freed:
-            _log(f"Đã dọn {freed / (1 << 20):.0f} MB dữ liệu tạm"); _flush_log()
+            _log(f"Đã dọn {freed / (1 << 20):.0f} MB dữ liệu tạm")
         job = store.load(jid)
+    _flush_log()                                          # before "done": a prune right after removes scratch
+    job.state, job.current_step = "done", None
+    end(job)
     return job
 
 def preview_tts(jid: str, sid: int, engines: Engines | None = None) -> Path:

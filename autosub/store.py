@@ -27,10 +27,17 @@ def load(jid: str) -> Job:
     data = read_json(get_store(), key(jid, "job.json"))
     if data is None:
         raise KeyError(jid)
-    return Job.model_validate(data)
+    job = Job.model_validate(data)
+    job._saved_state = job.state
+    return job
 
 def save(job: Job) -> None:
+    """Stamps `state_at` when the state differs from the one this object was loaded (or last saved) with: every state
+    change goes through here, so this one place covers queue, pipeline and API paths alike, without an extra read."""
+    if job.state != job._saved_state or job.state_at is None:
+        job.state_at = time.time()
     write_json(get_store(), key(job.id, "job.json"), job.model_dump(mode="json"))
+    job._saved_state = job.state
     _changed()
 
 def _changed() -> None:

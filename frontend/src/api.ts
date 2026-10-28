@@ -4,7 +4,7 @@ import type {
 } from "./types";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public busy: { id: string; name: string }[] = []) { super(message); }
 }
 
 async function j<T>(r: Promise<Response>): Promise<T> {
@@ -77,9 +77,16 @@ export const api = {
   batch: (paths: string[], preset: string | null, project?: string | null) =>
     j<{ results: { path?: string; job?: string; ok: boolean; error?: string }[] }>(post("/api/batch", { paths, preset, project: project || null, run: true })),
   projects: () => j<Project[]>(fetch("/api/projects")),
-  createProject: (name: string, source_url = "") => j<Project>(post("/api/projects", { name, source_url })),
+  createProject: (name: string, source_url = "", kind: "sub" | "audio" = "sub") => j<Project>(post("/api/projects", { name, source_url, kind })),
   updateProject: (id: string, name: string, source_url: string) => j<Project>(put(`/api/projects/${id}`, { name, source_url })),
   deleteProject: (id: string) => j<{ ok: boolean }>(fetch(`/api/projects/${id}`, { method: "DELETE" })),
+  deleteProjects: async (ids: string[]) => {
+    const res = await post("/api/projects/delete", { ids });
+    if (res.ok) return res.json() as Promise<{ deleted_projects: number; deleted_jobs: number }>;
+    const d = (await res.json().catch(() => ({}))).detail;
+    if (d && typeof d === "object" && !Array.isArray(d)) throw new ApiError(res.status, d.message || res.statusText, d.busy ?? []);
+    throw new ApiError(res.status, (typeof d === "string" && d) || res.statusText);
+  },
   saveProjectPreset: (id: string, jobId: string) => j<Project>(post(`/api/projects/${id}/preset`, { job_id: jobId })),
   clearProjectPreset: (id: string) => j<Project>(fetch(`/api/projects/${id}/preset`, { method: "DELETE" })),
   runProject: (id: string, states: string[] = ["new"]) => j<{ queued: string[]; skipped: string[] }>(post(`/api/projects/${id}/run`, { states })),
@@ -154,4 +161,20 @@ export const api = {
   saveJobReviewSettings: (jid: string, s: ReviewSettings) => j<Job>(put(`/api/jobs/${jid}/review-settings`, s)),
   reviewPreview: (jid: string, t: number) => j<{ url: string; duration: number }>(post(`/api/jobs/${jid}/review-preview`, { t })),
   thumbUrl: (jid: string, t: number) => `/api/jobs/${jid}/thumb?t=${t.toFixed(1)}`,
+
+  // ---- truyện audio
+  saveAudio: (pid: string, s: { engine?: string; voice?: string; rate?: number; music_volume?: number }) => j<Project>(put(`/api/projects/${pid}/audio`, s)),
+  audioBgBase: (pid: string) => `/api/projects/${pid}/audio/background`,
+  cancelAudioBg: (pid: string) => j<Project>(post(`/api/projects/${pid}/audio/background/cancel`)),
+  audioBgUrl: (pid: string, bust: string | number) => `/api/projects/${pid}/audio/background?v=${encodeURIComponent(bust)}`,
+  uploadAudioMusic: (pid: string, file: File) => {
+    const fd = new FormData(); fd.append("file", file);
+    return j<Project>(fetch(`/api/projects/${pid}/audio/music`, { method: "POST", body: fd }));
+  },
+  audioMusicUrl: (pid: string, bust: string | number) => `/api/projects/${pid}/audio/music?v=${encodeURIComponent(bust)}`,
+  deleteAudioMusic: (pid: string) => j<Project>(fetch(`/api/projects/${pid}/audio/music`, { method: "DELETE" })),
+  uploadScript: (pid: string, file: File, run: boolean, onProgress: (p: number) => void) => {
+    const fd = new FormData(); fd.append("file", file);
+    return send<Job>(`/api/projects/${pid}/audio/scripts?run=${run ? 1 : 0}`, fd, onProgress);
+  },
 };

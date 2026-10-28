@@ -68,7 +68,7 @@ def decode_mono(path, sr: int = 44100) -> np.ndarray:
         raise RuntimeError(f"Không giải mã được audio {path}: {r.stderr.decode(errors='replace')[-300:]}")
     return np.frombuffer(r.stdout, dtype=np.float32).copy()
 
-def atempo(in_wav, out_wav: Path, factor: float) -> Path:
+def atempo(in_wav, out_wav: Path, factor: float, cancel=None) -> Path:
     """Speed up (factor>1) without changing pitch."""
     out_wav = Path(out_wav); t = _tmp(out_wav)
     chain, f = [], factor
@@ -77,7 +77,7 @@ def atempo(in_wav, out_wav: Path, factor: float) -> Path:
     while f < 0.5:
         chain.append("atempo=0.5"); f /= 0.5
     chain.append(f"atempo={f:.5f}")
-    proc.run_ffmpeg(["-i", str(in_wav), "-filter:a", ",".join(chain), "-c:a", "pcm_s16le", str(t)])
+    proc.run_ffmpeg(["-i", str(in_wav), "-filter:a", ",".join(chain), "-c:a", "pcm_s16le", str(t)], cancel=cancel)
     return _finish(t, out_wav)
 
 def probe_audio_duration(path) -> float:

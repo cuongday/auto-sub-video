@@ -214,7 +214,7 @@ export default function ScriptEditor({ job, film, templates, onJob, onRun }: {
                       setOpen({ bid: b.id, i: b.scenes.length });
                     }}>+ thêm cảnh</button>
                     <button className="link small se-rw" disabled={!!act} onClick={() => rewriteBlock(b, name)}>
-                      {mine ? <><span className="spin" aria-hidden /> Đang viết lại…</> : "↻ Viết lại"}</button>
+                      {mine ? <><span className="spin" aria-hidden /> Đang viết lại…</> : <><Icon name="refresh" size={13} className="inline-ic" /> Viết lại</>}</button>
                     {!rewriting && open?.bid === b.id && b.scenes[open.i] && (
                       <ScenePop key={open.i} src={api.file(part.film_job, "source")} scene={b.scenes[open.i]} part={part}
                         onClose={() => setOpen(null)}
@@ -240,7 +240,7 @@ export default function ScriptEditor({ job, film, templates, onJob, onRun }: {
       {err && <p className="error" role="alert">{err}</p>}
       {notebook && job.project && <NotebookDialog pid={job.project} onClose={() => setNotebook(false)} />}
       <div className="actions sticky se-foot">
-        {written && <button className="ghost" disabled={busy || !!act} onClick={rewriteAll}>{act === "all" ? "Đang gửi…" : "↻ Viết lại kịch bản"}</button>}
+        {written && <button className="ghost" disabled={busy || !!act} onClick={rewriteAll}>{act === "all" ? "Đang gửi…" : <><Icon name="refresh" size={15} /> Viết lại kịch bản</>}</button>}
         {job.project && <button className="ghost" onClick={() => setNotebook(true)}><Icon name="book" size={15} /> Xem sổ tay dự án</button>}
         {written && <button className="primary" disabled={busy || !!act || !blocks}
           onClick={() => run("go", async () => { await flush(); await onRun("auto"); })}>

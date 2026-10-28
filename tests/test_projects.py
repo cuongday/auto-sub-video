@@ -77,3 +77,46 @@ def test_run_project_runs_only_new_videos_then_approve(client, tmp_path):
     assert client.get(f"/api/jobs/{a['id']}").json()["state"] == "done"
     client.post(f"/api/jobs/{a['id']}/approve", json={})
     assert client.post(f"/api/jobs/{a['id']}/approve", json={"approved": False}).json()["state"] == "done"
+
+def test_bulk_delete_removes_projects_and_jobs(client, tmp_path):
+    p1 = client.post("/api/projects", json={"name": "A"}).json()["id"]
+    p2 = client.post("/api/projects", json={"name": "B"}).json()["id"]
+    a = new_job(client, tmp_path, "a.mp4", p1)
+    b = new_job(client, tmp_path, "b.mp4", p2)
+    loose = new_job(client, tmp_path, "c.mp4")
+    from autosub.storage import get_store
+    get_store().put_bytes(f"projects/{p1}/music.mp3", b"x")
+    r = client.post("/api/projects/delete", json={"ids": [p1, p2]})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"deleted_projects": 2, "deleted_jobs": 2}
+    assert client.get("/api/projects").json() == []
+    assert [j["id"] for j in client.get("/api/jobs").json()] == [loose["id"]]
+    from autosub import store
+    assert not store.names(a["id"]) and not store.names(b["id"])
+    assert get_store().list(f"projects/{p1}/") == []
+
+def test_bulk_delete_refuses_when_busy(client, tmp_path, monkeypatch):
+    p1 = client.post("/api/projects", json={"name": "A"}).json()["id"]
+    p2 = client.post("/api/projects", json={"name": "B"}).json()["id"]
+    a = new_job(client, tmp_path, "a.mp4", p1)
+    new_job(client, tmp_path, "b.mp4", p2)
+    monkeypatch.setattr(api.QUEUE, "is_active", lambda jid: jid == a["id"])
+    r = client.post("/api/projects/delete", json={"ids": [p1, p2]})
+    assert r.status_code == 409
+    assert r.json()["detail"]["busy"][0]["id"] == a["id"]
+    assert len(client.get("/api/projects").json()) == 2
+
+def test_bulk_delete_unknown_id_404(client):
+    assert client.post("/api/projects/delete", json={"ids": ["0123456789"]}).status_code == 404
+
+def test_bulk_delete_refuses_while_review_download_runs(client):
+    from autosub import review_api
+    p1 = client.post("/api/projects", json={"name": "A"}).json()["id"]
+    review_api._VS_TASKS["t1"] = {"project": p1, "state": "running"}
+    try:
+        r = client.post("/api/projects/delete", json={"ids": [p1]})
+        assert r.status_code == 409
+        assert r.json()["detail"]["busy"] == [{"id": p1, "name": "A"}]
+        assert len(client.get("/api/projects").json()) == 1
+    finally:
+        review_api._VS_TASKS.clear()

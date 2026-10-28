@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useDialog } from "./Dialog";
 import SharedGlossaryDialog from "./SharedGlossaryDialog";
 import type { Context } from "../types";
+import Icon from "./Icon";
 
 /** Translation context (summary, characters/addressing, glossary). Saving + "dịch lại" re-translates everything. */
 export default function ContextEditor({ jobId, onRetranslate, busy }: {
@@ -35,7 +36,7 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
               <input value={c.name} aria-label="Tên gốc" onChange={(e) => upd({ characters: ctx.characters.map((x, k) => k === i ? { ...x, name: e.target.value } : x) })} />
               <input value={c.vi_name} aria-label="Tên tiếng Việt" onChange={(e) => upd({ characters: ctx.characters.map((x, k) => k === i ? { ...x, vi_name: e.target.value } : x) })} />
               <input value={c.addressing} aria-label="Xưng hô" placeholder="xưng hô" onChange={(e) => upd({ characters: ctx.characters.map((x, k) => k === i ? { ...x, addressing: e.target.value } : x) })} />
-              <button className="icon" aria-label="Xoá" onClick={() => upd({ characters: ctx.characters.filter((_, k) => k !== i) })}>×</button>
+              <button className="icon" aria-label="Xoá" onClick={() => upd({ characters: ctx.characters.filter((_, k) => k !== i) })}><Icon name="x" size={15} /></button>
             </div>
           ))}
           <button className="link" onClick={() => upd({ characters: [...ctx.characters, { name: "", vi_name: "", addressing: "" }] })}>+ Thêm nhân vật</button>
@@ -46,7 +47,7 @@ export default function ContextEditor({ jobId, onRetranslate, busy }: {
             <div className="ctx-row" key={i}>
               <input value={g.source} aria-label="Gốc" onChange={(e) => upd({ glossary: ctx.glossary.map((x, k) => k === i ? { ...x, source: e.target.value } : x) })} />
               <input value={g.vi} aria-label="Tiếng Việt" onChange={(e) => upd({ glossary: ctx.glossary.map((x, k) => k === i ? { ...x, vi: e.target.value } : x) })} />
-              <button className="icon" aria-label="Xoá" onClick={() => upd({ glossary: ctx.glossary.filter((_, k) => k !== i) })}>×</button>
+              <button className="icon" aria-label="Xoá" onClick={() => upd({ glossary: ctx.glossary.filter((_, k) => k !== i) })}><Icon name="x" size={15} /></button>
             </div>
           ))}
           <button className="link" onClick={() => upd({ glossary: [...ctx.glossary, { source: "", vi: "" }] })}>+ Thêm thuật ngữ</button>

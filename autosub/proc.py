@@ -7,12 +7,22 @@ from typing import Callable
 class Cancelled(Exception):
     pass
 
-_LIVE: set[subprocess.Popen] = set()
+_LIVE: dict[subprocess.Popen, threading.Event | None] = {}     # live child -> the cancel event it runs under
 _LOCK = threading.Lock()
 
-def kill_all() -> None:
+def track(p: subprocess.Popen, cancel: threading.Event | None = None) -> None:
     with _LOCK:
-        live = list(_LIVE)
+        _LIVE[p] = cancel
+
+def untrack(p: subprocess.Popen) -> None:
+    with _LOCK:
+        _LIVE.pop(p, None)
+
+def kill_all(spare: "set[threading.Event] | frozenset[threading.Event]" = frozenset()) -> None:
+    """Kill every live child, except those started under a cancel event in `spare` (other lanes' jobs).
+    Children started without a cancel event are always killed."""
+    with _LOCK:
+        live = [p for p, ev in _LIVE.items() if ev is None or ev not in spare]
     for p in live:
         try:
             p.kill()
@@ -27,8 +37,7 @@ def run(cmd: list[str], *, cwd=None, cancel: threading.Event | None = None,
         raise Cancelled()
     p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True, errors="replace", bufsize=1)
-    with _LOCK:
-        _LIVE.add(p)
+    track(p, cancel)
     tail: collections.deque[str] = collections.deque(maxlen=20)
 
     def pump(stream, feed):
@@ -58,8 +67,7 @@ def run(cmd: list[str], *, cwd=None, cancel: threading.Event | None = None,
         t_out.join(); t_err.join()
     finally:
         watcher_stop.set()
-        with _LOCK:
-            _LIVE.discard(p)
+        untrack(p)
     if cancel is not None and cancel.is_set():
         raise Cancelled()
     if rc != 0:

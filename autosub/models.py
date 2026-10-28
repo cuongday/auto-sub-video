@@ -1,13 +1,14 @@
 from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 Lang = Literal["zh", "en", "ko", "vi"]   # "vi": a film dubbed in Vietnamese ("Thuyết minh"), transcribed as is
 STEPS = ["probe", "extract", "separate", "asr", "segment", "translate", "tts", "fit", "mix", "render"]
 FILM_STEPS = ["probe", "extract", "separate", "asr", "transcript", "characters", "summarize"]
 REVIEW_STEPS = ["script", "scenes", "tts", "assemble", "render"]
-STEPS_BY_KIND = {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS}
+AUDIO_STEPS = ["parse", "tts", "mix", "render"]
+STEPS_BY_KIND = {"sub": STEPS, "film": FILM_STEPS, "review": REVIEW_STEPS, "audio": AUDIO_STEPS}
 # "sub": subtitle/voice-over a video; "film": analyze a whole movie; "review": one review video of a film part
-JobKind = Literal["sub", "film", "review"]
+JobKind = Literal["sub", "film", "review", "audio"]
 
 class Region(BaseModel):
     """Rectangle in normalized frame coordinates (0..1)."""
@@ -234,6 +235,12 @@ class Notebook(BaseModel):
     shared_rev: int = 0
 
 
+class AudioPart(BaseModel):
+    """kind "audio": one part (chapter) of an audio story, read from its own script file."""
+    script_name: str                      # original file name, e.g. "chuong-03.docx"
+    script_kind: Literal["txt", "docx", "srt"]
+    index: int                            # order of the part in the story (natural sort of file names)
+
 class Job(BaseModel):
     id: str
     name: str
@@ -245,6 +252,8 @@ class Job(BaseModel):
     settings: JobSettings = Field(default_factory=JobSettings)
     steps: dict[str, StepState] = Field(default_factory=lambda: {s: StepState() for s in STEPS})
     state: JobState = "new"
+    state_at: float | None = None         # when `state` last changed (set by store.save)
+    _saved_state: str | None = PrivateAttr(default=None)   # state as last loaded/saved, to spot a change on save
     mode: Literal["review", "auto"] = "review"
     current_step: str | None = None
     error: str | None = None
@@ -255,3 +264,5 @@ class Job(BaseModel):
     film: FilmInfo | None = None          # kind "film": the movie being analyzed
     part: PartInfo | None = None          # kind "review": which part of the film this video covers
     review: ReviewSettings | None = None  # kind "review": settings of this video
+    audio_part: AudioPart | None = None   # kind "audio": which script this part reads
+    audio_meta: dict | None = None        # kind "audio": {"chars", "duration"} of meta.json (no GET per listing)

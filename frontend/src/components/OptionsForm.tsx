@@ -5,13 +5,16 @@ import CoverControls from "./CoverControls";
 import { useDialog } from "./Dialog";
 import VieneuDevice from "./VieneuDevice";
 import type { Job, Options, Settings, Voice } from "../types";
+import Icon from "./Icon";
 
 const GENDER: Record<string, string> = { custom: "Giọng nhân bản", female: "Giọng nữ", male: "Giọng nam" };
 
 /** Every option of a subtitle job. `review`: the shared voice of a review project instead (LLM, voice, subtitle font;
- *  no ASR, translation notes, original-audio volume or per-job voice sample). */
-export default function OptionsForm({ job, options, s, set, onRefUpload, review = false }: {
+ *  no ASR, translation notes, original-audio volume or per-job voice sample). `voiceOnly`: just the voice block
+ *  (engine, voice with sample, rate), as an audio story uses it. */
+export default function OptionsForm({ job, options, s, set, onRefUpload, review = false, voiceOnly = false }: {
   job?: Job; options: Options; s: Settings; set: (patch: Partial<Settings>) => void; onRefUpload?: (f: File) => void; review?: boolean;
+  voiceOnly?: boolean;
 }) {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceErr, setVoiceErr] = useState("");
@@ -43,8 +46,8 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
 
   const llm = options.llm[s.llm_provider];
   return (
-    <div className="opts">
-      {!review && <fieldset>
+    <div className={voiceOnly ? "opts voice-only" : "opts"}>
+      {!review && !voiceOnly && <fieldset>
         <legend>Lấy lời thoại</legend>
         <div className="seg" role="radiogroup" aria-label="Nguồn lời thoại">
           <button type="button" role="radio" aria-checked={s.text_source === "asr"} className={s.text_source === "asr" ? "on" : ""}
@@ -83,7 +86,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
           : "Nhanh hơn: giữ âm thanh gốc làm nền và tự hạ nhỏ khi có thuyết minh (kiểu thuyết minh truyền hình). Hợp với vlog, review ít nhạc."}</p>
       </fieldset>}
 
-      <fieldset>
+      {!voiceOnly && <fieldset>
         <legend>{review ? "LLM viết kịch bản" : "Dịch"}</legend>
         <label>Nhà cung cấp
           <select value={s.llm_provider} onChange={(e) => set({ llm_provider: e.target.value as Settings["llm_provider"], llm_model: "" })}>
@@ -100,10 +103,10 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
           <textarea rows={2} value={s.translator_notes} placeholder="Ví dụ: phim cổ trang, xưng ta/ngươi; giữ nguyên tên thương hiệu…"
             onChange={(e) => set({ translator_notes: e.target.value })} />
         </label>}
-      </fieldset>
+      </fieldset>}
 
       <fieldset>
-        <legend>{review ? "Giọng đọc" : "Thuyết minh"}</legend>
+        {voiceOnly ? <legend className="sr-only">Giọng đọc</legend> : <legend>{review ? "Giọng đọc" : "Thuyết minh"}</legend>}
         <label>Engine
           <select value={s.tts_engine} onChange={(e) => set({ tts_engine: e.target.value as Settings["tts_engine"], tts_voice: "" })}>
             <option value="edge">Edge TTS (online)</option>
@@ -123,7 +126,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
             </select>
             <button type="button" className="ghost" title="Nghe thử giọng ở tốc độ đang chọn" aria-label="Nghe thử giọng"
               disabled={sampling || loadingVoices || (s.tts_engine === "vieneu" && !!s.ref_audio)} onClick={sample}>
-              {sampling ? "…" : "🔊"}
+              {sampling ? <span className="spin" aria-hidden /> : <Icon name="volume" size={16} />}
             </button>
           </span>
         </label>
@@ -148,10 +151,10 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
         <label>Tốc độ đọc <output>{s.tts_rate.toFixed(2)}×</output>
           <input type="range" min={0.8} max={1.3} step={0.05} value={s.tts_rate} onChange={(e) => set({ tts_rate: +e.target.value })} />
         </label>
-        {!review && <label>{s.separate ? "Âm lượng nhạc nền" : "Âm lượng âm thanh gốc"} <output>{s.bg_volume_db > 0 ? "+" : ""}{s.bg_volume_db} dB</output>
+        {!review && !voiceOnly && <label>{s.separate ? "Âm lượng nhạc nền" : "Âm lượng âm thanh gốc"} <output>{s.bg_volume_db > 0 ? "+" : ""}{s.bg_volume_db} dB</output>
           <input type="range" min={-20} max={6} step={1} value={s.bg_volume_db} onChange={(e) => set({ bg_volume_db: +e.target.value })} />
         </label>}
-        {!review && !s.separate && (
+        {!review && !voiceOnly && !s.separate && (
           <label>Hạ âm thanh gốc khi có thuyết minh <output>{s.duck_db} dB</output>
             <input type="range" min={-30} max={-4} step={1} value={s.duck_db} onChange={(e) => set({ duck_db: +e.target.value })} />
           </label>
@@ -171,7 +174,7 @@ export default function OptionsForm({ job, options, s, set, onRefUpload, review 
         )}
       </fieldset>
 
-      {review && (
+      {review && !voiceOnly && (
         <fieldset>
           <legend>Kiểu chữ phụ đề</legend>
           <CoverControls s={s} set={set} autoFont={null} fonts={options.fonts} textOnly />

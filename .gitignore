@@ -33,3 +33,7 @@ videos/*
 
 # Brainstorm mockups and plan workspaces
 .superpowers/
+
+# impeccable scratch: review captures and decision-round state
+.impeccable/review/
+.impeccable/questions/

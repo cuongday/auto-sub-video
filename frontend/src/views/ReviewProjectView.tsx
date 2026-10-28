@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useDialog } from "../components/Dialog";
 import Icon from "../components/Icon";
+import Stamp, { Serial } from "../components/Stamp";
 import NotebookDialog from "../components/NotebookDialog";
 import OptionsForm from "../components/OptionsForm";
 import RegionPicker from "../components/RegionPicker";
@@ -99,6 +100,9 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
   const first = films.find((f) => f.info && f.frames.length);
   const regions = s.cover_regions;
   const voice = js ?? options.defaults;
+  const prepDone = films.length > 0 && !tasks.length && films.every(ready) && !pendingEps.length;
+  const splitDone = data.parts.length > 0;
+  const next = data.parts.find((p) => p.state !== "approved") ?? null;
   const live = (slug?: string) => tasks.some((t) => t.episode === slug && t.state !== "error");
   const remove = async () => {
     const ok = await dialog.confirm({
@@ -110,7 +114,7 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
   };
 
   return (
-    <div className="rp">
+    <div className="rp rp-page">
       <section className="card rp-head">
         <div className="rp-poster"><Poster src={movie.poster_url || movie.thumb_url} alt={`Poster ${movie.name}`} /></div>
         <div className="rp-title">
@@ -122,24 +126,54 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
         <div className="rp-nb row">
           <button className="ghost" onClick={() => setNotebook(true)}><Icon name="book" size={15} /> Sổ tay dự án</button>
           <button className="ghost danger" disabled={!!act} onClick={remove}>{act === "delete" ? "Đang xoá…" : "Xoá dự án"}</button>
+          {next && <button className="primary" onClick={() => onOpenJob(next.id)}>Mở Phần {next.part!.index}</button>}
         </div>
       </section>
       {notebook && <NotebookDialog pid={pid} onClose={() => setNotebook(false)} />}
       {msg && <p className="error" role="alert">{msg}</p>}
 
+      <div className="ap-grid rp-layout">
+        <div className="ap-work">
       <section className="card">
-        <header className="card-head">
-          <div>
-            <h2>Chuẩn bị phim</h2>
-            <p className="muted small">Tải phim, lấy lời thoại, nhận diện nhân vật và tóm tắt. Làm một lần cho mỗi phim hoặc tập, mọi phần dùng chung.</p>
-          </div>
-        </header>
+        <header className="card-head"><h2>Các phần</h2></header>
+        {data.parts.length ? (
+          <ul className="rp-parts">
+            {data.parts.map((p) => {
+              const i = p.part!.index;
+              const f = films.find((x) => x.id === p.part!.film_job);
+              const wait = p.prev_approved === false && p.steps.script?.status !== "done";
+              return (
+                <li key={p.id}>
+                  <button className="rp-part" onClick={() => onOpenJob(p.id)}>
+                    <span className="rp-part-name"><Serial n={i} /><strong>Phần {i}</strong></span>
+                    <span className="meta">{series && f ? `${filmName(f)} · ` : ""}{fmtClock(p.part!.start)} – {fmtClock(p.part!.end)}</span>
+                    <span className="rp-part-tags">
+                      <Stamp state={p.state} job={p.id} at={p.state_at} label={p.state === "running" && p.current_step ? STEP_LABEL[p.current_step] : STATE_LABEL[p.state]} />
+                      {wait && <Stamp state="wait" label={`Chờ phần ${i - 1} duyệt`} />}
+                      {p.notebook_stale && <span className="rp-stale"><Icon name="alert" size={13} /> Sổ tay đã thay đổi sau khi viết kịch bản</span>}
+                    </span>
+                    <Icon name="chevron" size={15} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : <p className="muted">Chưa có phần nào. {canSplit ? "Chia phim ở trên rồi bấm “Tạo các phần”." : "Phần được tạo khi tập chuẩn bị xong."}</p>}
+      </section>
+
+      <details className="card rp-step" open={!prepDone}>
+        <summary className="rp-step-sum">
+          <h2>Chuẩn bị phim</h2>
+          {prepDone ? <span className="muted small">{films.length} phim · {films.map((f) => fmtClock(f.info?.duration ?? 0)).join(", ")}</span> : null}
+          {prepDone && <Stamp state="done" label="Xong" />}
+        </summary>
+        <p className="muted small rp-step-note">Tải phim, lấy lời thoại, nhận diện nhân vật và tóm tắt. Làm một lần cho mỗi phim hoặc tập, mọi phần dùng chung.</p>
         <ul className="rp-films">
           {tasks.map((t) => (
             <li key={t.id} className={`rp-film ${t.state === "error" ? "bad" : ""}`}>
               <span className="rp-film-name">{t.name}</span>
-              {t.state === "error" ? <span className="badge s-error">Lỗi tải</span> : <>
-                <span className="badge s-running">{t.state === "queued" ? "Đang chờ tải" : `Đang tải ${Math.round(t.pct * 100)}%`}</span>
+              {t.state === "error" ? <Stamp state="error" label="Lỗi tải" /> : <>
+                <Stamp state={t.state === "queued" ? "queued" : "running"} label={t.state === "queued" ? "Đang chờ tải" : `Đang tải ${Math.round(t.pct * 100)}%`} />
                 <span className="dy-bar rp-bar" role="progressbar" aria-label={`Tải ${t.name}`} aria-valuemin={0} aria-valuemax={100}
                   aria-valuenow={Math.round(t.pct * 100)}><span style={{ width: `${Math.round(t.pct * 100)}%` }} /></span>
               </>}
@@ -156,7 +190,7 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
             return (
               <li key={f.id} className="rp-film">
                 <span className="rp-film-name">{filmName(f)}</span>
-                <span className={`badge s-${f.state}`}>{STATE_LABEL[f.state]}</span>
+                <Stamp state={f.state} job={f.id} at={f.state_at} />
                 {f.state === "running" && f.current_step && (
                   <span className="small muted">{STEP_LABEL[f.current_step] ?? f.current_step}{pct[f.id] ? ` · ${Math.round(pct[f.id] * 100)}%` : ""}</span>
                 )}
@@ -206,12 +240,15 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
             </ul>
           </details>
         )}
-      </section>
-
-      <section className="card">
+      </details>
+      <details className="card rp-step" open={!splitDone}>
+        <summary className="rp-step-sum">
+          <h2>Chia phần</h2>
+          {splitDone && <span className="muted small">{data.parts.length} phần</span>}
+          {splitDone && <Stamp state="done" label="Xong" />}
+        </summary>
         <header className="card-head">
           <div>
-            <h2>Chia phần</h2>
             <p className="muted small">{series ? "Mỗi tập thành một hoặc hai video review." : "Mỗi phần là một video review, làm lần lượt: phần sau viết kịch bản khi phần trước đã duyệt."}</p>
           </div>
           {series && (
@@ -237,36 +274,18 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
               onPropose={async (by) => (await api.proposeSplit(pid, film.id, by)).cuts}
               onSave={async (c) => { onChanged(await api.saveParts(pid, film.id, c)); await load(); }} />
           </>}
-      </section>
-
+      </details>
       <section className="card">
-        <header className="card-head"><h2>Các phần</h2></header>
-        {data.parts.length ? (
-          <ul className="rp-parts">
-            {data.parts.map((p) => {
-              const i = p.part!.index;
-              const f = films.find((x) => x.id === p.part!.film_job);
-              const wait = p.prev_approved === false && p.steps.script?.status !== "done";
-              return (
-                <li key={p.id}>
-                  <button className="rp-part" onClick={() => onOpenJob(p.id)}>
-                    <strong>Phần {i}</strong>
-                    <span className="meta">{series && f ? `${filmName(f)} · ` : ""}{fmtClock(p.part!.start)} – {fmtClock(p.part!.end)}</span>
-                    <span className="rp-part-tags">
-                      <span className={`badge s-${p.state}`}>{p.state === "running" && p.current_step ? STEP_LABEL[p.current_step] : STATE_LABEL[p.state]}</span>
-                      {wait && <span className="badge s-wait">Chờ phần {i - 1} duyệt</span>}
-                      {p.notebook_stale && <span className="rp-stale"><Icon name="alert" size={13} /> Sổ tay đã thay đổi sau khi viết kịch bản</span>}
-                    </span>
-                    <Icon name="chevron" size={15} />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : <p className="muted">Chưa có phần nào. {canSplit ? "Chia phim ở trên rồi bấm “Tạo các phần”." : "Phần được tạo khi tập chuẩn bị xong."}</p>}
+        <header className="card-head">
+          <div>
+            <h2>Giọng đọc & LLM</h2>
+            <p className="muted small">Áp cho mọi phần chưa viết kịch bản.{js ? "" : " Đang dùng mặc định của tool."}</p>
+          </div>
+        </header>
+        <OptionsForm options={options} s={voice} set={setVoice} review />
       </section>
-
-      <div className="rp-grid">
+        </div>
+        <aside className="ap-side">
         <section className="card">
           <header className="card-head">
             <div>
@@ -277,7 +296,6 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
           <ReviewSettingsForm value={s} templates={templates} onChange={setReview} />
         </section>
 
-        <div className="rp-side">
           <section className="card">
             <header className="card-head">
               <div>
@@ -332,18 +350,8 @@ export default function ReviewProjectView({ project, options, onOpenJob, onChang
               </div>
             </> : <p className="muted">Phim đọc xong khung hình thì chọn vùng được.</p>}
           </section>
-        </div>
+        </aside>
       </div>
-
-      <section className="card">
-        <header className="card-head">
-          <div>
-            <h2>Giọng đọc & LLM</h2>
-            <p className="muted small">Áp cho mọi phần chưa viết kịch bản.{js ? "" : " Đang dùng mặc định của tool."}</p>
-          </div>
-        </header>
-        <OptionsForm options={options} s={voice} set={setVoice} review />
-      </section>
     </div>
   );
 }

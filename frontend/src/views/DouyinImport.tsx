@@ -2,6 +2,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { canPickFolder, pickFolder, pool, saveIntoFolder } from "../save";
 import type { DyItem, DyLookup, DyTask, Project } from "../types";
+import Icon from "../components/Icon";
+import Stamp, { Serial } from "../components/Stamp";
 
 type Dest = "jobs" | "folder";
 type SaveRow = { id: string; title: string; state: "queued" | "running" | "done" | "error"; pct: number; file?: string; error?: string };
@@ -138,7 +140,7 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, proje
           <p className="muted small">Dán link video hoặc link kênh, chọn video rồi tải nhiều video cùng lúc.</p>
         </div>
         <span className="muted small">
-          {login?.logged_in ? <>✓ Đã đăng nhập Douyin · <button className="link small" onClick={async () => setLogin(await api.douyinLogout())}>Đăng xuất</button></>
+          {login?.logged_in ? <><Icon name="check" size={13} className="inline-ic" /> Đã đăng nhập Douyin · <button className="link small" onClick={async () => setLogin(await api.douyinLogout())}>Đăng xuất</button></>
             : <>Chưa đăng nhập · <button className="link small" onClick={startLogin}>Đăng nhập bằng mã QR</button></>}
         </span>
       </header>
@@ -172,12 +174,13 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, proje
             </>}
           </div>
           <ul className="dy-list">
-            {look.items.map((it: DyItem) => (
+            {look.items.map((it: DyItem, k) => (
               <li key={it.id} className={it.is_images ? "disabled" : picked.has(it.id) ? "on" : ""}>
                 <label>
                   <input type="checkbox" disabled={it.is_images} checked={picked.has(it.id)} onChange={() => toggle(it.id)} />
                   {it.cover ? <img src={it.cover} alt="" referrerPolicy="no-referrer" loading="lazy" /> : <span className="noimg" />}
                   <span className="dy-meta">
+                    <Serial n={k + 1} />
                     <span className="dy-title">{it.title || "(không có tiêu đề)"}</span>
                     <span className="muted small">{fmtDur(it.duration)} · {it.width && it.height ? `${it.width}×${it.height}` : ""} · {fmtDate(it.created)}</span>
                   </span>
@@ -227,7 +230,7 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, proje
               </>
             ) : folderOk && (
               <span className="small">
-                {folder ? <>Thư mục: <strong>📁 {folder.name}</strong> · </> : <span className="muted">Chưa chọn thư mục · </span>}
+                {folder ? <>Thư mục: <strong><Icon name="folder" size={13} className="inline-ic" /> {folder.name}</strong> · </> : <span className="muted">Chưa chọn thư mục · </span>}
                 <button className="link small" disabled={!!busy} onClick={async () => { const d = await pickFolder(); if (d) setFolder(d); }}>
                   {folder ? "Đổi thư mục" : "Chọn thư mục"}</button>
               </span>
@@ -241,13 +244,13 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, proje
         </>
       )}
       {task && task.done && project && task.items.some((x) => x.state === "done") && (
-        <p className="ok-msg">Đã thêm vào project. <button className="link" onClick={() => onOpenProject(project)}>Mở project để chạy hàng loạt →</button></p>
+        <p className="ok-msg">Đã thêm vào project. <button className="link" onClick={() => onOpenProject(project)}>Mở project để chạy hàng loạt <Icon name="arrowRight" size={13} className="inline-ic" /></button></p>
       )}
       {task && (
         <Progress title={`Tạo job · ${task.items.filter((x) => x.state === "done").length}/${task.items.length}`}
           rows={task.items.map((r) => ({
             id: r.id, title: r.title || r.id, state: r.state, pct: r.pct,
-            note: r.state === "done" ? <button className="link small" onClick={() => onOpenJob(r.job!)}>Mở job →</button>
+            note: r.state === "done" ? <button className="link small" onClick={() => onOpenJob(r.job!)}>Mở job <Icon name="arrowRight" size={13} className="inline-ic" /></button>
               : r.state === "error" ? `lỗi: ${r.error}` : null,
           }))} />
       )}
@@ -255,13 +258,14 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, proje
         <Progress title={`Lưu về ${folder?.name ? `“${folder.name}”` : "máy"} · ${saves.filter((x) => x.state === "done").length}/${saves.length}`}
           rows={saves.map((r) => ({
             id: r.id, title: r.title || r.id, state: r.state, pct: r.pct,
-            note: r.state === "done" ? `✓ ${r.file}` : r.state === "error" ? `lỗi: ${r.error}` : null,
+            note: r.state === "done" ? r.file : r.state === "error" ? `lỗi: ${r.error}` : null,
           }))} />
       )}
     </section>
   );
 }
 
+const DY_STATE: Record<string, string> = { queued: "Đang chờ", running: "Đang tải", done: "Xong", error: "Lỗi", cancelled: "Đã huỷ" };
 type Row = { id: string; title: string; state: string; pct: number; note: ReactNode };
 
 function Progress({ title, rows }: { title: string; rows: Row[] }) {
@@ -271,9 +275,9 @@ function Progress({ title, rows }: { title: string; rows: Row[] }) {
       <ul>
         {rows.map((r) => (
           <li key={r.id} className={`s-${r.state}`}>
-            <span className="dy-title">{r.title}</span>
+            <span className="dy-title"><Serial n={rows.indexOf(r) + 1} />{r.title}</span>
             <span className="dy-bar" aria-hidden><span style={{ width: `${Math.round((r.state === "done" ? 1 : r.pct) * 100)}%` }} /></span>
-            <span className="small dy-note">{r.note ?? (r.state === "running" ? `${Math.round(r.pct * 100)}%` : "đang chờ")}</span>
+            <span className="small dy-note"><Stamp state={r.state} label={DY_STATE[r.state]} />{" "}{r.note ?? (r.state === "running" ? `${Math.round(r.pct * 100)}%` : "")}</span>
           </li>
         ))}
       </ul>

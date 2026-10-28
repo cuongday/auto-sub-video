@@ -930,3 +930,5 @@ html { scroll-padding-bottom: 72px; }
 .ap-work .opts { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .ap-work .opts fieldset, .ap-work .opts select { min-width: 0; }
 .ap-work .font-pick { flex: 1 1 100%; min-width: 0; max-width: none; }
+.ap-bulk { flex-wrap: nowrap; gap: 10px; min-width: 260px; }
+.ap-bulk .ap-bar { flex: 1 1 120px; min-width: 120px; }

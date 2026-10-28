@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../api";
 import { STATE_LABEL, STEP_LABEL, fmtClock } from "../labels";
-import { saveFile } from "../save";
+import { canPickFolder, pickFolder, pool, saveFile, saveIntoFolder, sizeInFolder } from "../save";
 import type { Job } from "../types";
 import { useDialog } from "./Dialog";
 import Icon from "./Icon";
@@ -26,6 +26,59 @@ export default function AudioParts({ parts, pct, onOpen, onChange }: {
   const [act, setAct] = useState("");
   const [msg, setMsg] = useState("");
   const [dl, setDl] = useState<Record<string, number>>({});
+  const [bulk, setBulk] = useState<{ done: number; total: number; inFlight: Record<number, number> } | null>(null);
+  const [bulkMsg, setBulkMsg] = useState("");
+  const stop = useRef<AbortController | null>(null);
+  const ready = parts.filter((j) => j.files["output.mp4"]);
+  const bulkPct = bulk ? (bulk.done + Object.values(bulk.inFlight).reduce((a, b) => a + b, 0)) / Math.max(1, bulk.total) : 0;
+  const fileName = (j: Job) => `${(j.audio_part?.script_name ?? j.name).replace(/\.[^.]+$/, "")}.mp4`;
+
+  /** Every finished part into one folder the user picks; a file already there at the same size is skipped,
+   *  so running it again after new parts finish only fetches the new ones. */
+  const downloadAll = async () => {
+    setBulkMsg(""); setMsg("");
+    if (!canPickFolder()) {             // Firefox/Safari: one ordinary download per video, into the browser's download folder
+      for (const j of ready) await saveFile(api.download(j.id, "output.mp4"), fileName(j));
+      setBulkMsg(`Đã gửi ${ready.length} video sang trình duyệt để tải về.`);
+      return;
+    }
+    const dir = await pickFolder("autosub-audio");
+    if (!dir) return;
+    const ctl = new AbortController(); stop.current = ctl;
+    const skipped: string[] = [], failed: string[] = [];
+    let saved = 0;
+    setBulk({ done: 0, total: ready.length, inFlight: {} });
+    try {
+      await pool(ready.map((j, k) => ({ j, k })), 2, async ({ j, k }) => {
+        if (ctl.signal.aborted) return;
+        const name = fileName(j);
+        const url = api.download(j.id, "output.mp4");
+        // one byte is enough to learn the size ("bytes 0-0/<size>") without fetching the video
+        const probe = await fetch(url, { headers: { Range: "bytes=0-0" }, signal: ctl.signal }).catch(() => null);
+        const size = Number(probe?.headers.get("Content-Range")?.split("/")[1] || 0);
+        await probe?.body?.cancel().catch(() => {});
+        if (size && (await sizeInFolder(dir, name)) === size) skipped.push(name);
+        else {
+          try {
+            await saveIntoFolder(dir, url, name, (p) => setBulk((b) => b && { ...b, inFlight: { ...b.inFlight, [k]: p } }), ctl.signal);
+            saved++;
+          } catch (e) {
+            if (!ctl.signal.aborted) failed.push(`${name}: ${(e as Error).message}`);
+          }
+        }
+        setBulk((b) => { if (!b) return b; const f = { ...b.inFlight }; delete f[k]; return { ...b, done: b.done + 1, inFlight: f }; });
+      });
+    } finally {
+      stop.current = null; setBulk(null);
+    }
+    const notReady = parts.length - ready.length;
+    setBulkMsg([
+      ctl.signal.aborted ? `Đã huỷ. Đã lưu ${saved} video vào “${dir.name}”.` : `Đã lưu ${saved} video vào “${dir.name}”.`,
+      skipped.length ? `${skipped.length} video đã có sẵn, bỏ qua.` : "",
+      notReady ? `${notReady} phần chưa xong, chưa có video.` : "",
+    ].filter(Boolean).join(" "));
+    if (failed.length) setMsg(`Không lưu được: ${failed.join("; ")}`);
+  };
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setAct(key); setMsg("");
     try { await fn(); onChange(); } catch (e) { setMsg((e as Error).message); } finally { setAct(""); }
@@ -50,7 +103,20 @@ export default function AudioParts({ parts, pct, onOpen, onChange }: {
           <h2>Các phần</h2>
           <p className="muted small">Mỗi file kịch bản là một phần, xếp theo tên file. Chạy 2 phần cùng lúc, phần sau tự chờ. File tên kết thúc bằng “full” chạy sau cùng, dùng lại giọng đọc của các phần.</p>
         </div>
+        {bulk ? (
+          <div className="ap-bulk row" role="status">
+            <span className="meta">Đã xong {bulk.done}/{bulk.total}</span>
+            <span className="dy-bar ap-bar" role="progressbar" aria-label="Tiến độ tải tất cả" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={Math.round(bulkPct * 100)}><span style={{ width: `${Math.round(bulkPct * 100)}%` }} /></span>
+            <button className="ghost small danger" onClick={() => stop.current?.abort()}>Huỷ</button>
+          </div>
+        ) : (
+          <button className="ghost" disabled={!ready.length}
+            title={ready.length ? (canPickFolder() ? "Chọn một thư mục trên máy, lưu video của mọi phần đã xong vào đó" : "Tải lần lượt từng video về thư mục Tải về của trình duyệt") : "Chưa có phần nào xong"}
+            onClick={downloadAll}><Icon name="download" size={16} /> {canPickFolder() ? "Tải tất cả về thư mục…" : "Tải tất cả"}{ready.length ? ` (${ready.length})` : ""}</button>
+        )}
       </header>
+      {bulkMsg && <p className="ok-text small" role="status">{bulkMsg}</p>}
       {msg && <p className="error" role="alert">{msg}</p>}
       {parts.length ? (
         <ol className="ap-parts">

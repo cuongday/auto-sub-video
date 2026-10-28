@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T00:00:00Z",
+  "title": "Design System: Auto-Sub",
+  "extensions": {
+    "colorMeta": {
+      "post-yellow": { "role": "primary", "displayName": "Post Yellow", "canonical": "oklch(83.4% 0.158 89)", "tonalRamp": ["#180700", "#3A2100", "#603E00", "#895E00", "#AD8200", "#CDAA4B", "#EACE86", "#FFEDB3"] },
+      "post-yellow-hover": { "role": "primary", "displayName": "Worn Yellow" },
+      "post-yellow-ink": { "role": "primary", "displayName": "Letterbox Ink" },
+      "post-yellow-deep": { "role": "primary", "displayName": "Deep Brass" },
+      "rail": { "role": "secondary", "displayName": "Moss Rail", "canonical": "oklch(32.3% 0.040 164)", "tonalRamp": ["#030E09", "#182B23", "#334B40", "#516E60", "#749183", "#9BB5A8", "#C1D7CC", "#E1F4EA"] },
+      "rail-2": { "role": "secondary", "displayName": "Moss Rail 2" },
+      "rail-hover": { "role": "secondary", "displayName": "Rail Hover" },
+      "rail-rule": { "role": "secondary", "displayName": "Rail Rule" },
+      "rail-ink": { "role": "secondary", "displayName": "Rail Ink" },
+      "rail-muted": { "role": "secondary", "displayName": "Rail Pencil" },
+      "rail-info": { "role": "secondary", "displayName": "Rail Ink Blue" },
+      "rail-ok": { "role": "secondary", "displayName": "Rail Ledger Green" },
+      "rail-bad": { "role": "secondary", "displayName": "Rail Postmark Red" },
+      "ok": { "role": "tertiary", "displayName": "Ledger Green", "canonical": "oklch(46.6% 0.097 153)", "tonalRamp": ["#001103", "#032F17", "#1A5130", "#33764B", "#5B996F", "#89BC98", "#B3DDBF", "#D6F9DF"] },
+      "bad": { "role": "tertiary", "displayName": "Postmark Red", "canonical": "oklch(50.4% 0.168 28)", "tonalRamp": ["#240000", "#4F0102", "#7E1A15", "#B1332A", "#D65E51", "#F48D80", "#FFB8AB", "#FFDBD0"] },
+      "warn": { "role": "tertiary", "displayName": "Sealing-Wax Amber", "canonical": "oklch(50.4% 0.108 71)", "tonalRamp": ["#180600", "#3B1F00", "#623B00", "#8C5A06", "#AF7E3E", "#D0A572", "#EDCAA1", "#FFE9C8"] },
+      "info": { "role": "tertiary", "displayName": "Ink Blue", "canonical": "oklch(45.3% 0.069 245)", "tonalRamp": ["#000C19", "#10293C", "#284863", "#436A8B", "#678EAF", "#91B2CF", "#B9D5ED", "#DBF2FF"] },
+      "on-bad": { "role": "tertiary", "displayName": "Red Paper" },
+      "ground": { "role": "neutral", "displayName": "Form Paper", "canonical": "oklch(94.9% 0.011 137)", "tonalRamp": ["#090C08", "#242823", "#424641", "#636862", "#868B84", "#ABB0A9", "#CED3CC", "#EBF0EA"] },
+      "surface": { "role": "neutral", "displayName": "Sheet", "canonical": "oklch(97.9% 0.006 129)", "tonalRamp": ["#0A0C09", "#262724", "#444642", "#656763", "#888A86", "#ADAFAB", "#D0D2CE", "#EDEFEB"] },
+      "surface-2": { "role": "neutral", "displayName": "Carbon Sheet" },
+      "field": { "role": "neutral", "displayName": "Field White" },
+      "rule": { "role": "neutral", "displayName": "Form Rule", "canonical": "oklch(82.9% 0.022 143)", "tonalRamp": ["#080D07", "#212921", "#3E483D", "#5F6A5E", "#828D81", "#A6B2A6", "#CAD4CA", "#E9F1E8"] },
+      "rule-soft": { "role": "neutral", "displayName": "Faint Rule" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(23.6% 0.018 158)", "tonalRamp": ["#070D09", "#202923", "#3D4841", "#5E6962", "#808D85", "#A5B2AA", "#C9D4CD", "#E7F1EB"] },
+      "ink-2": { "role": "neutral", "displayName": "Pencil", "canonical": "oklch(45.1% 0.026 158)", "tonalRamp": ["#060D08", "#1E2A22", "#3A4940", "#5A6B60", "#7D8E83", "#A2B3A8", "#C7D5CC", "#E6F2EA"] },
+      "link": { "role": "neutral", "displayName": "Ledger Link" },
+      "plate": { "role": "neutral", "displayName": "Plate Black", "canonical": "oklch(17.5% 0.011 163)", "tonalRamp": ["#080D0A", "#222825", "#404743", "#616864", "#838B87", "#A8B0AC", "#CBD3CF", "#E9F1EC"] },
+      "plate-ink": { "role": "neutral", "displayName": "Plate Ink" },
+      "plate-info": { "role": "neutral", "displayName": "Plate Blue" },
+      "spk-1": { "role": "neutral", "displayName": "Speaker 1 (data colour)" },
+      "spk-2": { "role": "neutral", "displayName": "Speaker 2 (data colour)" },
+      "spk-3": { "role": "neutral", "displayName": "Speaker 3 (data colour)" },
+      "spk-4": { "role": "neutral", "displayName": "Speaker 4 (data colour)" },
+      "spk-5": { "role": "neutral", "displayName": "Speaker 5 (data colour)" },
+      "spk-6": { "role": "neutral", "displayName": "Speaker 6 (data colour)" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Film title on the review source detail page only." },
+      "headline": { "displayName": "Headline", "purpose": "Page h1: project, job or story name." },
+      "title": { "displayName": "Title", "purpose": "Section h2, dialog titles, brand, tally counts." },
+      "body": { "displayName": "Body", "purpose": "Base size for text, controls, list rows, h3 and h4." },
+      "label": { "displayName": "Label", "purpose": "Form labels, meta lines, small buttons, table headers." },
+      "stamp": { "displayName": "Stamp", "purpose": "Uppercase stamp and tally words; tabular." },
+      "serial": { "displayName": "Serial", "purpose": "\"Số 0042\" item numbers; tabular." },
+      "mono": { "displayName": "Mono", "purpose": "Logs, error traces, timecode inputs and hex values only." }
+    },
+    "shadows": [
+      { "name": "lift", "value": "0 18px 40px -14px color-mix(in srgb, var(--rail) 45%, transparent), 0 2px 6px -2px color-mix(in srgb, var(--ink) 20%, transparent)", "purpose": "Modal dialogs, the script editor's scene popover and the sticky stale bar. Nothing else." }
+    ],
+    "motion": [
+      { "name": "control-state", "value": "background .12s, border-color .12s, color .12s", "purpose": "Hover and active changes on buttons, fields and rail rows." },
+      { "name": "ink-pulse", "value": "opacity 1 to .5, 2s ease-in-out infinite", "purpose": "Running and queued stamps and the running step dot. Off under prefers-reduced-motion." },
+      { "name": "modal-in", "value": "160ms cubic-bezier(.16, 1, .3, 1), translateY(6px) and opacity from 0", "purpose": "Dialog entrance. Off under prefers-reduced-motion." },
+      { "name": "bar-fill", "value": "width .3s", "purpose": "Progress bar growth." },
+      { "name": "fold", "value": "transform .15s ease", "purpose": "Chevrons on the rail and on folding steps." },
+      { "name": "spin", "value": ".7s linear infinite (2s under reduced motion)", "purpose": "Inline busy spinner." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "760px" },
+      { "name": "script-stack", "value": "1000px" },
+      { "name": "settings-stack", "value": "1100px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one post-yellow action in a page header.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Chạy tất cả (3)</button>",
+      "css": ".ds-btn { font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 15px; line-height: 1.3; min-height: 32px; padding: 6px 12px; border-radius: 4px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: background .12s, border-color .12s, color .12s; } .ds-btn-primary { background: var(--accent, #F2C230); color: var(--accent-ink, #2A2105); border: 1px solid color-mix(in srgb, #F2C230 70%, #17211B); font-weight: 600; } .ds-btn-primary:hover { background: var(--accent-hover, #E7B41C); border-color: color-mix(in srgb, #F2C230 55%, #17211B); } .ds-btn-primary:active { background: color-mix(in srgb, #F2C230 80%, #17211B); } .ds-btn-primary:focus-visible { outline: 2px solid var(--ink, #17211B); outline-offset: 2px; }"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Every secondary action: Chạy, Mở, Đổi tên.",
+      "html": "<button class=\"ds-btn-default\">Mở</button>",
+      "css": ".ds-btn-default { font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 15px; line-height: 1.3; min-height: 32px; padding: 6px 12px; border-radius: 4px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink, #17211B); background: var(--surface, #F7F9F5); border: 1px solid var(--rule, #BFCBBE); transition: background .12s, border-color .12s, color .12s; } .ds-btn-default:hover { border-color: var(--ink-2, #4A5A50); background: var(--surface-2, #E2E9DF); } .ds-btn-default:active { background: var(--rule-soft, #D5DDD3); } .ds-btn-default:focus-visible { outline: 2px solid var(--ink, #17211B); outline-offset: 2px; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger-solid",
+      "description": "Red text on a default button; solid red only inside a destructive confirmation.",
+      "html": "<button class=\"ds-btn-danger\">Xoá project</button> <button class=\"ds-btn-danger-solid\">Xoá</button>",
+      "css": ".ds-btn-danger, .ds-btn-danger-solid { font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 15px; min-height: 32px; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: background .12s, border-color .12s; } .ds-btn-danger { color: var(--bad, #B02E26); background: var(--surface, #F7F9F5); border: 1px solid var(--rule, #BFCBBE); } .ds-btn-danger:hover { border-color: var(--bad, #B02E26); background: color-mix(in srgb, #B02E26 8%, transparent); } .ds-btn-danger-solid { background: var(--bad, #B02E26); border: 1px solid var(--bad, #B02E26); color: var(--on-bad, #FFF6F4); font-weight: 600; } .ds-btn-danger-solid:hover { background: color-mix(in srgb, #B02E26 85%, #17211B); } .ds-btn-danger:focus-visible, .ds-btn-danger-solid:focus-visible { outline: 2px solid var(--ink, #17211B); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Field-white input with a stacked 13px label; focus adds a yellow outline.",
+      "html": "<label class=\"ds-label\">Tên project<input class=\"ds-input\" value=\"Kênh Douyin Ẩm thực\"></label>",
+      "css": ".ds-label { display: flex; flex-direction: column; gap: 4px; font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 13px; font-weight: 500; color: var(--ink-2, #4A5A50); } .ds-input { font: inherit; font-size: 15px; font-weight: 400; color: var(--ink, #17211B); background: var(--field, #FCFDFB); border: 1px solid var(--rule, #BFCBBE); border-radius: 4px; padding: 6px 9px; transition: border-color .12s; } .ds-input:hover { border-color: var(--ink-2, #4A5A50); } .ds-input:focus { border-color: var(--ink, #17211B); outline: 2px solid var(--accent, #F2C230); outline-offset: 0; }"
+    },
+    {
+      "name": "Postmark Stamp",
+      "kind": "custom",
+      "refersTo": "stamp",
+      "description": "Every state: outlined, uppercase, rotated -2deg, in the state's ink, with the time it changed. Running and queued pulse.",
+      "html": "<span class=\"ds-stamp ds-s-running\">Đang chạy<span class=\"ds-stamp-at\"> · 14:02</span></span> <span class=\"ds-stamp ds-s-queued\">Chờ</span> <span class=\"ds-stamp ds-s-review\">Chờ rà soát · 04:49</span> <span class=\"ds-stamp ds-s-done\">Xong · 04:50</span> <span class=\"ds-stamp ds-s-approved\">Đã duyệt</span> <span class=\"ds-stamp ds-s-error\">Lỗi</span> <span class=\"ds-stamp ds-s-new\">Mới</span>",
+      "css": ".ds-stamp { display: inline-flex; align-items: center; margin: 4px; font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 12.5px; font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-2, #4A5A50); border: 1.5px solid currentColor; border-radius: 3px; padding: 2px 6px 1px; transform: rotate(-2deg); } .ds-stamp-at { font-weight: 600; letter-spacing: .02em; white-space: pre; } .ds-s-running { color: var(--info, #335A7A); animation: ds-ink 2s ease-in-out infinite; } .ds-s-queued { color: var(--info, #335A7A); border-style: dashed; animation: ds-ink 2s ease-in-out infinite; } .ds-s-review { color: var(--warn, #8A5800); } .ds-s-done { color: var(--ok, #24693F); } .ds-s-approved { color: var(--ok, #24693F); background: color-mix(in srgb, #24693F 12%, transparent); } .ds-s-error { color: var(--bad, #B02E26); } .ds-s-new { border-style: dashed; } @keyframes ds-ink { 50% { opacity: .5; } } @media (prefers-reduced-motion: reduce) { .ds-s-running, .ds-s-queued { animation: none; } }"
+    },
+    {
+      "name": "Stamped Tallies",
+      "kind": "chip",
+      "refersTo": "tally",
+      "description": "Header counts by state that filter the list; the active one is post yellow.",
+      "html": "<div class=\"ds-tallies\"><button class=\"ds-tally ds-on\" aria-pressed=\"true\"><strong>5</strong> Tất cả</button><button class=\"ds-tally ds-t-busy\"><strong>0</strong> Đang chạy</button><button class=\"ds-tally ds-t-review\"><strong>1</strong> Chờ rà soát</button><button class=\"ds-tally ds-t-done\"><strong>1</strong> Đã duyệt</button><button class=\"ds-tally ds-t-bad\"><strong>1</strong> Lỗi</button></div>",
+      "css": ".ds-tallies { display: flex; flex-wrap: wrap; gap: 6px 4px; } .ds-tally { --t: var(--ink-2, #4A5A50); display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px 3px; background: transparent; border: 1.5px solid color-mix(in srgb, var(--t) 55%, transparent); border-radius: 3px; color: var(--t); transform: rotate(-1.5deg); font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; transition: background .12s, border-color .12s; } .ds-tally strong { font-size: 17px; letter-spacing: 0; font-variant-numeric: tabular-nums; } .ds-tally:hover { background: color-mix(in srgb, var(--t) 8%, transparent); border-color: var(--t); } .ds-tally:focus-visible { outline: 2px solid var(--ink, #17211B); outline-offset: 2px; } .ds-t-busy { --t: var(--info, #335A7A); } .ds-t-review { --t: var(--warn, #8A5800); } .ds-t-done { --t: var(--ok, #24693F); } .ds-t-bad { --t: var(--bad, #B02E26); } .ds-tally.ds-on { background: var(--accent, #F2C230); color: var(--accent-ink, #2A2105); border-color: var(--ink, #17211B); }"
+    },
+    {
+      "name": "Ruled List Row",
+      "kind": "card",
+      "refersTo": "stamp",
+      "description": "A project row: serial, thumbnail on the plate, name, format, length, stamp, actions, on a fixed grid with faint rules between.",
+      "html": "<ul class=\"ds-rows\"><li><span class=\"ds-serial\">Số 0001</span><span class=\"ds-name\"><i class=\"ds-thumb\"></i>v.mp4</span><span class=\"ds-meta\">640×360</span><span class=\"ds-meta\">0:00:04</span><span class=\"ds-stamp\">Xong · 04:49</span><span><button class=\"ds-b\">Mở</button></span></li><li><span class=\"ds-serial\">Số 0002</span><span class=\"ds-name\"><i class=\"ds-thumb\"></i>v2.mp4</span><span class=\"ds-meta\">640×360</span><span class=\"ds-meta\">0:00:04</span><span class=\"ds-stamp ds-bad\">Lỗi · 04:51</span><span><button class=\"ds-b\">Chạy tiếp</button></span></li></ul>",
+      "css": ".ds-rows { list-style: none; margin: 0; padding: 0; background: var(--ground, #EBF0E9); font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 15px; color: var(--ink, #17211B); } .ds-rows li { display: grid; grid-template-columns: 64px minmax(0, 1fr) 84px 64px 160px auto; align-items: center; gap: 12px; padding: 5px 6px; border-top: 1px solid var(--rule-soft, #D5DDD3); } .ds-rows li:first-child { border-top: none; } .ds-rows li:hover { background: var(--surface-2, #E2E9DF); } .ds-serial { font-size: 12.5px; font-weight: 500; color: var(--ink-2, #4A5A50); font-variant-numeric: tabular-nums; } .ds-name { display: flex; align-items: center; gap: 12px; font-weight: 500; } .ds-thumb { width: 64px; height: 40px; border-radius: 3px; background: var(--plate, #0C120F); flex: none; } .ds-meta { font-size: 13px; color: var(--ink-2, #4A5A50); font-variant-numeric: tabular-nums; } .ds-stamp { justify-self: start; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ok, #24693F); border: 1.5px solid currentColor; border-radius: 3px; padding: 2px 6px 1px; transform: rotate(-2deg); white-space: nowrap; } .ds-stamp.ds-bad { color: var(--bad, #B02E26); } .ds-b { font: inherit; min-height: 32px; padding: 6px 12px; border-radius: 4px; background: var(--surface, #F7F9F5); border: 1px solid var(--rule, #BFCBBE); color: var(--ink, #17211B); cursor: pointer; } .ds-b:hover { border-color: var(--ink-2, #4A5A50); background: var(--surface-2, #E2E9DF); } .ds-b:focus-visible { outline: 2px solid var(--ink, #17211B); outline-offset: 2px; }"
+    },
+    {
+      "name": "Rail Navigation",
+      "kind": "nav",
+      "refersTo": "rail-row",
+      "description": "Moss rail with section rows, a project tree, job rows with serials and stamps; selection is a yellow tint plus a detached yellow marker.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-sec ds-sec-on\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 15v-3a8 8 0 0 1 16 0v3 M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2z M20 15a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z\"/></svg>Truyện Audio</div><a class=\"ds-row ds-row-on\" href=\"#\">Truyện Đô thị tu tiên</a><a class=\"ds-job\" href=\"#\"><span class=\"ds-ser\">Số 0001</span><span class=\"ds-jn\">chuong-01.txt</span><span class=\"ds-rs ds-ok\">Xong</span></a><a class=\"ds-job\" href=\"#\"><span class=\"ds-ser\">Số 0002</span><span class=\"ds-jn\">chuong-02.txt</span><span class=\"ds-rs ds-bad\">Đã huỷ</span></a><div class=\"ds-sec\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 4v11 M7 10l5 5 5-5 M5 20h14\"/></svg>Tải video Douyin</div></nav>",
+      "css": ".ds-rail { width: 280px; background: var(--rail, #1F3A2E); color: var(--rail-ink, #E6F0E8); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 15px; } .ds-sec { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 12px; font-weight: 600; border-radius: 4px; } .ds-sec-on { color: var(--accent, #F2C230); } .ds-row, .ds-job { position: relative; display: flex; align-items: center; gap: 8px; border-radius: 4px; color: var(--rail-ink, #E6F0E8); text-decoration: none; transition: background .12s; } .ds-row { min-height: 34px; padding: 0 10px 0 14px; font-weight: 500; } .ds-job { min-height: 32px; padding: 0 8px 0 24px; font-size: 13px; } .ds-row:hover, .ds-job:hover { background: var(--rail-hover, #2B4D3D); } .ds-row-on { background: color-mix(in srgb, #F2C230 17%, #1F3A2E); } .ds-row-on::before { content: \"\"; position: absolute; left: 2px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--accent, #F2C230); } .ds-row:focus-visible, .ds-job:focus-visible { outline: 2px solid var(--accent, #F2C230); outline-offset: -2px; } .ds-ser { font-size: 12.5px; color: var(--rail-muted, #A3BDAD); font-variant-numeric: tabular-nums; } .ds-jn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-rs { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border: 1.5px solid currentColor; border-radius: 3px; padding: 0 4px; transform: rotate(-2deg); } .ds-ok { color: var(--rail-ok, #92D7A9); } .ds-bad { color: var(--rail-bad, #F3A79E); }"
+    },
+    {
+      "name": "Media Plate",
+      "kind": "custom",
+      "refersTo": "media-plate",
+      "description": "Every frame, player, thumbnail and poster sits on plate black with color-scheme dark.",
+      "html": "<figure class=\"ds-plate\"><div class=\"ds-frame\">16:9</div><figcaption>Video nền · 0:00:06 · 1280×720</figcaption></figure>",
+      "css": ".ds-plate { margin: 0; width: 320px; font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); } .ds-frame { aspect-ratio: 16 / 9; background: var(--plate, #0C120F); color-scheme: dark; color: var(--plate-ink, #E3ECE5); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; } .ds-plate figcaption { margin-top: 6px; font-size: 13px; color: var(--ink-2, #4A5A50); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Dialog",
+      "kind": "card",
+      "refersTo": "modal",
+      "description": "The one floating layer: sheet, 6px corners, Lift shadow, right-aligned actions over a faint rule.",
+      "html": "<div class=\"ds-modal\"><h3>Xoá project?</h3><p>Project và 5 video sẽ bị xoá khỏi máy.</p><div class=\"ds-acts\"><button class=\"ds-mb\">Huỷ</button><button class=\"ds-mb ds-mb-bad\">Xoá</button></div></div>",
+      "css": ".ds-modal { width: 420px; background: var(--surface, #F7F9F5); color: var(--ink, #17211B); border: 1px solid var(--rule, #BFCBBE); border-radius: 6px; padding: 18px 20px 16px; box-shadow: 0 18px 40px -14px color-mix(in srgb, #1F3A2E 45%, transparent), 0 2px 6px -2px color-mix(in srgb, #17211B 20%, transparent); font-family: var(--font, 'Be Vietnam Pro', system-ui, sans-serif); font-size: 15px; } .ds-modal h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; } .ds-modal p { margin: 0; } .ds-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rule-soft, #D5DDD3); } .ds-mb { font: inherit; min-height: 32px; padding: 6px 12px; border-radius: 4px; background: var(--surface, #F7F9F5); border: 1px solid var(--rule, #BFCBBE); cursor: pointer; } .ds-mb:hover { background: var(--surface-2, #E2E9DF); border-color: var(--ink-2, #4A5A50); } .ds-mb-bad { background: var(--bad, #B02E26); border-color: var(--bad, #B02E26); color: var(--on-bad, #FFF6F4); font-weight: 600; } .ds-mb-bad:hover { background: color-mix(in srgb, #B02E26 85%, #17211B); border-color: color-mix(in srgb, #B02E26 85%, #17211B); } .ds-mb:focus-visible { outline: 2px solid var(--ink, #17211B); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Bưu điện Counter",
+    "overview": "Auto-Sub is the counter of a Saigon post office for videos. Every job, part and download is a numbered item (Số 0042) that gets stamped as it moves through the line: CHỜ, ĐANG CHẠY, XONG, LỖI, each with the time the stamp landed. A deep moss-green rail carries navigation and the tree of projects. The working area is green-tinted form paper, ruled with 1px hairlines like a printed form, not boxed into cards. Post yellow is the one voice for the primary action and for selection. State colours (ok green, postmark red, amber, ink blue) belong to stamps and the bars beside them.\n\nThe density is a working counter for long batch sessions on big screens. Rows are dense and one line high, figures are tabular so columns of serials, times and durations line up, and the page leads with the list. Settings sit in a right-hand column or fold away when a step is done. The video is the subject: every frame, poster, thumbnail and player sits on a near-black plate so the chrome never tints what the operator is judging.\n\nThe system rejects the category default of a grey dashboard with one neon accent, pill badges and floating cards. It also rejects decoration that does no work: there are no gradients and no shadows on resting surfaces.",
+    "keyCharacteristics": [
+      "Moss rail, green-tinted paper ground, near-black ink; post yellow only for the primary action and selection.",
+      "State is always a postmark stamp: outlined, uppercase, rotated −2°, in the state's ink, with the time it changed.",
+      "Every item in a list carries a four-digit serial (\"Số 0042\") in tabular figures.",
+      "Sections are ruled by a hairline above them, not boxed.",
+      "Media always sits on a dark plate with `color-scheme: dark`.",
+      "Small 4px corners, 1px rules, flat surfaces. Only floating layers cast a shadow."
+    ],
+    "rules": [
+      { "name": "The Letterbox Rule", "body": "Post yellow marks the one primary action in a header and what is selected or on. Among states it may only stand in for warning: on the rail the amber ink is remapped to yellow, and yellow tints back warning banners, the \"Cần cấu hình\" row and over-length bars. Running, done and error never turn yellow.", "section": "colors" },
+      { "name": "The Rail Remaps Rule", "body": "The rail re-points `--ink`, `--ink-2`, `--rule`, `--focus` and the state inks to rail values, so shared controls and stamps inside it read correctly without separate rules. Add rail controls by inheriting these variables, never by hard-coding light colours.", "section": "colors" },
+      { "name": "The Plate Rule", "body": "Anything that shows a video frame (player, picker, thumbnail, poster, scene popover) sits on plate black with `color-scheme: dark`. Paper never shows through behind media.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Every number that can sit in a column (serials, stamp times, durations, counts, timecodes, step times) uses tabular figures.", "section": "typography" },
+      { "name": "The Floor Rule", "body": "Readable text is never smaller than 12.5px. Size steps are fixed: 12.5, 13, 15, 17, 21, 26px.", "section": "typography" },
+      { "name": "The Only-What-Floats Rule", "body": "A shadow means \"this is above the page and will go away\". Cards, rows, buttons, tallies and stamps never cast one.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do show every job, part or download state as a stamp from `components/Stamp.tsx`, with its time when known.",
+      "Do number every item in a list with `<Serial n>` (\"Số 0042\") in tabular figures.",
+      "Do lead each page with its list; put shared settings in the 360px right column, and fold finished steps to one line.",
+      "Do keep exactly one Post Yellow primary action per page header.",
+      "Do separate sections with a 1px rule above, not a box around.",
+      "Do put every video frame, thumbnail and poster on the plate (`--plate`, `color-scheme: dark`).",
+      "Do use the 24px stroke icons in `Icon.tsx` for every icon.",
+      "Do define new colours as tokens in `:root` and derive tints with `color-mix()`.",
+      "Do turn off pulses, spins and slides under `prefers-reduced-motion`."
+    ],
+    "donts": [
+      "Don't use Post Yellow for running, done or error states, or a state ink for selection.",
+      "Don't put a shadow on anything that does not float; Lift is for dialogs, popovers and the stale bar.",
+      "Don't use gradients on surfaces.",
+      "Don't nest boxes: no card inside a card, no bordered fieldset inside a ruled section.",
+      "Don't set readable text below 12.5px or use mono outside logs, errors, timecodes and hex values.",
+      "Don't mark a selected row with a border flush to its edge; use the fill plus the detached rounded marker.",
+      "Don't draw state as filled pills or coloured background badges; the stamp is the only state form.",
+      "Don't use emoji or text glyphs as icons."
+    ]
+  }
+}

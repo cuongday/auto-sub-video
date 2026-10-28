@@ -174,12 +174,13 @@ export default function DouyinImport({ onJobsCreated, onOpenJob, onActive, proje
             </>}
           </div>
           <ul className="dy-list">
-            {look.items.map((it: DyItem) => (
+            {look.items.map((it: DyItem, k) => (
               <li key={it.id} className={it.is_images ? "disabled" : picked.has(it.id) ? "on" : ""}>
                 <label>
                   <input type="checkbox" disabled={it.is_images} checked={picked.has(it.id)} onChange={() => toggle(it.id)} />
                   {it.cover ? <img src={it.cover} alt="" referrerPolicy="no-referrer" loading="lazy" /> : <span className="noimg" />}
                   <span className="dy-meta">
+                    <Serial n={k + 1} />
                     <span className="dy-title">{it.title || "(không có tiêu đề)"}</span>
                     <span className="muted small">{fmtDur(it.duration)} · {it.width && it.height ? `${it.width}×${it.height}` : ""} · {fmtDate(it.created)}</span>
                   </span>

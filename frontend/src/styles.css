@@ -899,3 +899,29 @@ label.inline.split-n input[type="number"] { width: 90px; }
   .actions.sticky { position: static; border-top: 1px solid var(--rule); }
   .actions.stale { position: sticky; }
 }
+
+/* ---------- review project: parts first, finished steps fold to one line ---------- */
+.rp-page { max-width: 1400px; }
+.rp-step > summary { list-style: none; cursor: pointer; }
+.rp-step > summary::-webkit-details-marker { display: none; }
+.rp-step-sum { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.rp-step-sum h2 { display: inline-flex; align-items: center; gap: 8px; }
+.rp-step-sum h2::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2);
+  transform: rotate(-45deg); transition: transform .15s; }
+.rp-step[open] .rp-step-sum h2::before { transform: rotate(45deg); }
+.rp-step[open] > .rp-step-sum { margin-bottom: 8px; }
+.rp-step-note { margin: 0 0 10px; }
+.rp-step:not([open]) { padding-bottom: 10px; }
+@media (prefers-reduced-motion: reduce) { .rp-step-sum h2::before { transition: none; } }
+
+/* sticky action bars: content scrolled into view (focus, find) stops above the bar */
+html { scroll-padding-bottom: 72px; }
+.se-main, .rl-side, .rl-stage { padding-bottom: 8px; }
+.actions.sticky { margin-top: 12px; }
+.dy-meta .serial { margin: 0; }
+.dy-progress .dy-title .serial { display: inline; }
+.dy-note .stamp { flex: none; }
+.dy-note { min-width: 0; }
+.ap-work .opts { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.ap-work .opts fieldset, .ap-work .opts select { min-width: 0; }
+.ap-work .font-pick { flex: 1 1 100%; min-width: 0; max-width: none; }

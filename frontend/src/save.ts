@@ -67,18 +67,18 @@ type DirPicker = (opts: { id?: string; mode?: "readwrite"; startIn?: string }) =
 
 export const canPickFolder = (): boolean => typeof (window as unknown as { showDirectoryPicker?: DirPicker }).showDirectoryPicker === "function";
 
-/** Ask for a folder; null when the user closes the dialog. */
-export async function pickFolder(): Promise<FileSystemDirectoryHandle | null> {
+/** Ask for a folder; null when the user closes the dialog. `id` lets each feature reopen its own last folder. */
+export async function pickFolder(id = "autosub-douyin"): Promise<FileSystemDirectoryHandle | null> {
   const picker = (window as unknown as { showDirectoryPicker: DirPicker }).showDirectoryPicker;
   try {
-    return await picker({ id: "autosub-douyin", mode: "readwrite", startIn: "downloads" });
+    return await picker({ id, mode: "readwrite", startIn: "downloads" });
   } catch (e) {
     if ((e as DOMException).name === "AbortError") return null;
     throw e;
   }
 }
 
-/** Stream `url` into `dir`; the file name comes from the server's X-Filename header (or `fallback`). */
+/** Stream `url` into `dir`; the file name comes from the server's X-Filename header, else `fallback`. */
 export async function saveIntoFolder(dir: FileSystemDirectoryHandle, url: string, fallback: string,
   onProgress?: (p: number) => void, signal?: AbortSignal): Promise<string> {
   const res = await fetch(url, { signal });
@@ -107,6 +107,11 @@ export async function saveIntoFolder(dir: FileSystemDirectoryHandle, url: string
     throw e;
   }
   return name;
+}
+
+/** Size of `name` in `dir`, or null when it is not there. */
+export async function sizeInFolder(dir: FileSystemDirectoryHandle, name: string): Promise<number | null> {
+  try { return (await (await dir.getFileHandle(name)).getFile()).size; } catch { return null; }
 }
 
 /** Run `fn` over `items` with at most `limit` running at once. */
